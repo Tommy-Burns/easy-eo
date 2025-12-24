@@ -49,7 +49,7 @@ result = ds_nir.clip_raster_with_bbox((0,0,1000,1000))
 
 📚 Full documentation is available at:
 
-👉 https://easyeo.readthedocs.io
+👉 [Easy-EO Documentation](https://easy-eo.readthedocs.io/en/latest/index.html)
 
 ## Project Status
 🚧 Active development  
