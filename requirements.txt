@@ -1,0 +1,9 @@
+rasterio>=1.4,<1.5
+geopandas>=1.1,<1.2
+numpy>=1.26,<2.2
+matplotlib>=3.10,<3.11
+Sphinx
+sphinx-autodoc-typehints
+sphinx-copybutton
+sphinx-rtd-theme
+hatch
