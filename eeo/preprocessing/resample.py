@@ -18,14 +18,13 @@ def resample(ds: EEORasterDataset,
              plot_kwargs=None,
              show_preview: bool = False
              ) -> EEORasterDataset:
-    # Ensure resampling for only rasterio-backend datasets
-    backend = ds._adapter.backend
-    if not isinstance(backend, rio.DatasetReader):
-        raise TypeError("Resampling is only allowed on rasterio backend rasters")
-
     params = [size, scale_factor, resolution]
     if sum(p is not None for p in params) != 1:
         raise ValueError("Provide exactly one of: size=, scale_factor=, resolution=")
+
+    # Resampling needs rasterio's decimated reads; promote non-rasterio
+    # backends (no-op if the backend is already rasterio)
+    ds = ds.to_rasterio()
 
     # Compute new dimensions
     # --- When size is provided ---
