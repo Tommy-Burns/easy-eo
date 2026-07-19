@@ -1,31 +1,31 @@
 import numpy as np
 import pytest
-import rasterio as rio
 from affine import Affine
 from rasterio.crs import CRS
 
-from eeo.core.core import EEORasterDataset
 from eeo import load_array
-from eeo.ops.algebra import (
-    add, subtract, multiply, divide, power,
-    sqrt, log, absolute,
-)
 
 
 # ---------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------
+# Module-local pair: 2x2 rasters on the same grid whose values are crafted
+# for hand-checkable algebra (a + b is constant 5). General-purpose rasters
+# live in conftest.py.
+
+GRID = Affine.translation(0, 2) * Affine.scale(1, -1)
+
 
 @pytest.fixture
 def raster_a():
     array = np.array([[1, 2], [3, 4]], dtype=np.float32)
-    return load_array(array, transform=Affine.identity(), crs=CRS.from_epsg(4326))
+    return load_array(array, transform=GRID, crs=CRS.from_epsg(4326))
 
 
 @pytest.fixture
 def raster_b():
     array = np.array([[4, 3], [2, 1]], dtype=np.float32)
-    return load_array(array, transform=Affine.identity(), crs=CRS.from_epsg(4326))
+    return load_array(array, transform=GRID, crs=CRS.from_epsg(4326))
 
 
 # ---------------------------------------------------------------------

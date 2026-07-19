@@ -20,6 +20,7 @@ docs/build/
 
 # Tests
 .pytest_cache/
+.ruff_cache/
 
 # IDE
 .vscode/

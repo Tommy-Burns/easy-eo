@@ -62,3 +62,12 @@ def test_numpy_backed_dataset_contract(numpy_backed_dataset):
     assert isinstance(ds._adapter, NumpyRasterioAdapter)
     assert isinstance(ds.ds, np.ndarray)
     assert ds.read().dtype == np.float32
+
+
+def test_raster_3x3_contract(raster_3x3):
+    ds = raster_3x3
+    assert isinstance(ds._adapter, NumpyRasterioAdapter)
+    np.testing.assert_array_equal(
+        ds.read()[0], np.arange(1, 10, dtype=np.float32).reshape(3, 3)
+    )
+    assert ds.get_crs() == CRS.from_epsg(4326)

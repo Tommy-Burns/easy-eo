@@ -133,3 +133,19 @@ def numpy_backed_dataset():
         transform=_north_up(),
         crs=UTM_CRS,
     )
+
+
+@pytest.fixture
+def raster_3x3():
+    """3x3 float32 raster with values 1..9, NumPy-backed.
+
+    The odd pixel count gives clean central statistics for the stats ops:
+    mean = median = 5 at pixel (1, 1), min 1 at (0, 0), max 9 at (2, 2).
+    North-up unit-pixel grid with top-left origin (0, 3) in EPSG:4326, so
+    world coordinate (1.5, 1.5) falls in pixel (1, 1).
+    """
+    return load_array(
+        np.arange(1, 10, dtype=np.float32).reshape(3, 3),
+        transform=Affine.translation(0, 3) * Affine.scale(1, -1),
+        crs=GEO_CRS,
+    )
