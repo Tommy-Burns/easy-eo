@@ -13,6 +13,15 @@ CRS-mismatch partner raster uses EPSG:4326. Pixel values are deterministic
 gradients (``0..n-1``) so tests can assert against hand-computed results.
 """
 
+import warnings
+
+import matplotlib
+
+# Force the non-interactive Agg backend for the whole suite, before eeo
+# (which imports matplotlib.pyplot) is loaded. Viz tests must never need a
+# display.
+matplotlib.use("Agg")
+
 import numpy as np
 import pytest
 from affine import Affine
@@ -26,6 +35,23 @@ ORIGIN_X = 500_000.0
 ORIGIN_Y = 4_200_000.0
 RES = 10.0
 NODATA = -9999.0
+
+
+@pytest.fixture(autouse=True)
+def _silence_agg_show_warning():
+    """Filter the UserWarning ``plt.show()`` emits under Agg.
+
+    The plot functions currently call ``plt.show()`` unconditionally; under
+    the non-interactive backend every viz test would warn. Remove this
+    filter when WP-05.4 reworks the plot functions' display path.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="FigureCanvasAgg is non-interactive",
+            category=UserWarning,
+        )
+        yield
 
 
 def _north_up(origin_x: float = ORIGIN_X, origin_y: float = ORIGIN_Y,

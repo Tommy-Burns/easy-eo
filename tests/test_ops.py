@@ -82,7 +82,7 @@ def test_log_default_base(raster_a):
 
 def test_absolute():
     array = np.array([[-1, -2], [3, -4]], dtype=np.float32)
-    ds = load_array(array, transform=Affine.identity(), crs=CRS.from_epsg(4326))
+    ds = load_array(array, transform=GRID, crs=CRS.from_epsg(4326))
 
     result = ds.absolute()
     np.testing.assert_array_equal(result.read()[0], [[1, 2], [3, 4]])

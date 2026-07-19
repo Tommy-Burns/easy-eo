@@ -1,10 +1,5 @@
 import numpy as np
 import pytest
-import matplotlib
-
-# Use non-interactive backend for tests
-matplotlib.use("Agg")
-
 from affine import Affine
 from rasterio.crs import CRS
 
