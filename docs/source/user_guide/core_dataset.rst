@@ -118,9 +118,11 @@ return new ``EEORasterDataset`` instances, enabling fluent workflows:
 
 .. code-block:: python
 
-    result = ds.clip_raster_with_bbox((0, 0, 1000, 1000))
-               .normalize_percentile(lower_percentile=2, upper_percentile=98)
-               .standardize()
+    result = (
+        ds.clip_raster_with_bbox((0, 0, 1000, 1000))
+        .normalize_percentile(lower_percentile=2, upper_percentile=98)
+        .standardize()
+    )
 
 Internally, these operations are implemented as standalone functions and
 bound dynamically to ``EEORasterDataset`` using decorators.

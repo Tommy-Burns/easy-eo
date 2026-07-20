@@ -251,10 +251,12 @@ All operations in this section:
 
 .. code-block:: python
 
-   result = ds.clip_raster_with_bbox((0, 0, 1000, 1000))
-              .normalized_difference(ds2)
-              .normalize_min_max()
-              .save_raster("output.tif")
+   result = (
+       ds.clip_raster_with_bbox((0, 0, 1000, 1000))
+       .normalized_difference(ds2)
+       .normalize_min_max()
+       .save_raster("output.tif")
+   )
 
 
 Visualization functions are **terminal operations** and should always appear

@@ -32,10 +32,12 @@ ds_nir = load_raster("path/to/nir.tif")
 ds_red = load_raster("path/to/red.tif")
 
 # Chainable example: clip -> resample -> compute NDVI -> multiply
-result = ds_nir.clip_raster_with_bbox((0,0,1000,1000))
-                .resample(scale_factor=2)
-                .normalized_difference(ds_red)
-                .multiply(100)
+result = (
+    ds_nir.clip_raster_with_bbox((0, 0, 1000, 1000))
+    .resample(scale_factor=2)
+    .normalized_difference(ds_red)
+    .multiply(100)
+)
 ```
 
 ## Supported Backends
