@@ -5,6 +5,7 @@ import rasterio as rio
 from rasterio.mask import mask
 from rasterio.windows import from_bounds
 
+from eeo.common import is_rasterio_backed
 from eeo.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 
@@ -78,8 +79,7 @@ def clip_raster_with_vector(
     >>> clipped = ds.clip_raster_with_vector(boundary)
     """
     # Ensure clipping for only rasterio-backend datasets
-    backend = ds._adapter.backend
-    if not isinstance(backend, rio.DatasetReader):
+    if not is_rasterio_backed(ds):
         raise TypeError("Clipping is only allowed on rasterio backend rasters")
 
     # Load vector data
@@ -172,8 +172,7 @@ def clip_raster_with_bbox(
     >>> clipped = ds.clip_raster_with_bbox((500000, 4100000, 510000, 4110000))
     """
     # Ensure rasterio backend
-    backend = ds._adapter.backend
-    if not isinstance(backend, rio.DatasetReader):
+    if not is_rasterio_backed(ds):
         raise TypeError("Clipping is only allowed on rasterio backend rasters")
 
     # Validate bbox

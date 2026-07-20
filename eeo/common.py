@@ -13,6 +13,32 @@ if TYPE_CHECKING:
     from eeo.core.core import EEORasterDataset
 
 
+def is_rasterio_backed(ds: EEORasterDataset) -> bool:
+    """Return True if ``ds`` is backed by the rasterio adapter.
+
+    Detection is based on the adapter type, not the class of the backend
+    object. A rasterio-backed dataset's ``backend`` may be a
+    ``rasterio.io.DatasetReader`` (opened from a file) or a
+    ``rasterio.io.DatasetWriter`` (produced in memory by an operation, e.g.
+    the result of any algebra op or ``to_rasterio()``); both are valid
+    rasterio backends. Checking ``isinstance(backend, DatasetReader)`` misses
+    the writer case and wrongly rejects genuinely rasterio-backed datasets.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Dataset to inspect.
+
+    Returns
+    -------
+    bool
+        True if ``ds`` uses the rasterio adapter, False otherwise.
+    """
+    from eeo.core.adapters import RasterioAdapter
+
+    return isinstance(ds._adapter, RasterioAdapter)
+
+
 def normalize_resampling_method(value):
     """Function to normalize resampling method either user passes a rasterio.enums.Resampling or a string"""
     if isinstance(value, Resampling):

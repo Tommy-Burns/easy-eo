@@ -2,7 +2,7 @@ import pyproj
 import rasterio as rio
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
-from eeo.common import normalize_resampling_method
+from eeo.common import is_rasterio_backed, normalize_resampling_method
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 
@@ -50,8 +50,7 @@ def reproject_raster(
     >>> reprojected = ds.reproject_raster(target_crs=4326)
     """
     # Ensure reprojection for only rasterio-backend datasets
-    backend = ds._adapter.backend
-    if not isinstance(backend, rio.DatasetReader):
+    if not is_rasterio_backed(ds):
         raise TypeError("Reprojection is only allowed on rasterio backend rasters")
 
     # Normalize resampling method

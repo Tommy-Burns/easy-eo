@@ -4,12 +4,12 @@ import numpy as np
 import rasterio as rio
 from rasterio.merge import merge
 
-from eeo.common import normalize_resampling_method
+from eeo.common import is_rasterio_backed, normalize_resampling_method
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 
 
-@eeo_raster_op
+@eeo_raster_op(preserve_none=True)
 def mosaic(
     ds: EEORasterDataset,
     others: EEORasterDataset | Iterable[EEORasterDataset],
@@ -67,8 +67,7 @@ def mosaic(
     >>> mosaicked = ds.mosaic([ds_tile_2, ds_tile_3])
     """
     # Ensure mosaic for only rasterio-backend datasets
-    backend = ds._adapter.backend
-    if not isinstance(backend, rio.DatasetReader):
+    if not is_rasterio_backed(ds):
         raise TypeError("Mosaicking is only allowed on rasterio backend rasters")
 
     # normalize resampling
@@ -169,8 +168,7 @@ def stack(
     >>> rgb = ds_red.stack([ds_green, ds_blue])
     """
     # Ensure stack for only rasterio-backend datasets
-    backend = ds._adapter.backend
-    if not isinstance(backend, rio.DatasetReader):
+    if not is_rasterio_backed(ds):
         raise TypeError("Stacking is only allowed on rasterio backend rasters")
 
     # normalize inputs
