@@ -522,9 +522,10 @@ class EEORasterDataset:
 
     def mosaic(
         self,
-        others: list[EEORasterDataset],
+        others: EEORasterDataset | Iterable[EEORasterDataset],
         *,
         resampling_method: str = "nearest",
+        save_path: str | None = None,
         auto_reproject: bool = False,
         **kwargs,
     ) -> EEORasterDataset | None:
@@ -533,12 +534,13 @@ class EEORasterDataset:
 
         Parameters
         ----------
-        ds : EEORasterDataset
-            Base raster.
         others : EEORasterDataset or Iterable[EEORasterDataset]
             One or more rasters to mosaic with `ds`.
         resampling_method : str, optional
             Resampling method used during merge.
+        save_path : str or None, optional
+            If given, writes the mosaic to this path and returns None
+            instead of an EEORasterDataset.
         auto_reproject : bool, optional
             Reproject rasters to match `ds` CRS if needed.
         """
@@ -576,7 +578,6 @@ class EEORasterDataset:
         The raster can be cropped to the geometry bounds or masked while preserving
         the original extent. Supports advanced Rasterio masking options via keyword arguments.
 
-        :param ds: The EEORasterDataset object.
         :param vector_file: (GeoDataFrame or str)
             Vector geometries for clipping. If a string is provided, it must be a
             valid path to a vector file readable by GeoPandas.
@@ -600,24 +601,20 @@ class EEORasterDataset:
                 - cmap (str or Colormap)
                 - vmin, vmax (float)
                 - ax (matplotlib.axes.Axes)
-        :param **kwargs: Additional keyword arguments forwarded to rasterio.mask.mask,
-            excluding parameters already exposed explicitly (crop, pad, all_touched, invert, nodata).
 
-        :return: Union[None, EEORasterDataset]
-            Returns ``None`` if saved to disk, otherwise returns a new EEORasterDataset.
+        :return: EEORasterDataset
         """
         ...
 
     def clip_raster_with_bbox(
         self, bbox: tuple | list, plot_kwargs=None, show_preview: bool = False
-    ) -> None | EEORasterDataset:
+    ) -> EEORasterDataset:
         """
         Clip a raster using a bounding box.
 
         The raster will be subsetted to the specified bounding box. The bounding
         box must be in the same CRS as the raster.
 
-        :param ds: The EEORasterDataset object.
         :param bbox: (tuple or list)
             Bounding box coordinates as (minx, miny, maxx, maxy)..
         :param show_preview: (bool, default=False)
@@ -629,8 +626,7 @@ class EEORasterDataset:
                 - vmin, vmax (float)
                 - ax (matplotlib.axes.Axes)
 
-        :return: Union[None, EEORasterDataset]
-            Returns ``None`` if saved to disk, otherwise returns a new EEORasterDataset.
+        :return: EEORasterDataset
         """
         ...
 
@@ -788,7 +784,7 @@ class EEORasterDataset:
         bands: int | Sequence[int] | None = None,
         *,
         cmap: str = "gray",
-        figsize: tuple[int, int] = (8, 8),
+        figsize: tuple[int, int] = (10, 5),
         stretch: bool = False,
         pmin: float = 2,
         pmax: float = 98,
@@ -817,7 +813,7 @@ class EEORasterDataset:
         bands: int | Sequence[int] | None = None,
         *,
         bins: int = 256,
-        figsize: tuple[int, int] = (8, 8),
+        figsize: tuple[int, int] = (10, 5),
         log: bool = False,
         title: str | None = None,
         save_path: str | None = None,

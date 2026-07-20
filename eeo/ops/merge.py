@@ -15,10 +15,49 @@ def mosaic(
     others: EEORasterDataset | Iterable[EEORasterDataset],
     *,
     resampling_method: str = "nearest",
-    save_path: str = None,
+    save_path: str | None = None,
     auto_reproject: bool = False,
     **kwargs,
 ) -> EEORasterDataset | None:
+    """Mosaic one or more rasters into a single raster.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Base raster; also determines the target CRS.
+    others : EEORasterDataset or Iterable[EEORasterDataset]
+        One or more rasters to mosaic with ``ds``.
+    resampling_method : str or rasterio.enums.Resampling, default "nearest"
+        Resampling method used by ``rasterio.merge.merge`` where overlapping
+        pixels require resampling.
+    save_path : str or None, default None
+        If given, writes the mosaic to this path and returns None instead of
+        an ``EEORasterDataset``.
+    auto_reproject : bool, default False
+        If True, reproject any raster in ``others`` whose CRS differs from
+        ``ds`` before mosaicking. If False, a CRS mismatch raises
+        ``ValueError``.
+    **kwargs
+        Additional keyword arguments forwarded to ``rasterio.merge.merge``.
+
+    Returns
+    -------
+    EEORasterDataset or None
+        New rasterio-backed mosaic in the same dtype ``rasterio.merge.merge``
+        produces, or None if ``save_path`` was given.
+
+    Raises
+    ------
+    TypeError
+        If ``ds`` is not backed by rasterio.
+    ValueError
+        If ``others`` is empty, or a CRS mismatch is found and
+        ``auto_reproject=False``.
+
+    Examples
+    --------
+    >>> mosaicked = ds.mosaic([ds_tile_2, ds_tile_3])
+    """
     # Ensure mosaic for only rasterio-backend datasets
     backend = ds._adapter.backend
     if not isinstance(backend, rio.DatasetReader):
@@ -67,12 +106,14 @@ def mosaic(
     out_ds = memfile.open(**meta)
     out_ds.write(mosaic_data)
 
+    result = EEORasterDataset.from_rasterio(out_ds)
+
     # save or return EEORasterDataset
     if save_path is not None:
-        out_ds.save_raster(path=save_path)
+        result.save_raster(path=save_path)
         return None
 
-    return EEORasterDataset.from_rasterio(out_ds)
+    return result
 
 
 @eeo_raster_op

@@ -13,7 +13,7 @@ def clip_raster_with_vector(
     nodata: int | float | None = None,
     show_preview: bool = False,
     plot_kwargs: dict | None = None,
-) -> None | EEORasterDataset:
+) -> EEORasterDataset:
     """
     Clip a raster using vector geometries.
 
@@ -44,8 +44,6 @@ def clip_raster_with_vector(
             - cmap (str or Colormap)
             - vmin, vmax (float)
             - ax (matplotlib.axes.Axes)
-    :param **kwargs: Additional keyword arguments forwarded to rasterio.mask.mask,
-        excluding parameters already exposed explicitly (crop, pad, all_touched, invert, nodata).
 
     :return: EEORasterDataset
     """

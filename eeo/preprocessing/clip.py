@@ -78,8 +78,8 @@ def clip_raster_with_vector(
 
 @eeo_raster_op
 def clip_raster_with_bbox(
-    ds, bbox: tuple | list, plot_kwargs=None, show_preview: bool = False
-) -> "EEORasterDataset":
+    ds: EEORasterDataset, bbox: tuple | list, plot_kwargs=None, show_preview: bool = False
+) -> EEORasterDataset:
 
     # Ensure rasterio backend
     backend = ds._adapter.backend
