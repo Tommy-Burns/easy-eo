@@ -206,4 +206,3 @@ Summary
 - Visualization and saving are terminal operations
 - Raster data remains in memory until explicitly persisted
 - Low-level access remains available for advanced users
-

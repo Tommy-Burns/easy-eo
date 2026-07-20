@@ -290,4 +290,3 @@ All preprocessing operations are chainable and remain in memory until explicitly
        .reproject_raster(target_crs=4326)
        .save_raster("processed.tif")
    )
-

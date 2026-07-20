@@ -1,6 +1,6 @@
 # Contributing to Easy-EO
 
-Thank you for your interest in contributing to **Easy-EO** 🎉  
+Thank you for your interest in contributing to **Easy-EO** 🎉
 Contributions of all kinds are welcome and appreciated.
 
 Easy-EO aims to provide **high-level, chainable abstractions** over common

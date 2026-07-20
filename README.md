@@ -1,6 +1,6 @@
 # Easy-EO
 
-Easy-EO is a lightweight, extensible Python library for raster-based Earth Observation (EO) analysis which allows for chainable raster processing, algebra, and visualization. 
+Easy-EO is a lightweight, extensible Python library for raster-based Earth Observation (EO) analysis which allows for chainable raster processing, algebra, and visualization.
 It provides high-level abstractions over libraries such as Rasterio, NumPy, and Matplotlib, enabling users to perform common earth-observation analyses and visualization tasks efficiently, without dealing with the underlying complexity.
 ---
 
@@ -54,7 +54,7 @@ result = (
 👉 [Easy-EO Documentation](https://easy-eo.readthedocs.io/en/latest/index.html)
 
 ## Project Status
-🚧 Active development  
+🚧 Active development
 The API is stabilizing but may change before v1.0.
 
 ## Contributing
