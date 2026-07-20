@@ -14,6 +14,41 @@ def reproject_raster(
     target_crs: int | str | pyproj.CRS,
     resampling_method: Resampling = Resampling.nearest,
 ) -> EEORasterDataset:
+    """Reproject a raster to a new coordinate reference system.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Raster to reproject. Must be backed by rasterio.
+    target_crs : int or str or pyproj.CRS
+        Destination CRS as an EPSG code, a PROJ/WKT string, or a
+        ``pyproj.CRS``.
+    resampling_method : rasterio.enums.Resampling, default Resampling.nearest
+        Resampling method used to warp the pixels. Defaults to nearest
+        neighbour so categorical values and nodata edges are not blended.
+
+    Returns
+    -------
+    EEORasterDataset
+        New rasterio-backed dataset in ``target_crs``, in the same dtype as
+        ``ds``, with a recomputed transform, width, and height; the nodata
+        value is carried over unchanged.
+
+    Raises
+    ------
+    TypeError
+        If ``ds`` is not backed by rasterio, or ``target_crs`` cannot be
+        interpreted as a CRS.
+
+    Notes
+    -----
+    Reads the full raster into memory and warps it band-by-band with
+    ``rasterio.warp.reproject``.
+
+    Examples
+    --------
+    >>> reprojected = ds.reproject_raster(target_crs=4326)
+    """
     # Ensure reprojection for only rasterio-backend datasets
     backend = ds._adapter.backend
     if not isinstance(backend, rio.DatasetReader):

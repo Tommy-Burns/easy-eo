@@ -22,6 +22,61 @@ def clip_raster_with_vector(
     show_preview: bool = False,
     plot_kwargs: dict | None = None,
 ) -> EEORasterDataset:
+    """Clip a raster to vector geometries.
+
+    Pixels outside the geometries are dropped (``crop=True``) or set to
+    nodata (``crop=False``). The vector is reprojected to the raster's CRS
+    when needed.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Raster to clip. Must be backed by rasterio.
+    vector_file : geopandas.GeoDataFrame or str
+        Clip geometries, either a GeoDataFrame or a path to a vector file
+        readable by GeoPandas.
+    crop : bool, default True
+        If True, crop the output to the geometries' bounding box; if False,
+        keep the raster extent and set outside pixels to nodata.
+    pad : bool, default False
+        If True, pad the crop by half a pixel on each side.
+    all_touched : bool, default False
+        If True, include every pixel touched by the geometries; if False,
+        include only pixels whose centre falls inside.
+    invert : bool, default False
+        If True, mask pixels inside the geometries instead of outside.
+    nodata : int or float or None, default None
+        Fill value for masked pixels. If None, the raster's existing nodata
+        value is used.
+    show_preview : bool, default False
+        If True, plot the clipped raster before returning.
+    plot_kwargs : dict or None, default None
+        Keyword arguments forwarded to ``plot_raster`` when
+        ``show_preview=True``.
+
+    Returns
+    -------
+    EEORasterDataset
+        New rasterio-backed dataset covering the clipped area, in the same
+        dtype as ``ds``, carrying ``nodata`` (or the raster's existing nodata
+        value) in its metadata.
+
+    Raises
+    ------
+    TypeError
+        If ``ds`` is not backed by rasterio, or ``vector_file`` is neither a
+        GeoDataFrame nor a valid file path.
+
+    Notes
+    -----
+    Reads the clipped region into memory via ``rasterio.mask.mask``.
+
+    Examples
+    --------
+    >>> import geopandas as gpd
+    >>> boundary = gpd.read_file("aoi.geojson")
+    >>> clipped = ds.clip_raster_with_vector(boundary)
+    """
     # Ensure clipping for only rasterio-backend datasets
     backend = ds._adapter.backend
     if not isinstance(backend, rio.DatasetReader):
@@ -80,7 +135,42 @@ def clip_raster_with_vector(
 def clip_raster_with_bbox(
     ds: EEORasterDataset, bbox: tuple | list, plot_kwargs=None, show_preview: bool = False
 ) -> EEORasterDataset:
+    """Clip a raster to a bounding box.
 
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Raster to clip. Must be backed by rasterio.
+    bbox : tuple or list
+        Bounding box as ``(minx, miny, maxx, maxy)`` in the raster's CRS
+        units.
+    plot_kwargs : dict or None, default None
+        Keyword arguments forwarded to ``plot_raster`` when
+        ``show_preview=True``.
+    show_preview : bool, default False
+        If True, plot the clipped raster before returning.
+
+    Returns
+    -------
+    EEORasterDataset
+        New rasterio-backed dataset covering the bounding box, in the same
+        dtype as ``ds``, carrying its nodata value unchanged.
+
+    Raises
+    ------
+    TypeError
+        If ``ds`` is not backed by rasterio.
+    ValueError
+        If ``bbox`` is not four values, or does not intersect the raster.
+
+    Notes
+    -----
+    Reads only the windowed region into memory, not the whole raster.
+
+    Examples
+    --------
+    >>> clipped = ds.clip_raster_with_bbox((500000, 4100000, 510000, 4110000))
+    """
     # Ensure rasterio backend
     backend = ds._adapter.backend
     if not isinstance(backend, rio.DatasetReader):
