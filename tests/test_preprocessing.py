@@ -55,6 +55,18 @@ def test_normalize_percentile(single_band_float32):
     assert np.max(data) == 1.0
 
 
+def test_normalize_percentile_default_is_2_98(single_band_float32):
+    # Regression test for the (2, 98) default (CODE_STYLE.md convention);
+    # a prior (0.0, 1.0) default silently normalized against the 0th-1st
+    # percentile range instead, clipping nearly everything to 1.0.
+    default_result = normalize_percentile(single_band_float32).read()
+    explicit_result = normalize_percentile(
+        single_band_float32, lower_percentile=2, upper_percentile=98
+    ).read()
+
+    np.testing.assert_array_equal(default_result, explicit_result)
+
+
 # ---------------------------------------------------------------------
 # Resample
 # ---------------------------------------------------------------------

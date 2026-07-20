@@ -676,9 +676,9 @@ class EEORasterDataset:
 
         Parameters
         ----------
-        lower_percentile : int | float, default=0.0
+        lower_percentile : int | float, default=2
             Lower percentile threshold (0–100).
-        upper_percentile : int | float, default=1.0
+        upper_percentile : int | float, default=98
             Upper percentile threshold (0–100).
 
         Returns
