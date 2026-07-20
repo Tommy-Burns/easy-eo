@@ -1,0 +1,7 @@
+# Funnel bug/feature reports through the structured forms above; send
+# open-ended questions to Discussions.
+blank_issues_enabled: false
+contact_links:
+  - name: Question or usage help
+    url: https://github.com/Tommy-Burns/easy-eo/discussions
+    about: Ask how to do something, share a workflow, or start a general discussion.

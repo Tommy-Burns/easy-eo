@@ -1,0 +1,73 @@
+name: Bug report
+description: Report incorrect behavior, a crash, or a result that disagrees with the docs.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please fill in the sections
+        below so we can reproduce and fix it quickly.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the bug and what you expected instead.
+      placeholder: |
+        `ds.add(1).clip_raster_with_bbox(...)` raised an error, but I expected a clipped dataset.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal reproducer
+      description: >-
+        A small, self-contained snippet that triggers the bug. Prefer synthetic
+        data (`eeo.load_array(...)`) over files we cannot access.
+      render: python
+      placeholder: |
+        import numpy as np
+        import eeo
+
+        ds = eeo.load_array(np.ones((64, 64), dtype="float32"), crs=4326)
+        ds.add(1).some_operation()  # -> error
+    validations:
+      required: true
+
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Full traceback / error output
+      description: Paste the complete error message and traceback, if any.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >-
+        Call `eeo.show_versions()` and paste its output here.
+      render: text
+      placeholder: |
+        OS:
+        Python:
+        easy-eo:
+        rasterio / GDAL:
+        numpy:
+        geopandas:
+        matplotlib:
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am using a supported Python version (3.10+).
+          required: true
