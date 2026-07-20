@@ -41,7 +41,8 @@ class NumpyRasterioAdapter(BaseRasterAdapter):
         return rio.transform.array_bounds(h, w, self._transform)
 
     def get_shape(self) -> tuple[int, int]:
-        return self._array.shape[-2:]
+        h, w = self._array.shape[-2:]
+        return h, w
 
     def get_width(self) -> int:
         return self.get_shape()[1]

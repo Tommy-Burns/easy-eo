@@ -101,8 +101,9 @@ def resample(
         new_width = int(ds.get_width() * scale_factor)
         new_height = int(ds.get_height() * scale_factor)
 
-    # --- When size is provided ---
+    # --- When resolution is provided ---
     else:
+        assert resolution is not None  # guaranteed by the exactly-one check above
         xres, yres = resolution
         bounds = ds.get_bounds()
 

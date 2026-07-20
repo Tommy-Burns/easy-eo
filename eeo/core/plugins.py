@@ -10,6 +10,8 @@ def load_ops():
     """
     for pkg_name in ("eeo.ops", "eeo.analysis", "eeo.preprocessing", "eeo.viz"):
         pkg = importlib.import_module(pkg_name)
+        if pkg.__file__ is None:  # namespace package without a concrete path
+            continue
         pkg_path = Path(pkg.__file__).parent
 
         for module in pkgutil.iter_modules([str(pkg_path)]):

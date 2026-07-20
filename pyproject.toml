@@ -111,3 +111,31 @@ known-first-party = ["eeo"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+# ---------------------
+# mypy (type checking)
+# ---------------------
+[tool.mypy]
+python_version = "3.10"
+files = ["eeo"]
+namespace_packages = true
+explicit_package_bases = true
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+# The geospatial stack ships no type information (no py.typed, no stub
+# packages), so mypy cannot analyze it. Suppress the resulting
+# import-untyped noise rather than annotating third-party internals.
+[[tool.mypy.overrides]]
+module = [
+    "rasterio",
+    "rasterio.*",
+    "geopandas",
+    "affine",
+    "pyproj",
+    "pyproj.*",
+]
+ignore_missing_imports = true

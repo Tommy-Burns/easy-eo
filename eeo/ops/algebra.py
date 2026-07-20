@@ -293,11 +293,12 @@ def divide(
                 raise ValueError(
                     "Rasters must have the same shape and alignment for arithmetic operations"
                 )
-        other_data = other.read()
+        other_data: np.ndarray | float | int = other.read()
     else:
         other_data = other
 
     # ---- SAFE DIVIDE ----
+    data: np.ndarray
     if safe:
         if np.isscalar(other_data):
             if other_data == 0:
