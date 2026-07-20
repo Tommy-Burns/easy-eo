@@ -85,7 +85,9 @@ def mosaic(
     for obj in others:
         if obj.get_crs() != target_crs:
             if auto_reproject:
-                obj = obj.reproject_raster(target_crs)
+                # target_crs is a rasterio CRS; reproject_raster takes its
+                # keyword-only target_crs as int/str/pyproj.CRS, so WKT is passed here rather.
+                obj = obj.reproject_raster(target_crs=target_crs.to_wkt())
             else:
                 raise ValueError(
                     "All rasters must have the same CRS for mosaicking. "
