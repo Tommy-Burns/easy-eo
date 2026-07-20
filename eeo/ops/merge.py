@@ -43,8 +43,10 @@ def mosaic(
     Returns
     -------
     EEORasterDataset or None
-        New rasterio-backed mosaic in the same dtype ``rasterio.merge.merge``
-        produces, or None if ``save_path`` was given.
+        New rasterio-backed mosaic in the dtype ``rasterio.merge.merge``
+        produces (the inputs' common dtype), carrying ``ds``'s nodata value;
+        or None if ``save_path`` was given. Overlapping nodata pixels are
+        filled from other tiles where possible.
 
     Raises
     ------
@@ -53,6 +55,12 @@ def mosaic(
     ValueError
         If ``others`` is empty, or a CRS mismatch is found and
         ``auto_reproject=False``.
+
+    Notes
+    -----
+    Loads every input tile into memory via ``rasterio.merge.merge`` rather
+    than streaming block-wise. With ``save_path`` the mosaic is written to
+    disk as a side effect and None is returned.
 
     Examples
     --------
@@ -121,6 +129,45 @@ def stack(
     ds: EEORasterDataset,
     others: EEORasterDataset | Iterable[EEORasterDataset],
 ) -> EEORasterDataset:
+    """Stack rasters band-wise into a single multi-band raster.
+
+    The bands of ``ds`` come first, followed by the bands of each dataset in
+    ``others`` in order. All inputs must already share the same CRS,
+    transform, and shape (no auto-alignment); this is spectral stacking, kept
+    deliberately distinct from temporal stacking.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Base raster; its bands lead the output.
+    others : EEORasterDataset or Iterable[EEORasterDataset]
+        One or more rasters whose bands are appended, in order.
+
+    Returns
+    -------
+    EEORasterDataset
+        New rasterio-backed dataset whose band count is the sum of all inputs'
+        band counts, in the common dtype ``numpy.vstack`` promotes to, carrying
+        ``ds``'s nodata value.
+
+    Raises
+    ------
+    TypeError
+        If ``ds`` is not backed by rasterio.
+    ValueError
+        If ``others`` is empty, or any input's CRS, transform, or shape
+        differs from ``ds``.
+
+    Notes
+    -----
+    Reads every input fully into memory rather than streaming block-wise.
+    Nodata pixels are carried through as ordinary values; the nodata value in
+    the metadata is preserved.
+
+    Examples
+    --------
+    >>> rgb = ds_red.stack([ds_green, ds_blue])
+    """
     # Ensure stack for only rasterio-backend datasets
     backend = ds._adapter.backend
     if not isinstance(backend, rio.DatasetReader):
