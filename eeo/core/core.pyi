@@ -727,25 +727,24 @@ class EEORasterDataset:
         show_preview: bool = False,
     ) -> EEORasterDataset:
         """
-        Resample a raster to a different resolution using a scaling factor
+        Resample a raster to a new size, scale, or resolution.
 
-        :param ds: The EEORasterDataset object.
         :param size: tuple[int, int]. Output pixel dimensions.
         :param scale_factor: float. Uniform scale factor (e.g. 0.5 halves the resolution).
         :param resolution: tuple[float, float]. Output spatial resolution (xres, yres) in CRS units.
         :param resampling_method: ``rasterio.enums.Resampling`` | Literal
-            The resampling method used during reprojection. May be either a
+            The resampling method used during resampling. May be either a
             `Resampling` enum value or one of the following string literals:
             ``"nearest", "bilinear", "cubic", "cubic_spline", "lanczos", "average",
             "mode", "max", "min", "med", "q1", "q3"``.
             Default is ``nearest``.
-        :param show_preview: (str, optional): Raster driver to use when saving. Defaults to "GTiff".
         :param plot_kwargs: Additional keyword arguments passed to rasterio.plot.show.
             Common options include:
                 - title (str): Title of the plot.
                 - cmap (str or Colormap): Colormap to use.
                 - vmin, vmax (float): Value range for display.
                 - ax (matplotlib.axes.Axes): Axes to plot on.
+        :param show_preview: bool, optional. If True, show a preview of the resampled raster. Defaults to False.
         :return: EEORasterDataset
         """
         ...

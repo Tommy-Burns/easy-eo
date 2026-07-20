@@ -1,9 +1,11 @@
 import rasterio as rio
+from rasterio.enums import Resampling
 from rasterio.transform import Affine
 
 from eeo.common import normalize_resampling_method
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+from eeo.core.types import ResamplingMethod
 
 
 @eeo_raster_op
@@ -13,10 +15,74 @@ def resample(
     size: tuple[int, int] | None = None,
     scale_factor: float | None = None,
     resolution: tuple[float, float] | None = None,
-    resampling_method: str = "bilinear",
+    resampling_method: Resampling | ResamplingMethod = "nearest",
     plot_kwargs=None,
     show_preview: bool = False,
 ) -> EEORasterDataset:
+    """Resample a raster to a new size, scale, or resolution.
+
+    Exactly one of ``size``, ``scale_factor``, or ``resolution`` must be
+    given. NumPy-backed datasets are promoted to the rasterio backend
+    automatically, since resampling requires rasterio's decimated reads.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Input raster dataset.
+    size : tuple[int, int] or None, default None
+        Output shape as ``(height, width)`` in pixels.
+    scale_factor : float or None, default None
+        Uniform scale factor applied to both dimensions (e.g. 0.5 halves
+        the resolution, 2.0 doubles it).
+    resolution : tuple[float, float] or None, default None
+        Target pixel resolution as ``(xres, yres)`` in the raster's CRS
+        units.
+    resampling_method : str or rasterio.enums.Resampling, default "nearest"
+        One of ``"nearest"``, ``"bilinear"``, ``"cubic"``,
+        ``"cubic_spline"``, ``"lanczos"``, ``"average"``, ``"mode"``,
+        ``"max"``, ``"min"``, ``"med"``, ``"q1"``, ``"q3"``, or a
+        ``rasterio.enums.Resampling`` value. Defaults to ``"nearest"`` so
+        categorical values and nodata edges are not blended; pick
+        ``"bilinear"`` or a higher-order method for continuous data.
+    plot_kwargs : dict or None, default None
+        Keyword arguments forwarded to ``plot_raster`` when
+        ``show_preview=True``.
+    show_preview : bool, default False
+        If True, plot the resampled raster after resampling.
+
+    Returns
+    -------
+    EEORasterDataset
+        New rasterio-backed dataset at the requested size/scale/resolution,
+        in the same dtype as the input. The nodata value is carried over
+        unchanged in the output metadata.
+
+    Raises
+    ------
+    ValueError
+        If zero or more than one of ``size``, ``scale_factor``, and
+        ``resolution`` is given.
+    RuntimeError
+        If resampling fails for any other reason (wraps the underlying
+        error).
+
+    Notes
+    -----
+    Resamples via rasterio's decimated read (``out_shape``); the full
+    output array is read into memory in a single call, not block-wise.
+
+    Examples
+    --------
+    >>> from affine import Affine
+    >>> ds = load_array(
+    ...     np.zeros((100, 100), dtype=np.float32),
+    ...     crs=4326,
+    ...     transform=Affine.identity(),
+    ... )
+    >>> resampled = ds.resample(scale_factor=0.5)
+    >>> resampled.get_shape()
+    (50, 50)
+    """
     params = [size, scale_factor, resolution]
     if sum(p is not None for p in params) != 1:
         raise ValueError("Provide exactly one of: size=, scale_factor=, resolution=")

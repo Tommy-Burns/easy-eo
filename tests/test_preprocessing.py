@@ -81,3 +81,16 @@ def test_resample_with_scale_factor(single_band_float32):
 def test_resample_invalid_params(single_band_float32):
     with pytest.raises(ValueError):
         resample(single_band_float32, size=(2, 2), scale_factor=2.0)
+
+
+def test_resample_default_is_nearest(single_band_float32):
+    # Regression test for the "nearest" default (CLAUDE.md known issue #3;
+    # matches reproject_raster's default). Nearest-neighbor resampling only
+    # ever copies existing source values; a prior "bilinear" default would
+    # interpolate new in-between values on this gradient raster.
+    resampled = resample(single_band_float32, scale_factor=2.0)
+
+    original_values = set(single_band_float32.read().ravel().tolist())
+    resampled_values = set(resampled.read().ravel().tolist())
+
+    assert resampled_values <= original_values
