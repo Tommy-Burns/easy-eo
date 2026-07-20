@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Sequence
-import rasterio.plot as rioplot
+from collections.abc import Sequence
+
 import matplotlib.pyplot as plt
 import numpy as np
-from IPython.core.pylabtools import figsize
+import rasterio.plot as rioplot
 
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_viz
@@ -12,41 +12,37 @@ from eeo.core.decorators import eeo_raster_viz
 
 # Visualization helper functions
 def _as_list(obj):
-    """
-        Normalize an object to a list.
+    """Wrap a single object in a list, passing lists and tuples through.
 
-        If the input is already a list or tuple, it is returned unchanged.
-        Otherwise, the input is wrapped in a single-element list.
+    Parameters
+    ----------
+    obj : object
+        A single object, or a list/tuple of objects.
 
-        This helper allows public APIs to accept either a single object
-        or multiple objects without additional branching logic.
-
-        :param obj: Any object or a list/tuple of objects.
-        :return: A list containing the input object(s).
-        :rtype: list
+    Returns
+    -------
+    list or tuple
+        ``obj`` unchanged when it is already a list or tuple, otherwise a
+        one-element list ``[obj]``.
     """
     return obj if isinstance(obj, (list, tuple)) else [obj]
 
 
 def _normalize_bands(ds: EEORasterDataset, bands):
-    """
-        Normalize band selection into a list of band indices.
+    """Resolve a band selection to a list of 1-based band indices.
 
-        This helper ensures that band inputs are consistently represented
-        as a list of 1-based band indices, regardless of how the user
-        specifies them.
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Dataset whose band count is used when ``bands`` is None.
+    bands : int or sequence of int or None
+        None selects every band; an int selects a single band; a sequence
+        selects the listed bands.
 
-        Accepted inputs:
-        - None: selects all bands
-        - int: selects a single band
-        - iterable of int: selects multiple bands
-
-        :param ds: Raster dataset used to determine band count.
-        :type ds: EEORasterDataset
-        :param bands: Band selection input.
-        :type bands: int or sequence of int or None
-        :return: List of 1-based band indices.
-        :rtype: list[int]
+    Returns
+    -------
+    list of int
+        1-based band indices.
     """
     if bands is None:
         return list(range(1, ds.get_count() + 1))
@@ -56,20 +52,26 @@ def _normalize_bands(ds: EEORasterDataset, bands):
 
 
 def _percentile_stretch(array, pmin=2, pmax=98):
-    """
-        Apply percentile-based contrast stretching to an array.
+    """Rescale an array to [0, 1] using percentile clipping.
 
-        This function rescales values in the input array to the range [0, 1]
-        using lower and upper percentiles, improving visual contrast while
-        suppressing extreme outliers.
+    Values outside the ``pmin``-``pmax`` percentile range are clipped and the
+    remaining range is scaled to [0, 1], improving display contrast while
+    suppressing outliers. A constant array maps to all zeros.
 
-        NaN values are ignored during percentile computation.
+    Parameters
+    ----------
+    array : numpy.ndarray
+        Input array (e.g. a raster band).
+    pmin : float, default 2
+        Lower percentile.
+    pmax : float, default 98
+        Upper percentile.
 
-        :param arr: Input array (e.g., raster band).
-        :param pmin: Lower percentile (default: 2).
-        :param pmax: Upper percentile (default: 98).
-        :return: Stretched array with values clipped to [0, 1].
-        :rtype: numpy.ndarray
+    Returns
+    -------
+    numpy.ndarray
+        Array clipped and scaled to [0, 1]. NaNs are ignored when computing
+        the percentiles.
     """
     low, high = np.nanpercentile(array, (pmin, pmax))
     if high - low == 0:
@@ -80,27 +82,66 @@ def _percentile_stretch(array, pmin=2, pmax=98):
 # Plot band as NumPy array
 @eeo_raster_viz
 def plot_band_array(
-        ds: EEORasterDataset | list[EEORasterDataset],
-        bands: int | Sequence[int] | None = None,
-        *,
-        cmap: str = "gray",
-        figsize: tuple[int, int] = (8, 8),
-        stretch: bool = False,
-        pmin: float = 2,
-        pmax: float = 98,
-        title: str | None = None,
-        save_path: str | None = None,
-        **imshow_kwargs
+    ds: EEORasterDataset | list[EEORasterDataset],
+    bands: int | Sequence[int] | None = None,
+    *,
+    cmap: str = "gray",
+    figsize: tuple[int, int] = (8, 8),
+    stretch: bool = False,
+    pmin: float = 2,
+    pmax: float = 98,
+    title: str | None = None,
+    save_path: str | None = None,
+    **imshow_kwargs,
 ) -> None:
+    """Plot raster bands as arrays in row/column (pixel) space.
+
+    Draws one subplot per band, with bands down the rows and datasets across
+    the columns. Axes are array indices, not spatial coordinates; use
+    ``plot_raster`` for CRS-aware axes.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset or list of EEORasterDataset
+        One dataset, or several to display side by side.
+    bands : int or sequence of int or None, default None
+        1-based band(s) to plot; None plots every band.
+    cmap : str, default "gray"
+        Matplotlib colormap.
+    figsize : tuple of int, default (8, 8)
+        Figure size in inches.
+    stretch : bool, default False
+        If True, apply percentile contrast stretching to each band.
+    pmin : float, default 2
+        Lower percentile for the stretch (used only when ``stretch=True``).
+    pmax : float, default 98
+        Upper percentile for the stretch (used only when ``stretch=True``).
+    title : str or None, default None
+        Optional figure title.
+    save_path : str or None, default None
+        If given, save the figure to this path at 300 dpi.
+    **imshow_kwargs
+        Extra keyword arguments forwarded to ``matplotlib.pyplot.imshow``.
+
+    Returns
+    -------
+    None
+        Terminal operation; displays (and optionally saves) a figure.
+
+    Notes
+    -----
+    Reads each band at full resolution into memory. Displays the figure with
+    ``matplotlib.pyplot.show`` and, when ``save_path`` is given, writes it to
+    disk as a side effect.
+
+    Examples
+    --------
+    >>> ds.plot_band_array(bands=[1, 2, 3], stretch=True)
+    """
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
 
-    fig, axes = plt.subplots(
-        len(bands_list),
-        len(datasets),
-        squeeze=False,
-        figsize=figsize
-    )
+    fig, axes = plt.subplots(len(bands_list), len(datasets), squeeze=False, figsize=figsize)
 
     for col, d in enumerate(datasets):
         for row, band in enumerate(bands_list):
@@ -118,7 +159,7 @@ def plot_band_array(
     plt.tight_layout()
 
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.show()
     plt.close()
 
@@ -126,27 +167,66 @@ def plot_band_array(
 # Plot raster in spatial coordinates
 @eeo_raster_viz
 def plot_raster(
-        ds: EEORasterDataset | list[EEORasterDataset],
-        bands: int | Sequence[int] | None = None,
-        *,
-        cmap: str = "gray",
-        figsize: tuple[int, int] = (10, 5),
-        stretch: bool = False,
-        pmin: float = 2,
-        pmax: float = 98,
-        title: str | None = None,
-        save_path: str | None = None,
-        **show_kwargs
+    ds: EEORasterDataset | list[EEORasterDataset],
+    bands: int | Sequence[int] | None = None,
+    *,
+    cmap: str = "gray",
+    figsize: tuple[int, int] = (10, 5),
+    stretch: bool = False,
+    pmin: float = 2,
+    pmax: float = 98,
+    title: str | None = None,
+    save_path: str | None = None,
+    **show_kwargs,
 ) -> None:
+    """Plot raster bands in spatial (CRS-aware) coordinates.
+
+    Draws one subplot per band using the raster's transform, with bands down
+    the rows and datasets across the columns. Use ``plot_band_array`` for
+    plain array-index axes.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset or list of EEORasterDataset
+        One dataset, or several to display side by side.
+    bands : int or sequence of int or None, default None
+        1-based band(s) to plot; None plots every band.
+    cmap : str, default "gray"
+        Matplotlib colormap.
+    figsize : tuple of int, default (10, 5)
+        Figure size in inches.
+    stretch : bool, default False
+        If True, apply percentile contrast stretching to each band.
+    pmin : float, default 2
+        Lower percentile for the stretch (used only when ``stretch=True``).
+    pmax : float, default 98
+        Upper percentile for the stretch (used only when ``stretch=True``).
+    title : str or None, default None
+        Optional figure title.
+    save_path : str or None, default None
+        If given, save the figure to this path at 300 dpi.
+    **show_kwargs
+        Extra keyword arguments forwarded to ``rasterio.plot.show``.
+
+    Returns
+    -------
+    None
+        Terminal operation; displays (and optionally saves) a figure.
+
+    Notes
+    -----
+    Reads each band at full resolution into memory. Displays the figure with
+    ``matplotlib.pyplot.show`` and, when ``save_path`` is given, writes it to
+    disk as a side effect.
+
+    Examples
+    --------
+    >>> ds.plot_raster(bands=1, stretch=True)
+    """
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
 
-    fig, axes = plt.subplots(
-        len(bands_list),
-        len(datasets),
-        squeeze=False,
-        figsize=figsize
-    )
+    fig, axes = plt.subplots(len(bands_list), len(datasets), squeeze=False, figsize=figsize)
 
     for col, d in enumerate(datasets):
         for row, band in enumerate(bands_list):
@@ -162,7 +242,7 @@ def plot_raster(
 
     plt.tight_layout()
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.show()
     plt.close()
 
@@ -170,25 +250,59 @@ def plot_raster(
 # Plot histogram
 @eeo_raster_viz
 def plot_histogram(
-        ds: EEORasterDataset | list[EEORasterDataset],
-        bands: int | Sequence[int] | None = None,
-        *,
-        bins: int = 256,
-        figsize: tuple[int, int] = (10, 5),
-        log: bool = False,
-        title: str | None = None,
-        save_path: str | None = None,
-        **hist_kwargs
+    ds: EEORasterDataset | list[EEORasterDataset],
+    bands: int | Sequence[int] | None = None,
+    *,
+    bins: int = 256,
+    figsize: tuple[int, int] = (10, 5),
+    log: bool = False,
+    title: str | None = None,
+    save_path: str | None = None,
+    **hist_kwargs,
 ) -> None:
+    """Plot per-band value histograms.
+
+    Draws one histogram per band, with bands down the rows and datasets
+    across the columns.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset or list of EEORasterDataset
+        One dataset, or several to compare side by side.
+    bands : int or sequence of int or None, default None
+        1-based band(s) to plot; None plots every band.
+    bins : int, default 256
+        Number of histogram bins.
+    figsize : tuple of int, default (10, 5)
+        Figure size in inches.
+    log : bool, default False
+        If True, use a logarithmic y-axis.
+    title : str or None, default None
+        Optional figure title.
+    save_path : str or None, default None
+        If given, save the figure to this path at 300 dpi.
+    **hist_kwargs
+        Extra keyword arguments forwarded to ``matplotlib.pyplot.hist``.
+
+    Returns
+    -------
+    None
+        Terminal operation; displays (and optionally saves) a figure.
+
+    Notes
+    -----
+    Reads each band at full resolution into memory; nodata pixels are counted
+    as ordinary values. Displays the figure with ``matplotlib.pyplot.show``
+    and, when ``save_path`` is given, writes it to disk as a side effect.
+
+    Examples
+    --------
+    >>> ds.plot_histogram(log=True)
+    """
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
 
-    fig, axes = plt.subplots(
-        len(bands_list),
-        len(datasets),
-        squeeze=False,
-        figsize=figsize
-    )
+    fig, axes = plt.subplots(len(bands_list), len(datasets), squeeze=False, figsize=figsize)
 
     for col, d in enumerate(datasets):
         for row, band in enumerate(bands_list):
@@ -204,7 +318,7 @@ def plot_histogram(
 
     plt.tight_layout()
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.show()
     plt.close()
 
@@ -212,19 +326,64 @@ def plot_histogram(
 # Plot raster and histogram side-by-side
 @eeo_raster_viz
 def plot_raster_with_histogram(
-        ds: EEORasterDataset,
-        bands: int | Sequence[int] | None = None,
-        *,
-        cmap: str = "gray",
-        figsize: tuple[int, int] = (10, 5),
-        bins: int = 256,
-        pmin: float = 2,
-        pmax: float = 98,
-        stretch: bool = False,
-        sharey: bool = False,
-        save_path: str | None = None,
-        title: str | None = None
+    ds: EEORasterDataset,
+    bands: int | Sequence[int] | None = None,
+    *,
+    cmap: str = "gray",
+    figsize: tuple[int, int] = (10, 5),
+    bins: int = 256,
+    pmin: float = 2,
+    pmax: float = 98,
+    stretch: bool = False,
+    sharey: bool = False,
+    save_path: str | None = None,
+    title: str | None = None,
 ) -> None:
+    """Plot each band alongside its value histogram.
+
+    For every selected band, draws the raster (in spatial coordinates) and
+    its histogram side by side on one row.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Raster dataset to display.
+    bands : int or sequence of int or None, default None
+        1-based band(s) to plot; None plots every band.
+    cmap : str, default "gray"
+        Matplotlib colormap for the raster panel.
+    figsize : tuple of int, default (10, 5)
+        Figure size in inches.
+    bins : int, default 256
+        Number of histogram bins.
+    pmin : float, default 2
+        Lower percentile for the stretch (used only when ``stretch=True``).
+    pmax : float, default 98
+        Upper percentile for the stretch (used only when ``stretch=True``).
+    stretch : bool, default False
+        If True, apply percentile contrast stretching to the raster panel.
+    sharey : bool, default False
+        If True, share the y-axis across the histogram panels.
+    save_path : str or None, default None
+        If given, save the figure to this path at 300 dpi.
+    title : str or None, default None
+        Optional figure title.
+
+    Returns
+    -------
+    None
+        Terminal operation; displays (and optionally saves) a figure.
+
+    Notes
+    -----
+    Reads each band at full resolution into memory. Displays the figure with
+    ``matplotlib.pyplot.show`` and, when ``save_path`` is given, writes it to
+    disk as a side effect.
+
+    Examples
+    --------
+    >>> ds.plot_raster_with_histogram(bands=[1, 2])
+    """
     bands_list = _normalize_bands(ds, bands)
 
     fig, axes = plt.subplots(len(bands_list), 2, squeeze=False, sharey=sharey, figsize=figsize)
@@ -245,7 +404,7 @@ def plot_raster_with_histogram(
 
     plt.tight_layout()
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.show()
     plt.close()
 
@@ -253,16 +412,57 @@ def plot_raster_with_histogram(
 # Plot composites
 @eeo_raster_viz
 def plot_composite(
-        ds: EEORasterDataset,
-        bands: tuple[int, int, int],
-        *,
-        stretch: bool = False,
-        figsize: tuple[int, int] = (8, 8),
-        pmin: float = 2,
-        pmax: float = 98,
-        title: str | None = None,
-        save_path: str | None = None,
+    ds: EEORasterDataset,
+    bands: tuple[int, int, int],
+    *,
+    stretch: bool = False,
+    figsize: tuple[int, int] = (8, 8),
+    pmin: float = 2,
+    pmax: float = 98,
+    title: str | None = None,
+    save_path: str | None = None,
 ) -> None:
+    """Plot a three-band RGB (or false-colour) composite.
+
+    Stacks the three requested bands into an RGB image, in the order given
+    (first band -> red, second -> green, third -> blue).
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Raster dataset to display.
+    bands : tuple of int
+        Exactly three 1-based band indices, mapped to R, G, B in order.
+    stretch : bool, default False
+        If True, apply percentile contrast stretching to each channel.
+    figsize : tuple of int, default (8, 8)
+        Figure size in inches.
+    pmin : float, default 2
+        Lower percentile for the stretch (used only when ``stretch=True``).
+    pmax : float, default 98
+        Upper percentile for the stretch (used only when ``stretch=True``).
+    title : str or None, default None
+        Optional figure title.
+    save_path : str or None, default None
+        If given, save the figure to this path at 300 dpi.
+
+    Returns
+    -------
+    None
+        Terminal operation; displays (and optionally saves) a figure.
+
+    Notes
+    -----
+    Reads the three bands at full resolution into memory. Percentile
+    stretching writes the scaled values back into the composite's own dtype,
+    so stretch a floating-dtype raster to avoid truncating them. Displays the
+    figure with ``matplotlib.pyplot.show`` and, when ``save_path`` is given,
+    writes it to disk as a side effect.
+
+    Examples
+    --------
+    >>> ds.plot_composite(bands=(3, 2, 1))
+    """
     composite = np.stack([ds.get_band(b) for b in bands], axis=-1)
 
     if stretch:
@@ -271,14 +471,14 @@ def plot_composite(
 
     plt.figure(figsize=figsize)
     plt.imshow(composite)
-    plt.axis('off')
+    plt.axis("off")
 
     if title:
         plt.title(title)
 
     plt.tight_layout()
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
     plt.show()
     plt.close()

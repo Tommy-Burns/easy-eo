@@ -97,9 +97,11 @@ Chaining Example
 
 .. code-block:: python
 
-       data = ds.clip_raster_with_bbox(bbox)
-                .normalize_percentile()
-                .get_maximum_pixel()
+       data = (
+           ds.clip_raster_with_bbox(bbox)
+           .normalize_percentile()
+           .get_maximum_pixel()
+       )
 
 -------------------------------------
 

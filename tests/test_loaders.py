@@ -4,7 +4,7 @@ import rasterio as rio
 from affine import Affine
 from rasterio.crs import CRS
 
-from eeo import load_raster, load_array
+from eeo import load_array, load_raster
 from eeo.core.core import EEORasterDataset
 
 
@@ -15,6 +15,7 @@ def test_load_raster_file_not_found(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_raster(str(missing))
 
+
 # Invalid raster file (exists but not a raster)
 def test_load_raster_invalid_file(tmp_path):
     bad_file = tmp_path / "not_a_raster.txt"
@@ -22,6 +23,7 @@ def test_load_raster_invalid_file(tmp_path):
 
     with pytest.raises(RuntimeError, match="could not be opened"):
         load_raster(str(bad_file))
+
 
 # Valid raster
 def test_load_raster_success(tmp_path):
@@ -51,6 +53,7 @@ def test_load_raster_success(tmp_path):
     assert ds.get_count() == 1
     assert ds.get_crs() == crs
 
+
 # Load array non-empty input
 def test_load_array_rejects_non_numpy():
     with pytest.raises(TypeError):
@@ -64,6 +67,7 @@ def test_invalid_array_dimensions(shape):
 
     with pytest.raises(ValueError):
         load_array(array)
+
 
 # Load 2D array successfully
 def test_load_array_2d_success():
@@ -92,6 +96,7 @@ def test_load_array_3d_success():
 
     band2 = ds.get_band(2)
     np.testing.assert_array_equal(band2, array[1])
+
 
 # Nodata propagation
 def test_load_array_nodata_propagation():

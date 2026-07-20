@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 import rasterio as rio
 from rasterio.io import DatasetReader, MemoryFile
@@ -13,11 +11,12 @@ class RasterioAdapter(BaseRasterAdapter):
     """
     Rasterio-backend adapter for EEORasterDataset
     """
+
     def __init__(
-            self,
-            dataset: DatasetReader,
-            *,
-            memory_file: MemoryFile | None = None,
+        self,
+        dataset: DatasetReader,
+        *,
+        memory_file: MemoryFile | None = None,
     ) -> None:
         self._ds = dataset
         self._memory_file = memory_file
@@ -26,7 +25,7 @@ class RasterioAdapter(BaseRasterAdapter):
     # Factories
     # ========================
     @classmethod
-    def from_path(cls, path: str) -> "RasterioAdapter":
+    def from_path(cls, path: str) -> RasterioAdapter:
         try:
             dataset = rio.open(path)
         except Exception as e:
@@ -35,14 +34,14 @@ class RasterioAdapter(BaseRasterAdapter):
 
     @classmethod
     def from_array(
-            cls,
-            array: np.ndarray,
-            *,
-            transform,
-            crs,
-            nodata: Optional[float] = None,
-            dtype: Optional[str] = None,
-    ) -> "RasterioAdapter":
+        cls,
+        array: np.ndarray,
+        *,
+        transform,
+        crs,
+        nodata: float | None = None,
+        dtype: str | None = None,
+    ) -> RasterioAdapter:
         """
         Create an in-memory adapter from a NumPy array
         """

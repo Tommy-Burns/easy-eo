@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import numpy as np
 from rasterio.coords import BoundingBox
@@ -14,40 +14,31 @@ class BaseRasterAdapter(ABC):
     # METADATA
     ##########################
     @abstractmethod
-    def get_crs(self) -> CRS:
-        ...
+    def get_crs(self) -> CRS: ...
 
     @abstractmethod
-    def get_transform(self) -> Affine:
-        ...
+    def get_transform(self) -> Affine: ...
 
     @abstractmethod
-    def get_bounds(self) -> BoundingBox:
-        ...
+    def get_bounds(self) -> BoundingBox: ...
 
     @abstractmethod
-    def get_shape(self) -> Tuple[int, int]:
-        ...
+    def get_shape(self) -> tuple[int, int]: ...
 
     @abstractmethod
-    def get_width(self) -> int:
-        ...
+    def get_width(self) -> int: ...
 
     @abstractmethod
-    def get_height(self) -> int:
-        ...
+    def get_height(self) -> int: ...
 
     @abstractmethod
-    def get_count(self) -> int:
-        ...
+    def get_count(self) -> int: ...
 
     @abstractmethod
-    def get_nodata(self) -> Optional[float]:
-        ...
+    def get_nodata(self) -> float | None: ...
 
     @abstractmethod
-    def get_metadata(self) -> dict[Any, Any]:
-        ...
+    def get_metadata(self) -> dict[Any, Any]: ...
 
     ###########################
     # DATA ACCESS
@@ -72,13 +63,10 @@ class BaseRasterAdapter(ABC):
     # Persistence
     ##########################
     @abstractmethod
-    def write(self, path: str, driver: str = "GTiff") -> None:
-        ...
-
+    def write(self, path: str, driver: str = "GTiff") -> None: ...
 
     @abstractmethod
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
 
     ###########################
     # BACKEND ACCESS - RETURNING THE UNDERLYING DATASET

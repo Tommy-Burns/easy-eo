@@ -28,10 +28,19 @@ classifiers = [
 
 
 dependencies = [
-    "rasterio>=1.4,<1.5",
-    "geopandas>=1.1,<1.2",
-    "numpy>=1.26,<2.2",
-    "matplotlib>=3.10,<3.11",
+    "rasterio>=1.4,<2",
+    "geopandas>=1.1,<2",
+    "numpy>=1.26,<3",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
 ]
 
 [project.urls]
@@ -52,6 +61,13 @@ include = [
 [tool.hatch.build.targets.wheel]
 packages = ["eeo"]
 
+# PEP 561: the py.typed marker and the generated core stub must ship in the
+# wheel so downstream type checkers pick up Easy-EO's inline annotations and
+# the dynamically-bound method signatures.
+[tool.hatch.build.targets.wheel.force-include]
+"eeo/py.typed" = "eeo/py.typed"
+"eeo/core/core.pyi" = "eeo/core/core.pyi"
+
 # Optional but handy
 [tool.hatch.envs.default]
 dependencies = [
@@ -60,3 +76,38 @@ dependencies = [
 
 [tool.hatch.envs.default.scripts]
 test = "pytest"
+
+# ---------------------
+# Ruff (lint + format)
+# ---------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["eeo", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501", # line length is enforced by the formatter, not the linter
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["eeo"]
+
+[tool.ruff.lint.per-file-ignores]
+# eeo/__init__.py re-exports submodules with `import *` so that importing
+# them registers ops on EEORasterDataset via the @eeo_raster_op /
+# @eeo_raster_viz decorators (see eeo/core/decorators.py) — this is a
+# deliberate plugin-registration side effect, not an oversight.
+"eeo/__init__.py" = ["F403"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

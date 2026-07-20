@@ -261,9 +261,11 @@ Tips
 .. code-block:: python
 
     # Use chainable operations for clarity
-    ds.clip_raster_with_bbox((0,0,1000,1000))
-       .normalize_min_max()
-       .plot_raster()
+    (
+        ds.clip_raster_with_bbox((0, 0, 1000, 1000))
+        .normalize_min_max()
+        .plot_raster()
+    )
 
 .. note::
     - Terminal operations like `plot_raster` **do not return EEORasterDataset**

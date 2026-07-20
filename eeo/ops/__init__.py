@@ -1,5 +1,5 @@
-from .algebra import power, add, log, sqrt, subtract, multiply, divide, absolute
-from .merge import stack, mosaic
+from .algebra import absolute, add, divide, log, multiply, power, sqrt, subtract
+from .merge import mosaic, stack
 
 __all__ = [
     "power",
@@ -11,5 +11,5 @@ __all__ = [
     "divide",
     "absolute",
     "stack",
-    "mosaic"
+    "mosaic",
 ]

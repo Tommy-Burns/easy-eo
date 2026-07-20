@@ -1,42 +1,99 @@
 """
 Input/Output functionalities for easy-eo
 """
+
 from __future__ import annotations
 
 import os
 
 import numpy as np
-from typing import Optional, Tuple
-from rasterio.transform import Affine
 from rasterio.crs import CRS
+from rasterio.transform import Affine
+
 from eeo.core.core import EEORasterDataset
 
 
 def load_raster(path: str) -> EEORasterDataset:
+    """Open a raster file as an EEORasterDataset.
+
+    The file is opened but pixel data is not read until an operation needs
+    it, so opening a large scene is cheap.
+
+    Parameters
+    ----------
+    path : str
+        Path to a GDAL-readable raster file.
+
+    Returns
+    -------
+    EEORasterDataset
+        A rasterio-backed dataset.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``path`` does not exist.
+    RuntimeError
+        If the file exists but cannot be opened as a raster.
+
+    Examples
+    --------
+    >>> ds = load_raster("scene.tif")
+    """
     if not os.path.isfile(path):
         raise FileNotFoundError(f'The file "{path}" does not exist')
     try:
         return EEORasterDataset.from_path(path)
     except Exception as e:
-        raise RuntimeError( f'File "{path}" could not be opened as a rasterio dataset') from e
+        raise RuntimeError(f'File "{path}" could not be opened as a rasterio dataset') from e
 
 
 def load_array(
-        array: np.ndarray,
-        *,
-        transform: Optional[Affine] = None,
-        crs: Optional[CRS | int | str] = None,
-        nodata: Optional[float | int] = None,
+    array: np.ndarray,
+    *,
+    transform: Affine | None = None,
+    crs: CRS | int | str | None = None,
+    nodata: float | int | None = None,
 ) -> EEORasterDataset:
+    """Wrap an in-memory NumPy array as an EEORasterDataset.
+
+    Parameters
+    ----------
+    array : numpy.ndarray
+        Raster values, shaped ``(height, width)`` for a single band or
+        ``(bands, height, width)`` for multiple bands.
+    transform : affine.Affine or None, default None
+        Affine geotransform mapping pixel to world coordinates. If None, the
+        dataset has no meaningful georeferencing.
+    crs : rasterio.crs.CRS or int or str or None, default None
+        Coordinate reference system (e.g. an EPSG code such as ``4326``). If
+        None, the dataset is unreferenced.
+    nodata : float or int or None, default None
+        Value marking nodata pixels, stored in the metadata.
+
+    Returns
+    -------
+    EEORasterDataset
+        A NumPy-backed dataset. The array is wrapped without copying;
+        operations that need rasterio (clipping, resampling, ...) promote it
+        on demand.
+
+    Raises
+    ------
+    TypeError
+        If ``array`` is not a NumPy array.
+    ValueError
+        If ``array`` is neither 2D nor 3D.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> ds = load_array(np.zeros((64, 64), dtype="float32"), crs=4326)
+    """
     if not isinstance(array, np.ndarray):
-        raise TypeError('The array must be a numpy array')
+        raise TypeError("The array must be a numpy array")
 
     if array.ndim not in (2, 3):
-        raise ValueError('The array must be 2D or 3D (bands, height, width)')
+        raise ValueError("The array must be 2D or 3D (bands, height, width)")
 
-    return EEORasterDataset.from_array(
-        array=array,
-        transform=transform,
-        crs=crs,
-        nodata=nodata
-    )
+    return EEORasterDataset.from_array(array=array, transform=transform, crs=crs, nodata=nodata)

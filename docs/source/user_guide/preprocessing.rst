@@ -285,7 +285,9 @@ All preprocessing operations are chainable and remain in memory until explicitly
 
 .. code-block:: python
 
-   output = ds.clip_raster_with_vector("boundary.shp")
-              .reproject_raster(target_crs=4326)
-              .save_raster("processed.tif")
+   output = (
+       ds.clip_raster_with_vector("boundary.shp")
+       .reproject_raster(target_crs=4326)
+       .save_raster("processed.tif")
+   )
 

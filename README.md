@@ -1,6 +1,6 @@
-# EasyEO
+# Easy-EO
 
-EasyEO is a lightweight, extensible Python library for raster-based Earth Observation (EO) analysis which allows for chainable raster processing, algebra, and visualization. 
+Easy-EO is a lightweight, extensible Python library for raster-based Earth Observation (EO) analysis which allows for chainable raster processing, algebra, and visualization. 
 It provides high-level abstractions over libraries such as Rasterio, NumPy, and Matplotlib, enabling users to perform common earth-observation analyses and visualization tasks efficiently, without dealing with the underlying complexity.
 ---
 
@@ -32,10 +32,12 @@ ds_nir = load_raster("path/to/nir.tif")
 ds_red = load_raster("path/to/red.tif")
 
 # Chainable example: clip -> resample -> compute NDVI -> multiply
-result = ds_nir.clip_raster_with_bbox((0,0,1000,1000))
-                .resample(scale_factor=2)
-                .normalized_difference(ds_red)
-                .multiply(100)
+result = (
+    ds_nir.clip_raster_with_bbox((0, 0, 1000, 1000))
+    .resample(scale_factor=2)
+    .normalized_difference(ds_red)
+    .multiply(100)
+)
 ```
 
 ## Supported Backends
