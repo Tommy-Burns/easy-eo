@@ -14,6 +14,14 @@ from eeo.core.core import EEORasterDataset
 P = ParamSpec("P")  # parameters of the operation
 R = TypeVar("R")  # return type of the operation (Usually EEORasterDataset)
 
+# Registry of every function bound onto EEORasterDataset via the decorators
+# below. Each entry is ``(func, kind)`` where ``kind`` is ``"op"`` (chainable,
+# @eeo_raster_op) or ``"viz"`` (terminal, @eeo_raster_viz). This is the single
+# source of truth consumed by scripts/generate_core_stub.py to (re)generate
+# eeo/core/core.pyi, which exposes these dynamically-bound methods to type
+# checkers. It is not part of the public API.
+_OP_REGISTRY: list[tuple[Callable[..., object], str]] = []
+
 
 def eeo_raster_op(func: Callable[P, R]) -> Callable[P, R]:
     """
@@ -31,6 +39,7 @@ def eeo_raster_op(func: Callable[P, R]) -> Callable[P, R]:
 
     # Bind to EEORasterDataset
     setattr(EEORasterDataset, func.__name__, method)
+    _OP_REGISTRY.append((func, "op"))
 
     return func  # the original function is not altered
 
@@ -52,4 +61,5 @@ def eeo_raster_viz(func: Callable[..., R]) -> Callable[..., R]:
 
     # Bind to EEORasterDataset
     setattr(EEORasterDataset, func.__name__, method)
+    _OP_REGISTRY.append((func, "viz"))
     return func

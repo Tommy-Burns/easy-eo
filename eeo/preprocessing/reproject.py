@@ -1,6 +1,5 @@
 import pyproj
 import rasterio as rio
-from pyproj import CRS
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 from eeo.common import normalize_resampling_method
@@ -12,7 +11,7 @@ from eeo.core.decorators import eeo_raster_op
 def reproject_raster(
     ds: EEORasterDataset,
     *,
-    target_crs: int | str | CRS,
+    target_crs: int | str | pyproj.CRS,
     resampling_method: Resampling = Resampling.nearest,
 ) -> EEORasterDataset:
     # Ensure reprojection for only rasterio-backend datasets

@@ -9,6 +9,7 @@ import contextlib
 import numpy as np
 import rasterio as rio
 from rasterio import CRS
+from rasterio.coords import BoundingBox
 from rasterio.transform import Affine
 
 from eeo.core.adapters import BaseRasterAdapter, NumpyRasterioAdapter, RasterioAdapter
@@ -90,32 +91,32 @@ class EEORasterDataset:
     # Metadata
     # ========================
 
-    def read(self, *args, **kwargs):
+    def read(self, *args, **kwargs) -> np.ndarray:
         """Forward rasterio.read"""
         return self._adapter.read(*args, **kwargs)
 
-    def get_crs(self):
+    def get_crs(self) -> CRS:
         return self._adapter.get_crs()
 
-    def get_transform(self):
+    def get_transform(self) -> Affine:
         return self._adapter.get_transform()
 
-    def get_shape(self):
+    def get_shape(self) -> tuple[int, int]:
         return self._adapter.get_shape()
 
-    def get_bounds(self):
+    def get_bounds(self) -> BoundingBox:
         return self._adapter.get_bounds()
 
-    def get_metadata(self):
+    def get_metadata(self) -> dict:
         return self._adapter.get_metadata()
 
-    def get_width(self):
+    def get_width(self) -> int:
         return self._adapter.get_width()
 
-    def get_height(self):
+    def get_height(self) -> int:
         return self._adapter.get_height()
 
-    def get_count(self):
+    def get_count(self) -> int:
         return self._adapter.get_count()
 
     def get_index(self):
@@ -162,35 +163,35 @@ class EEORasterDataset:
     # ========================
     # Arithmetic Operators
     # ========================
-    def __add__(self, other):
+    def __add__(self, other: EEORasterDataset | int | float) -> EEORasterDataset:
         return self.add(other)
 
-    def __radd__(self, other):
+    def __radd__(self, other: int | float) -> EEORasterDataset:
         return self.add(other)
 
-    def __sub__(self, other):
+    def __sub__(self, other: EEORasterDataset | int | float) -> EEORasterDataset:
         return self.subtract(other)
 
-    def __rsub__(self, other):
+    def __rsub__(self, other: int | float) -> EEORasterDataset:
         # implement for only raster - scalar
         if isinstance(other, (int, float)):
             return self.multiply(-1).add(other)
         return NotImplemented
 
-    def __mul__(self, other):
+    def __mul__(self, other: EEORasterDataset | int | float) -> EEORasterDataset:
         return self.multiply(other)
 
-    def __rmul__(self, other):
+    def __rmul__(self, other: int | float) -> EEORasterDataset:
         return self.multiply(other)
 
-    def __truediv__(self, other):
+    def __truediv__(self, other: EEORasterDataset | int | float) -> EEORasterDataset:
         return self.divide(other)
 
-    def __rtruediv__(self, other):
+    def __rtruediv__(self, other: int | float) -> EEORasterDataset:
         # implement scalar / raster
         if isinstance(other, (int, float)):
             return self.power(-1).multiply(other)
         return NotImplemented
 
-    def __pow__(self, exponent):
+    def __pow__(self, exponent: int | float) -> EEORasterDataset:
         return self.power(exponent)

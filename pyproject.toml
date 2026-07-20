@@ -61,6 +61,13 @@ include = [
 [tool.hatch.build.targets.wheel]
 packages = ["eeo"]
 
+# PEP 561: the py.typed marker and the generated core stub must ship in the
+# wheel so downstream type checkers pick up Easy-EO's inline annotations and
+# the dynamically-bound method signatures.
+[tool.hatch.build.targets.wheel.force-include]
+"eeo/py.typed" = "eeo/py.typed"
+"eeo/core/core.pyi" = "eeo/core/core.pyi"
+
 # Optional but handy
 [tool.hatch.envs.default]
 dependencies = [
