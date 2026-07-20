@@ -139,3 +139,41 @@ module = [
     "pyproj.*",
 ]
 ignore_missing_imports = true
+
+# ---------------------
+# pytest
+# ---------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# Coverage is always measured; the suite fails below the documented ≥80%
+# target (see CODE_STYLE.md "Testing Expectations").
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=eeo",
+    "--cov-branch",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+]
+xfail_strict = true
+# Surface warnings as failures so deprecations and numerical warnings can't
+# slip through unnoticed. Tests that expect a warning use pytest.warns.
+filterwarnings = ["error"]
+
+# ---------------------
+# coverage.py
+# ---------------------
+[tool.coverage.run]
+source = ["eeo"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+]

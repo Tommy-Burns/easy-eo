@@ -21,6 +21,11 @@ docs/build/
 # Tests
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
 # IDE
 .vscode/
