@@ -1,7 +1,15 @@
 # Easy-EO
 
+[![CI](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Tommy-Burns/easy-eo/branch/main/graph/badge.svg)](https://codecov.io/gh/Tommy-Burns/easy-eo)
+[![PyPI](https://img.shields.io/pypi/v/easy-eo.svg)](https://pypi.org/project/easy-eo/)
+[![Python versions](https://img.shields.io/pypi/pyversions/easy-eo.svg)](https://pypi.org/project/easy-eo/)
+[![Documentation Status](https://readthedocs.org/projects/easy-eo/badge/?version=latest)](https://easy-eo.readthedocs.io/en/latest/?badge=latest)
+[![License: MIT](https://img.shields.io/github/license/Tommy-Burns/easy-eo)](https://github.com/Tommy-Burns/easy-eo/blob/main/LICENSE)
+
 Easy-EO is a lightweight, extensible Python library for raster-based Earth Observation (EO) analysis which allows for chainable raster processing, algebra, and visualization.
 It provides high-level abstractions over libraries such as Rasterio, NumPy, and Matplotlib, enabling users to perform common earth-observation analyses and visualization tasks efficiently, without dealing with the underlying complexity.
+
 ---
 
 ## Features
