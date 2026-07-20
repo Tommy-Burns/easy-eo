@@ -1,0 +1,50 @@
+# Pre-commit hooks for Easy-EO.
+#
+#   pip install -e ".[dev]"      # provides pre-commit, ruff, mypy
+#   pre-commit install           # enable on every git commit
+#   pre-commit run --all-files   # run across the whole tree once
+#
+# Keep the ruff-pre-commit `rev` in sync with the ruff version in the dev
+# extra so local, pre-commit, and CI all format/lint identically.
+minimum_pre_commit_version: "3.7.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+        # Windows batch files conventionally keep CRLF; Sphinx ships make.bat
+        # that way. Everything else is normalized to LF.
+        exclude: '\.bat$'
+      - id: check-added-large-files
+        # Tests use small synthetic rasters built in fixtures; no data files
+        # belong in the repo (see CODE_STYLE.md testing rules).
+        args: ["--maxkb=1024"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.22
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  # mypy runs against the whole `eeo` package (per its pyproject config), not
+  # just the changed files, so it can resolve intra-package imports. It runs
+  # as a local/system hook using the mypy from the dev environment, which has
+  # the geospatial stack installed - an isolated pre-commit venv would need
+  # every typed dependency redeclared and drift out of sync.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
