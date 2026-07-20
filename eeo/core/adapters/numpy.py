@@ -1,22 +1,22 @@
-from typing import Optional
-
 import numpy as np
 import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.transform import Affine
 
-from eeo.core.adapters import BaseRasterAdapter, RasterioAdapter
+from eeo.core.adapters.base import BaseRasterAdapter
+from eeo.core.adapters.rasterio import RasterioAdapter
 
 
 class NumpyRasterioAdapter(BaseRasterAdapter):
-    """ Numpy backend adapter for EEORasterDataset """
+    """Numpy backend adapter for EEORasterDataset"""
+
     def __init__(
         self,
         array: np.ndarray,
         transform: Affine,
         crs: CRS,
         driver: str = "GTiff",
-        nodata: Optional[float] = None,
+        nodata: float | None = None,
     ):
         if array.ndim == 2:
             array = array[np.newaxis, ...]
@@ -52,7 +52,7 @@ class NumpyRasterioAdapter(BaseRasterAdapter):
     def get_count(self) -> int:
         return self._array.shape[0]
 
-    def get_nodata(self) -> Optional[float]:
+    def get_nodata(self) -> float | None:
         return self._nodata
 
     def get_metadata(self) -> dict:

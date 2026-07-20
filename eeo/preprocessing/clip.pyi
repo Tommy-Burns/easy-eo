@@ -1,21 +1,19 @@
-from typing import Union
 import geopandas as gpd
 
 from eeo.core.core import EEORasterDataset
 
-
 def clip_raster_with_vector(
-        ds: EEORasterDataset,
-        vector_file: Union[gpd.GeoDataFrame, str],
-        *,
-        crop: bool = True,
-        pad: bool = False,
-        all_touched: bool = False,
-        invert: bool = False,
-        nodata: Union[int, float, None] = None,
-        show_preview: bool = False,
-        plot_kwargs: dict | None = None,
-) -> Union[None, "EEORasterDataset"]:
+    ds: EEORasterDataset,
+    vector_file: gpd.GeoDataFrame | str,
+    *,
+    crop: bool = True,
+    pad: bool = False,
+    all_touched: bool = False,
+    invert: bool = False,
+    nodata: int | float | None = None,
+    show_preview: bool = False,
+    plot_kwargs: dict | None = None,
+) -> None | EEORasterDataset:
     """
     Clip a raster using vector geometries.
 
@@ -53,13 +51,9 @@ def clip_raster_with_vector(
     """
     ...
 
-
 def clip_raster_with_bbox(
-        ds: EEORasterDataset,
-        bbox: tuple | list,
-        plot_kwargs=None,
-        show_preview: bool = False
-)-> "EEORasterDataset":
+    ds: EEORasterDataset, bbox: tuple | list, plot_kwargs=None, show_preview: bool = False
+) -> EEORasterDataset:
     """
     Clip a raster using a bounding box.
 

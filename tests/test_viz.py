@@ -4,20 +4,18 @@ from affine import Affine
 from rasterio.crs import CRS
 
 from eeo import load_array
-
+from eeo.viz import (
+    plot_band_array,
+    plot_composite,
+    plot_histogram,
+    plot_raster,
+    plot_raster_with_histogram,
+)
 from eeo.viz.plot import (
     _as_list,
     _normalize_bands,
     _percentile_stretch,
 )
-from eeo.viz import (
-    plot_band_array,
-    plot_raster,
-    plot_histogram,
-    plot_raster_with_histogram,
-    plot_composite,
-)
-
 
 # ---------------------------------------------------------------------
 # Fixtures
@@ -25,6 +23,7 @@ from eeo.viz import (
 # General-purpose rasters come from conftest.py. Composite tests need a
 # module-local fixture: plot_composite feeds bands straight to imshow and
 # stretches in place, so it needs float RGB data already in display range.
+
 
 @pytest.fixture
 def rgb_float32_raster():
@@ -42,6 +41,7 @@ def rgb_float32_raster():
 # ---------------------------------------------------------------------
 # Helper function tests
 # ---------------------------------------------------------------------
+
 
 def test_as_list_single_object():
     obj = 1
@@ -88,6 +88,7 @@ def test_percentile_stretch_constant_array():
 # ---------------------------------------------------------------------
 # Plotting functions (smoke tests)
 # ---------------------------------------------------------------------
+
 
 def test_plot_band_array_single(single_band_float32):
     plot_band_array(single_band_float32)

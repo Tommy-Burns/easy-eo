@@ -60,3 +60,38 @@ dependencies = [
 
 [tool.hatch.envs.default.scripts]
 test = "pytest"
+
+# ---------------------
+# Ruff (lint + format)
+# ---------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["eeo", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501", # line length is enforced by the formatter, not the linter
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["eeo"]
+
+[tool.ruff.lint.per-file-ignores]
+# eeo/__init__.py re-exports submodules with `import *` so that importing
+# them registers ops on EEORasterDataset via the @eeo_raster_op /
+# @eeo_raster_viz decorators (see eeo/core/decorators.py) — this is a
+# deliberate plugin-registration side effect, not an oversight.
+"eeo/__init__.py" = ["F403"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

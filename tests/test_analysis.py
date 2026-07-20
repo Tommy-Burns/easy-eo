@@ -63,9 +63,7 @@ def test_get_maximum_pixel_value_and_position(raster_3x3):
 
 # Maximum pixel - pixel coords
 def test_get_maximum_pixel_pixel_coordinates(raster_3x3):
-    result = raster_3x3.get_maximum_pixel(
-        return_position_as_pixel_coordinate=True
-    )
+    result = raster_3x3.get_maximum_pixel(return_position_as_pixel_coordinate=True)
 
     assert result["position"] == (2, 2)
 
@@ -85,9 +83,7 @@ def test_get_mean_pixel(raster_3x3):
 
 
 def test_get_mean_pixel_location_pixel_space(raster_3x3):
-    result = raster_3x3.get_mean_pixel(
-        return_position_as_pixel_coordinate=True
-    )
+    result = raster_3x3.get_mean_pixel(return_position_as_pixel_coordinate=True)
 
     assert result["position"] == (1, 1)
 
@@ -100,9 +96,7 @@ def test_get_percentile_pixel(raster_3x3):
 
 
 def test_get_percentile_pixel_pixel_coordinates(raster_3x3):
-    result = raster_3x3.get_percentile_pixel(
-        50, return_position_as_pixel_coordinate=True
-    )
+    result = raster_3x3.get_percentile_pixel(50, return_position_as_pixel_coordinate=True)
 
     assert result["position"] == (1, 1)
 
@@ -117,10 +111,7 @@ def test_nodata_is_masked_in_stats(raster_with_nodata):
 
 # chaining
 def test_chainability(raster_3x3):
-    result = (
-        raster_3x3
-        .get_maximum_pixel()
-    )
+    result = raster_3x3.get_maximum_pixel()
 
     assert isinstance(result, dict)
     assert "value" in result

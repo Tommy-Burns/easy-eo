@@ -1,29 +1,26 @@
-from typing import Optional
-
 import numpy as np
-from rasterio.transform import Affine
 from rasterio.crs import CRS
-from eeo.core.core import EEORasterDataset
+from rasterio.transform import Affine
 
+from eeo.core.core import EEORasterDataset
 
 def load_raster(path: str) -> EEORasterDataset:
     """
-        Load a raster file from ``path`` as an ``EEORasterDataset``. The file must be a GDAL-readable raster and is opened using ``rasterio.open``.
+    Load a raster file from ``path`` as an ``EEORasterDataset``. The file must be a GDAL-readable raster and is opened using ``rasterio.open``.
 
-        :param path: Path to the raster file
-        :return: An EEORasterDataset
-        :raises FileNotFoundError: If the file does not exist
-        :raises RuntimeError: If rasterio cannot open the file
-        """
+    :param path: Path to the raster file
+    :return: An EEORasterDataset
+    :raises FileNotFoundError: If the file does not exist
+    :raises RuntimeError: If rasterio cannot open the file
+    """
     ...
 
-
 def load_array(
-        array: np.ndarray,
-        *,
-        transform: Optional[Affine] = None,
-        crs: Optional[CRS | int | str] = None,
-        nodata: Optional[float | int] = None,
+    array: np.ndarray,
+    *,
+    transform: Affine | None = None,
+    crs: CRS | int | str | None = None,
+    nodata: float | int | None = None,
 ) -> EEORasterDataset:
     """
     Load a NumPy array into an ``EEORasterDataset``.

@@ -1,20 +1,17 @@
-from typing import Union
-
 import numpy as np
 import rasterio as rio
+
 from eeo.common import mask_nodata
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 
-Coordinate = Union[tuple[float, float], list[float]]
+Coordinate = tuple[float, float] | list[float]
 
 
 @eeo_raster_op
 def extract_value_at_coordinate(
-        ds: EEORasterDataset,
-        coordinates: Coordinate,
-        band_idx: int = 1
-) -> Union[int, float]:
+    ds: EEORasterDataset, coordinates: Coordinate, band_idx: int = 1
+) -> int | float:
 
     if len(coordinates) != 2:
         raise ValueError(f"Expected 2 coordinates, got {len(coordinates)}")
@@ -30,13 +27,12 @@ def extract_value_at_coordinate(
     return ds.get_band(band_idx)[row, col]
 
 
-
 @eeo_raster_op
 def get_maximum_pixel(
-        ds: EEORasterDataset,
-        band_idx: int = 1,
-        *,
-        return_position_as_pixel_coordinate: bool = False,
+    ds: EEORasterDataset,
+    band_idx: int = 1,
+    *,
+    return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
     band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
     band = mask_nodata(ds, band)
@@ -56,10 +52,10 @@ def get_maximum_pixel(
 
 @eeo_raster_op
 def get_minimum_pixel(
-        ds: EEORasterDataset,
-        band_idx: int = 1,
-        *,
-        return_position_as_pixel_coordinate: bool = False,
+    ds: EEORasterDataset,
+    band_idx: int = 1,
+    *,
+    return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
     band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
     band = mask_nodata(ds, band)
@@ -79,10 +75,10 @@ def get_minimum_pixel(
 
 @eeo_raster_op
 def get_mean_pixel(
-        ds: EEORasterDataset,
-        band_idx: int = 1,
-        *,
-        return_position_as_pixel_coordinate: bool = False,
+    ds: EEORasterDataset,
+    band_idx: int = 1,
+    *,
+    return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
     band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
     band = mask_nodata(ds, band)
@@ -103,11 +99,11 @@ def get_mean_pixel(
 
 @eeo_raster_op
 def get_percentile_pixel(
-        ds: EEORasterDataset,
-        percentile: float,
-        band_idx: int = 1,
-        *,
-        return_position_as_pixel_coordinate: bool = False,
+    ds: EEORasterDataset,
+    percentile: float,
+    band_idx: int = 1,
+    *,
+    return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
     band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
     band = mask_nodata(ds, band)
@@ -124,4 +120,3 @@ def get_percentile_pixel(
         position = transform * (col, row)
 
     return {"value": perc_value, "position": position}
-

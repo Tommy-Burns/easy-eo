@@ -1,11 +1,6 @@
-from typing import Union
-
 from eeo.core.core import EEORasterDataset
 
-
-def standardize(
-        ds: EEORasterDataset
-) -> EEORasterDataset:
+def standardize(ds: EEORasterDataset) -> EEORasterDataset:
     """
     Z-score standardization of raster values.
 
@@ -18,12 +13,8 @@ def standardize(
     """
     ...
 
-
 def normalize_min_max(
-        ds: EEORasterDataset,
-        *,
-        new_min: Union[int, float] = ...,
-        new_max: Union[int, float] = ...
+    ds: EEORasterDataset, *, new_min: int | float = ..., new_max: int | float = ...
 ) -> EEORasterDataset:
     """
     Min-max normalization of raster values.
@@ -37,12 +28,11 @@ def normalize_min_max(
     """
     ...
 
-
 def normalize_percentile(
-        ds: EEORasterDataset,
-        *,
-        lower_percentile: Union[int, float] = ...,
-        upper_percentile: Union[int, float] = ...
+    ds: EEORasterDataset,
+    *,
+    lower_percentile: int | float = ...,
+    upper_percentile: int | float = ...,
 ) -> EEORasterDataset:
     """
     Percentile-based normalization of raster values.

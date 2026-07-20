@@ -1,5 +1,3 @@
-from typing import Optional
-
 import rasterio as rio
 from rasterio.transform import Affine
 
@@ -9,15 +7,16 @@ from eeo.core.decorators import eeo_raster_op
 
 
 @eeo_raster_op
-def resample(ds: EEORasterDataset,
-             *,
-             size: Optional[tuple[int, int]] = None,
-             scale_factor: Optional[float] = None,
-             resolution: Optional[tuple[float, float]] = None,
-             resampling_method: str = "bilinear",
-             plot_kwargs=None,
-             show_preview: bool = False
-             ) -> EEORasterDataset:
+def resample(
+    ds: EEORasterDataset,
+    *,
+    size: tuple[int, int] | None = None,
+    scale_factor: float | None = None,
+    resolution: tuple[float, float] | None = None,
+    resampling_method: str = "bilinear",
+    plot_kwargs=None,
+    show_preview: bool = False,
+) -> EEORasterDataset:
     params = [size, scale_factor, resolution]
     if sum(p is not None for p in params) != 1:
         raise ValueError("Provide exactly one of: size=, scale_factor=, resolution=")

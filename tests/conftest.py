@@ -54,8 +54,7 @@ def _silence_agg_show_warning():
         yield
 
 
-def _north_up(origin_x: float = ORIGIN_X, origin_y: float = ORIGIN_Y,
-              res: float = RES) -> Affine:
+def _north_up(origin_x: float = ORIGIN_X, origin_y: float = ORIGIN_Y, res: float = RES) -> Affine:
     """Return a north-up affine transform with square pixels."""
     return Affine.translation(origin_x, origin_y) * Affine.scale(res, -res)
 
@@ -84,9 +83,9 @@ def multiband_uint16():
     Band ``i`` (1-based) holds ``i * 1000`` plus the 0..35 gradient, so
     every band is distinct and every value is hand-computable.
     """
-    bands = np.stack(
-        [i * 1000 + _gradient((6, 6), np.uint16) for i in range(1, 5)]
-    ).astype(np.uint16)
+    bands = np.stack([i * 1000 + _gradient((6, 6), np.uint16) for i in range(1, 5)]).astype(
+        np.uint16
+    )
     ds = load_array(bands, transform=_north_up(), crs=UTM_CRS).to_rasterio()
     yield ds
     ds.close()

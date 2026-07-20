@@ -1,7 +1,6 @@
 from .base import BaseRasterAdapter
-from .rasterio import RasterioAdapter
 from .numpy import NumpyRasterioAdapter
-
+from .rasterio import RasterioAdapter
 
 __all__ = [
     "BaseRasterAdapter",

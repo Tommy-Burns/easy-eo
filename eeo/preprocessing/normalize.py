@@ -1,5 +1,3 @@
-from typing import Union
-
 import numpy as np
 import rasterio as rio
 
@@ -22,8 +20,9 @@ def standardize(ds: EEORasterDataset) -> EEORasterDataset:
 
 
 @eeo_raster_op
-def normalize_min_max(ds: EEORasterDataset, *, new_min: Union[float, int] = 0.0,
-                      new_max: Union[float, int] = 1.0) -> EEORasterDataset:
+def normalize_min_max(
+    ds: EEORasterDataset, *, new_min: float | int = 0.0, new_max: float | int = 1.0
+) -> EEORasterDataset:
     """Normalize raster to new_min, new_max"""
     data = ds.read()
     old_min, old_max = np.min(data), np.max(data)
@@ -37,8 +36,12 @@ def normalize_min_max(ds: EEORasterDataset, *, new_min: Union[float, int] = 0.0,
 
 
 @eeo_raster_op
-def normalize_percentile(ds: EEORasterDataset, *, lower_percentile: Union[float, int] = 0.0,
-                         upper_percentile: Union[float, int] = 1.0) -> EEORasterDataset:
+def normalize_percentile(
+    ds: EEORasterDataset,
+    *,
+    lower_percentile: float | int = 0.0,
+    upper_percentile: float | int = 1.0,
+) -> EEORasterDataset:
     """Normalize raster to lower_percentile, upper_percentile"""
     data = ds.read()
     array_min, array_max = np.nanpercentile(data, (lower_percentile, upper_percentile))

@@ -1,8 +1,7 @@
-from typing import Union, Iterable
+from collections.abc import Iterable
 
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
-
 
 @eeo_raster_op
 def mosaic(
@@ -32,15 +31,14 @@ def mosaic(
     """
     ...
 
-
 @eeo_raster_op
 def stack(
-        ds: EEORasterDataset,
-        others: Union[EEORasterDataset, Iterable[EEORasterDataset]],
+    ds: EEORasterDataset,
+    others: EEORasterDataset | Iterable[EEORasterDataset],
 ) -> EEORasterDataset:
     """
-        Stack rasters into a multi-band raster.
+    Stack rasters into a multi-band raster.
 
-        All rasters must have identical CRS, transform, and shape.
+    All rasters must have identical CRS, transform, and shape.
     """
     ...

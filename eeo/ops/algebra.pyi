@@ -1,18 +1,15 @@
-from typing import Union
-
 from eeo.core.core import EEORasterDataset
-
 
 # ==========================================================
 # ARITHMETIC AND ALGEBRA
 # ==========================================================
 
 def add(
-        ds: EEORasterDataset,
-        other: Union[EEORasterDataset, float, int],
-        *,
-        auto_align: bool = True,
-        method: str = "bilinear"
+    ds: EEORasterDataset,
+    other: EEORasterDataset | float | int,
+    *,
+    auto_align: bool = True,
+    method: str = "bilinear",
 ) -> EEORasterDataset:
     """
     Pixel-wise addition of two rasters or a raster and a scalar.
@@ -37,13 +34,12 @@ def add(
     """
     ...
 
-
 def subtract(
-        ds: EEORasterDataset,
-        other: Union[EEORasterDataset, float, int],
-        *,
-        auto_align: bool = True,
-        method: str = "bilinear"
+    ds: EEORasterDataset,
+    other: EEORasterDataset | float | int,
+    *,
+    auto_align: bool = True,
+    method: str = "bilinear",
 ) -> EEORasterDataset:
     """
     Pixel-wise subtraction of two rasters or a raster and a scalar.
@@ -58,13 +54,12 @@ def subtract(
     """
     ...
 
-
 def multiply(
-        ds: EEORasterDataset,
-        other: Union[EEORasterDataset, float, int],
-        *,
-        auto_align: bool = True,
-        method: str = "bilinear"
+    ds: EEORasterDataset,
+    other: EEORasterDataset | float | int,
+    *,
+    auto_align: bool = True,
+    method: str = "bilinear",
 ) -> EEORasterDataset:
     """
     Pixel-wise multiplication of two rasters or a raster and a scalar.
@@ -77,14 +72,13 @@ def multiply(
     """
     ...
 
-
 def divide(
-        ds: EEORasterDataset,
-        other: Union[EEORasterDataset, float, int],
-        *,
-        auto_align: bool = True,
-        method: str = "bilinear",
-        safe: bool = True
+    ds: EEORasterDataset,
+    other: EEORasterDataset | float | int,
+    *,
+    auto_align: bool = True,
+    method: str = "bilinear",
+    safe: bool = True,
 ) -> EEORasterDataset:
     """
     Pixel-wise division of two rasters or a raster and a scalar.
@@ -104,11 +98,7 @@ def divide(
     """
     ...
 
-
-def power(
-        ds: EEORasterDataset,
-        exponent: Union[int, float]
-) -> EEORasterDataset:
+def power(ds: EEORasterDataset, exponent: int | float) -> EEORasterDataset:
     """
     Pixel-wise exponentiation of raster values.
 
@@ -120,14 +110,11 @@ def power(
     """
     ...
 
-
 # ==========================================================
 # TRANSFORMATIONS
 # ==========================================================
 
-def sqrt(
-        ds: EEORasterDataset
-) -> EEORasterDataset:
+def sqrt(ds: EEORasterDataset) -> EEORasterDataset:
     """
     Pixel-wise square root of raster values.
 
@@ -139,11 +126,7 @@ def sqrt(
     """
     ...
 
-
-def log(
-        ds: EEORasterDataset,
-        base: Union[int, float] = ...
-) -> EEORasterDataset:
+def log(ds: EEORasterDataset, base: int | float = ...) -> EEORasterDataset:
     """
     Pixel-wise logarithm of raster values.
 
@@ -161,10 +144,7 @@ def log(
     """
     ...
 
-
-def absolute(
-        ds: EEORasterDataset
-) -> EEORasterDataset:
+def absolute(ds: EEORasterDataset) -> EEORasterDataset:
     """
     Pixel-wise absolute value of raster values.
 

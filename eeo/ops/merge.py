@@ -1,23 +1,24 @@
-from typing import Union, Iterable
+from collections.abc import Iterable
 
 import numpy as np
 import rasterio as rio
 from rasterio.merge import merge
 
 from eeo.common import normalize_resampling_method
-from eeo.core.core import EEORasterDataset, _save_raster
+from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+
 
 @eeo_raster_op
 def mosaic(
-        ds: EEORasterDataset,
-        others: Union[EEORasterDataset, Iterable[EEORasterDataset]],
-        *,
-        resampling_method: str = "nearest",
-        save_path: str = None,
-        auto_reproject: bool = False,
-        **kwargs,
-) -> Union[EEORasterDataset, None]:
+    ds: EEORasterDataset,
+    others: EEORasterDataset | Iterable[EEORasterDataset],
+    *,
+    resampling_method: str = "nearest",
+    save_path: str = None,
+    auto_reproject: bool = False,
+    **kwargs,
+) -> EEORasterDataset | None:
     # Ensure mosaic for only rasterio-backend datasets
     backend = ds._adapter.backend
     if not isinstance(backend, rio.DatasetReader):
@@ -27,10 +28,7 @@ def mosaic(
     resampling_method = normalize_resampling_method(resampling_method)
 
     # normalize inputs to list
-    if isinstance(others, EEORasterDataset):
-        others = [others]
-    else:
-        others = list(others)
+    others = [others] if isinstance(others, EEORasterDataset) else list(others)
 
     if not others:
         raise ValueError("At least one raster must be provided for mosaicking")
@@ -52,11 +50,7 @@ def mosaic(
 
     # extract datasets and perform mosaics
     datasets = [d.ds for d in src_datasets]
-    mosaic_data, out_transform = merge(
-        datasets,
-        resampling=resampling_method,
-        **kwargs
-    )
+    mosaic_data, out_transform = merge(datasets, resampling=resampling_method, **kwargs)
 
     # modify metadata
     meta = ds.get_metadata().copy()
@@ -81,11 +75,10 @@ def mosaic(
     return EEORasterDataset.from_rasterio(out_ds)
 
 
-
 @eeo_raster_op
 def stack(
-        ds: EEORasterDataset,
-        others: Union[EEORasterDataset, Iterable[EEORasterDataset]],
+    ds: EEORasterDataset,
+    others: EEORasterDataset | Iterable[EEORasterDataset],
 ) -> EEORasterDataset:
     # Ensure stack for only rasterio-backend datasets
     backend = ds._adapter.backend
@@ -93,10 +86,7 @@ def stack(
         raise TypeError("Stacking is only allowed on rasterio backend rasters")
 
     # normalize inputs
-    if isinstance(others, EEORasterDataset):
-        others = [others]
-    else:
-        others = list(others)
+    others = [others] if isinstance(others, EEORasterDataset) else list(others)
 
     if not others:
         raise ValueError("At least one raster must be provided for stacking")
@@ -120,10 +110,7 @@ def stack(
 
     # metadata update
     meta = ds.get_metadata().copy()
-    meta.update(
-        count=stacked.shape[0],
-        dtype=stacked.dtype
-    )
+    meta.update(count=stacked.shape[0], dtype=stacked.dtype)
 
     # save to memory file
     memfile = rio.io.MemoryFile()

@@ -2,16 +2,16 @@ import numpy as np
 import pytest
 
 from eeo.preprocessing import (
-    resample,
-    standardize,
     normalize_min_max,
     normalize_percentile,
+    resample,
+    standardize,
 )
-
 
 # ---------------------------------------------------------------------
 # Standardize
 # ---------------------------------------------------------------------
+
 
 def test_standardize_zero_mean_unit_std(single_band_float32):
     standardized = standardize(single_band_float32)
@@ -24,6 +24,7 @@ def test_standardize_zero_mean_unit_std(single_band_float32):
 # ---------------------------------------------------------------------
 # Normalize min–max
 # ---------------------------------------------------------------------
+
 
 def test_normalize_min_max_default(single_band_float32):
     norm = normalize_min_max(single_band_float32)
@@ -45,10 +46,9 @@ def test_normalize_min_max_custom_range(single_band_float32):
 # Normalize percentile
 # ---------------------------------------------------------------------
 
+
 def test_normalize_percentile(single_band_float32):
-    norm = normalize_percentile(
-        single_band_float32, lower_percentile=0, upper_percentile=100
-    )
+    norm = normalize_percentile(single_band_float32, lower_percentile=0, upper_percentile=100)
     data = norm.read()
 
     assert np.min(data) == 0.0
@@ -58,6 +58,7 @@ def test_normalize_percentile(single_band_float32):
 # ---------------------------------------------------------------------
 # Resample
 # ---------------------------------------------------------------------
+
 
 def test_resample_with_scale_factor(single_band_float32):
     resampled = resample(single_band_float32, scale_factor=2.0)

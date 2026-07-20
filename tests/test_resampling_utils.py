@@ -1,11 +1,11 @@
 """Tests for eeo.common"""
+
+import numpy as np
 import pytest
 from rasterio.enums import Resampling
 
-import numpy as np
-
 from eeo import load_array
-from eeo.common import normalize_resampling_method, align_raster_to_target, mask_nodata
+from eeo.common import align_raster_to_target, mask_nodata, normalize_resampling_method
 
 
 # RESAMPLING NORMALIZATION

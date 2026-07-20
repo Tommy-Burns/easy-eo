@@ -1,5 +1,3 @@
-from typing import Union
-
 import numpy as np
 import rasterio as rio
 
@@ -10,15 +8,22 @@ from eeo.core.decorators import eeo_raster_op
 
 # ARITHMETIC AND ALGEBRA
 @eeo_raster_op
-def add(ds: EEORasterDataset, other: Union[EEORasterDataset, float, int], *, auto_align: bool = True,
-        method: str = "bilinear") -> EEORasterDataset:
+def add(
+    ds: EEORasterDataset,
+    other: EEORasterDataset | float | int,
+    *,
+    auto_align: bool = True,
+    method: str = "bilinear",
+) -> EEORasterDataset:
     """Pixel-wise addition of two rasters"""
     if isinstance(other, EEORasterDataset):
         if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
             if auto_align:
                 other = align_raster_to_target(other, ds, method=method)
             else:
-                raise ValueError("Rasters must have the same shape and alignment for arithmetic operations")
+                raise ValueError(
+                    "Rasters must have the same shape and alignment for arithmetic operations"
+                )
         data = ds.read() + other.read()
     else:
         data = ds.read() + other
@@ -31,15 +36,22 @@ def add(ds: EEORasterDataset, other: Union[EEORasterDataset, float, int], *, aut
 
 
 @eeo_raster_op
-def subtract(ds: EEORasterDataset, other: Union[EEORasterDataset, float, int], *, auto_align: bool = True,
-             method: str = "bilinear") -> EEORasterDataset:
+def subtract(
+    ds: EEORasterDataset,
+    other: EEORasterDataset | float | int,
+    *,
+    auto_align: bool = True,
+    method: str = "bilinear",
+) -> EEORasterDataset:
     """Pixel-wise subtraction of two rasters"""
     if isinstance(other, EEORasterDataset):
         if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
             if auto_align:
                 other = align_raster_to_target(other, ds, method=method)
             else:
-                raise ValueError("Rasters must have the same shape and alignment for arithmetic operations")
+                raise ValueError(
+                    "Rasters must have the same shape and alignment for arithmetic operations"
+                )
         data = ds.read() - other.read()
     else:
         data = ds.read() - other
@@ -51,15 +63,22 @@ def subtract(ds: EEORasterDataset, other: Union[EEORasterDataset, float, int], *
 
 
 @eeo_raster_op
-def multiply(ds: EEORasterDataset, other: Union[EEORasterDataset, float, int], *, auto_align: bool = True,
-             method: str = "bilinear") -> EEORasterDataset:
+def multiply(
+    ds: EEORasterDataset,
+    other: EEORasterDataset | float | int,
+    *,
+    auto_align: bool = True,
+    method: str = "bilinear",
+) -> EEORasterDataset:
     """Pixel-wise multiplication of two rasters"""
     if isinstance(other, EEORasterDataset):
         if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
             if auto_align:
                 other = align_raster_to_target(other, ds, method=method)
             else:
-                raise ValueError("Rasters must have the same shape and alignment for arithmetic operations")
+                raise ValueError(
+                    "Rasters must have the same shape and alignment for arithmetic operations"
+                )
 
         data = ds.read() * other.read()
     else:
@@ -74,7 +93,7 @@ def multiply(ds: EEORasterDataset, other: Union[EEORasterDataset, float, int], *
 @eeo_raster_op
 def divide(
     ds: EEORasterDataset,
-    other: Union[EEORasterDataset, float, int],
+    other: EEORasterDataset | float | int,
     *,
     auto_align: bool = True,
     method: str = "bilinear",
@@ -123,9 +142,8 @@ def divide(
     return EEORasterDataset.from_rasterio(out_ds)
 
 
-
 @eeo_raster_op
-def power(ds: EEORasterDataset, exponent: Union[int, float]) -> EEORasterDataset:
+def power(ds: EEORasterDataset, exponent: int | float) -> EEORasterDataset:
     """Pixel-wise exponentiation (scalar exponent)"""
     data = ds.read() ** exponent
     meta = ds.get_metadata()
@@ -148,7 +166,7 @@ def sqrt(ds: EEORasterDataset) -> EEORasterDataset:
 
 
 @eeo_raster_op
-def log(ds: EEORasterDataset, base: Union[int, float] = np.e) -> EEORasterDataset:
+def log(ds: EEORasterDataset, base: int | float = np.e) -> EEORasterDataset:
     """Pixel-wise log of the raster, safe with zeros"""
     data = np.log(np.maximum(ds.read(), 1e-10)) / np.log(base)
     meta = ds.get_metadata()
@@ -167,4 +185,3 @@ def absolute(ds: EEORasterDataset) -> EEORasterDataset:
     out_ds = memfile.open(**meta)
     out_ds.write(data)
     return EEORasterDataset.from_rasterio(out_ds)
-

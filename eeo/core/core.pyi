@@ -1,4 +1,4 @@
-from typing import Union, Optional, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 import geopandas as gpd
 import numpy as np
@@ -10,7 +10,6 @@ from rasterio.transform import Affine
 from eeo.analysis.stats import Coordinate
 from eeo.core.adapters import BaseRasterAdapter
 from eeo.core.types import ResamplingMethod
-
 
 def _save_raster(dataset: rio.DatasetReader, path: str, driver: str = "GTiff") -> None:
     """
@@ -39,25 +38,19 @@ class EEORasterDataset:
         ...
 
     @classmethod
-    def from_path(cls, path: str) -> "EEORasterDataset":
-        ...
-
+    def from_path(cls, path: str) -> EEORasterDataset: ...
     @classmethod
-    def from_rasterio(cls, dataset: rio.DatasetReader) -> "EEORasterDataset":
-        ...
-
+    def from_rasterio(cls, dataset: rio.DatasetReader) -> EEORasterDataset: ...
     @classmethod
     def from_array(
-            cls,
-            array: np.ndarray,
-            transform: Affine,
-            crs: Union[CRS, str, int],
-            driver: str = "GTiff",
-            nodata=None,
-    ) -> "EEORasterDataset":
-        ...
-
-    def to_rasterio(self) -> "EEORasterDataset":
+        cls,
+        array: np.ndarray,
+        transform: Affine,
+        crs: CRS | str | int,
+        driver: str = "GTiff",
+        nodata=None,
+    ) -> EEORasterDataset: ...
+    def to_rasterio(self) -> EEORasterDataset:
         """
         Convert the dataset to a Rasterio-backed EEORasterDataset.
 
@@ -167,12 +160,12 @@ class EEORasterDataset:
 
     def save_raster(self, path: str, driver: str = "GTiff") -> None:
         """
-            Save a rasterio dataset to a file.
+        Save a rasterio dataset to a file.
 
-            Args:
-                path (str): The file path where the dataset will be saved.
-                driver (str, optional): The raster driver format. Defaults to "GTiff".
-            """
+        Args:
+            path (str): The file path where the dataset will be saved.
+            driver (str, optional): The raster driver format. Defaults to "GTiff".
+        """
         ...
 
     def close(self) -> None:
@@ -213,67 +206,37 @@ class EEORasterDataset:
     def ds(self):
         return self._adapter.backend
 
-
     def read(self, *args, **kwargs):
         """Forward rasterio.read"""
         ...
 
-
     # Arithmetic Dunder Overloads
-    def __add__(
-            self,
-            other: Union["EEORasterDataset", int, float]
-    ) -> "EEORasterDataset":
+    def __add__(self, other: EEORasterDataset | int | float) -> EEORasterDataset:
         """Pixel-wise raster addition."""
 
-    def __radd__(
-            self,
-            other: Union[int, float]
-    ) -> "EEORasterDataset":
+    def __radd__(self, other: int | float) -> EEORasterDataset:
         """Reflected pixel-wise addition."""
 
-    def __sub__(
-            self,
-            other: Union["EEORasterDataset", int, float]
-    ) -> "EEORasterDataset":
+    def __sub__(self, other: EEORasterDataset | int | float) -> EEORasterDataset:
         """Pixel-wise raster subtraction."""
 
-    def __rsub__(
-            self,
-            other: Union[int, float]
-    ) -> "EEORasterDataset":
+    def __rsub__(self, other: int | float) -> EEORasterDataset:
         """Scalar minus raster."""
 
-    def __mul__(
-            self,
-            other: Union["EEORasterDataset", int, float]
-    ) -> "EEORasterDataset":
+    def __mul__(self, other: EEORasterDataset | int | float) -> EEORasterDataset:
         """Pixel-wise raster multiplication."""
 
-    def __rmul__(
-            self,
-            other: Union[int, float]
-    ) -> "EEORasterDataset":
+    def __rmul__(self, other: int | float) -> EEORasterDataset:
         """Reflected pixel-wise multiplication."""
 
-    def __truediv__(
-            self,
-            other: Union["EEORasterDataset", int, float]
-    ) -> "EEORasterDataset":
+    def __truediv__(self, other: EEORasterDataset | int | float) -> EEORasterDataset:
         """Pixel-wise raster division."""
 
-    def __rtruediv__(
-            self,
-            other: Union[int, float]
-    ) -> "EEORasterDataset":
+    def __rtruediv__(self, other: int | float) -> EEORasterDataset:
         """Scalar divided by raster."""
 
-    def __pow__(
-            self,
-            exponent: Union[int, float]
-    ) -> "EEORasterDataset":
+    def __pow__(self, exponent: int | float) -> EEORasterDataset:
         """Pixel-wise exponentiation."""
-
 
     # The following methods are add to this .pyi file for IDE autocompletion
     # They are not strictly needed for the functioning of the methods.
@@ -283,37 +246,37 @@ class EEORasterDataset:
     # ANALYSIS MODULE
     # ===================================
     def normalized_difference(
-            self,
-            other: EEORasterDataset,
-            *,
-            auto_align: bool = True,
-            method: str = "bilinear",
-            return_as_ndarray: bool = False
-    ) -> Union[np.ndarray, EEORasterDataset]:
+        self,
+        other: EEORasterDataset,
+        *,
+        auto_align: bool = True,
+        method: str = "bilinear",
+        return_as_ndarray: bool = False,
+    ) -> np.ndarray | EEORasterDataset:
         """
-            Compute the normalized difference index: (ds - other) / (ds + other)
+        Compute the normalized difference index: (ds - other) / (ds + other)
 
 
-            :param ds: EEORasterDataset
-                First raster (e.g. NIR).
-            :param other: EEORasterDataset
-                Second raster (e.g. Red).
-            :param auto_align: bool, optional
-                Automatically resample `other` to match `ds`.
-            :param method: str, optional
-                Resampling method used if auto-aligning.
-            :param return_as_ndarray: bool, optional
-                If True, return a NumPy array instead of an EEORasterDataset.
+        :param ds: EEORasterDataset
+            First raster (e.g. NIR).
+        :param other: EEORasterDataset
+            Second raster (e.g. Red).
+        :param auto_align: bool, optional
+            Automatically resample `other` to match `ds`.
+        :param method: str, optional
+            Resampling method used if auto-aligning.
+        :param return_as_ndarray: bool, optional
+            If True, return a NumPy array instead of an EEORasterDataset.
 
-            :return: Union[np.ndarray, EEORasterDataset]
+        :return: Union[np.ndarray, EEORasterDataset]
         """
         ...
 
     def extract_value_at_coordinate(
-            self,
-            coordinates: Coordinate,
-            band_idx: int = 1,
-    ) -> Union[int, float]:
+        self,
+        coordinates: Coordinate,
+        band_idx: int = 1,
+    ) -> int | float:
         """
         Extract the pixel value from an EEORasterDataset at a given geographic coordinate.
 
@@ -339,10 +302,10 @@ class EEORasterDataset:
         ...
 
     def get_maximum_pixel(
-            self,
-            band_idx: int = 1,
-            *,
-            return_position_as_pixel_coordinate: bool = False,
+        self,
+        band_idx: int = 1,
+        *,
+        return_position_as_pixel_coordinate: bool = False,
     ) -> dict:
         """
         Get the maximum pixel value and its location from a raster band.
@@ -357,10 +320,10 @@ class EEORasterDataset:
         ...
 
     def get_minimum_pixel(
-            self,
-            band_idx: int = 1,
-            *,
-            return_position_as_pixel_coordinate: bool = False,
+        self,
+        band_idx: int = 1,
+        *,
+        return_position_as_pixel_coordinate: bool = False,
     ) -> dict:
         """
         Get the minimum pixel value and its location from a raster band.
@@ -375,10 +338,10 @@ class EEORasterDataset:
         ...
 
     def get_mean_pixel(
-            self,
-            band_idx: int = 1,
-            *,
-            return_position_as_pixel_coordinate: bool = False,
+        self,
+        band_idx: int = 1,
+        *,
+        return_position_as_pixel_coordinate: bool = False,
     ) -> dict:
         """
         Get the pixel whose value is closest to the mean of the raster band.
@@ -392,11 +355,11 @@ class EEORasterDataset:
         ...
 
     def get_percentile_pixel(
-            self,
-            percentile: float,
-            band_idx: int = 1,
-            *,
-            return_position_as_pixel_coordinate: bool = False,
+        self,
+        percentile: float,
+        band_idx: int = 1,
+        *,
+        return_position_as_pixel_coordinate: bool = False,
     ) -> dict:
         """
         Get the pixel corresponding to a given percentile of raster values.
@@ -412,11 +375,11 @@ class EEORasterDataset:
     # OPERATIONS MODULE
     # ===================================
     def add(
-            self,
-            other: Union[EEORasterDataset, float, int],
-            *,
-            auto_align: bool = True,
-            method: str = "bilinear"
+        self,
+        other: EEORasterDataset | float | int,
+        *,
+        auto_align: bool = True,
+        method: str = "bilinear",
     ) -> EEORasterDataset:
         """
         Pixel-wise addition of two rasters or a raster and a scalar.
@@ -442,11 +405,11 @@ class EEORasterDataset:
         ...
 
     def subtract(
-            self,
-            other: Union[EEORasterDataset, float, int],
-            *,
-            auto_align: bool = True,
-            method: str = "bilinear"
+        self,
+        other: EEORasterDataset | float | int,
+        *,
+        auto_align: bool = True,
+        method: str = "bilinear",
     ) -> EEORasterDataset:
         """
         Pixel-wise subtraction of two rasters or a raster and a scalar.
@@ -462,11 +425,11 @@ class EEORasterDataset:
         ...
 
     def multiply(
-            self,
-            other: Union[EEORasterDataset, float, int],
-            *,
-            auto_align: bool = True,
-            method: str = "bilinear"
+        self,
+        other: EEORasterDataset | float | int,
+        *,
+        auto_align: bool = True,
+        method: str = "bilinear",
     ) -> EEORasterDataset:
         """
         Pixel-wise multiplication of two rasters or a raster and a scalar.
@@ -480,12 +443,12 @@ class EEORasterDataset:
         ...
 
     def divide(
-            self,
-            other: Union[EEORasterDataset, float, int],
-            *,
-            auto_align: bool = True,
-            method: str = "bilinear",
-            safe: bool = True
+        self,
+        other: EEORasterDataset | float | int,
+        *,
+        auto_align: bool = True,
+        method: str = "bilinear",
+        safe: bool = True,
     ) -> EEORasterDataset:
         """
         Pixel-wise division of two rasters or a raster and a scalar.
@@ -505,10 +468,7 @@ class EEORasterDataset:
         """
         ...
 
-    def power(
-            self,
-            exponent: Union[int, float]
-    ) -> EEORasterDataset:
+    def power(self, exponent: int | float) -> EEORasterDataset:
         """
         Pixel-wise exponentiation of raster values.
 
@@ -520,9 +480,7 @@ class EEORasterDataset:
         """
         ...
 
-    def sqrt(
-            self
-    ) -> EEORasterDataset:
+    def sqrt(self) -> EEORasterDataset:
         """
         Pixel-wise square root of raster values.
 
@@ -534,10 +492,7 @@ class EEORasterDataset:
         """
         ...
 
-    def log(
-            self,
-            base: Union[int, float] = ...
-    ) -> EEORasterDataset:
+    def log(self, base: int | float = ...) -> EEORasterDataset:
         """
         Pixel-wise logarithm of raster values.
 
@@ -555,9 +510,7 @@ class EEORasterDataset:
         """
         ...
 
-    def absolute(
-            self
-    ) -> EEORasterDataset:
+    def absolute(self) -> EEORasterDataset:
         """
         Pixel-wise absolute value of raster values.
 
@@ -568,12 +521,12 @@ class EEORasterDataset:
         ...
 
     def mosaic(
-            self,
-            others: list[EEORasterDataset],
-            *,
-            resampling_method: str = "nearest",
-            auto_reproject: bool = False,
-            **kwargs,
+        self,
+        others: list[EEORasterDataset],
+        *,
+        resampling_method: str = "nearest",
+        auto_reproject: bool = False,
+        **kwargs,
     ) -> EEORasterDataset | None:
         """
         Mosaic one or more rasters into a single raster.
@@ -592,13 +545,13 @@ class EEORasterDataset:
         ...
 
     def stack(
-            self,
-            others: Union[EEORasterDataset, Iterable[EEORasterDataset]],
+        self,
+        others: EEORasterDataset | Iterable[EEORasterDataset],
     ) -> EEORasterDataset:
         """
-            Stack rasters into a multi-band raster.
+        Stack rasters into a multi-band raster.
 
-            All rasters must have identical CRS, transform, and shape.
+        All rasters must have identical CRS, transform, and shape.
         """
         ...
 
@@ -606,17 +559,17 @@ class EEORasterDataset:
     # PREPROCESSING MODULE
     # ===================================
     def clip_raster_with_vector(
-            self,
-            vector_file: Union[gpd.GeoDataFrame, str],
-            *,
-            crop: bool = True,
-            pad: bool = False,
-            all_touched: bool = False,
-            invert: bool = False,
-            nodata: Union[int, float, None] = None,
-            show_preview: bool = False,
-            plot_kwargs: dict | None = None,
-    ) -> "EEORasterDataset":
+        self,
+        vector_file: gpd.GeoDataFrame | str,
+        *,
+        crop: bool = True,
+        pad: bool = False,
+        all_touched: bool = False,
+        invert: bool = False,
+        nodata: int | float | None = None,
+        show_preview: bool = False,
+        plot_kwargs: dict | None = None,
+    ) -> EEORasterDataset:
         """
         Clip a raster using vector geometries.
 
@@ -656,11 +609,8 @@ class EEORasterDataset:
         ...
 
     def clip_raster_with_bbox(
-            self,
-            bbox: tuple | list,
-            plot_kwargs=None,
-            show_preview: bool = False
-    ) -> Union[None, "EEORasterDataset"]:
+        self, bbox: tuple | list, plot_kwargs=None, show_preview: bool = False
+    ) -> None | EEORasterDataset:
         """
         Clip a raster using a bounding box.
 
@@ -684,9 +634,7 @@ class EEORasterDataset:
         """
         ...
 
-    def standardize(
-            self
-    ) -> EEORasterDataset:
+    def standardize(self) -> EEORasterDataset:
         """
         Z-score standardization of raster values.
 
@@ -700,10 +648,7 @@ class EEORasterDataset:
         ...
 
     def normalize_min_max(
-            self,
-            *,
-            new_min: Union[int, float] = ...,
-            new_max: Union[int, float] = ...
+        self, *, new_min: int | float = ..., new_max: int | float = ...
     ) -> EEORasterDataset:
         """
         Min-max normalization of raster values.
@@ -718,10 +663,7 @@ class EEORasterDataset:
         ...
 
     def normalize_percentile(
-            self,
-            *,
-            lower_percentile: Union[int, float] = ...,
-            upper_percentile: Union[int, float] = ...
+        self, *, lower_percentile: int | float = ..., upper_percentile: int | float = ...
     ) -> EEORasterDataset:
         """
         Percentile-based normalization of raster values.
@@ -746,10 +688,10 @@ class EEORasterDataset:
         ...
 
     def reproject_raster(
-            self,
-            *,
-            target_crs: Union[int, str, CRS],
-            resampling_method: Union[Resampling, ResamplingMethod] = "nearest",
+        self,
+        *,
+        target_crs: int | str | CRS,
+        resampling_method: Resampling | ResamplingMethod = "nearest",
     ) -> EEORasterDataset:
         """
         Reproject a raster to a new CRS.
@@ -774,15 +716,16 @@ class EEORasterDataset:
         """
         ...
 
-    def resample(self,
-                 *,
-                 size: Optional[tuple[int, int]] = None,
-                 scale_factor: Optional[float] = None,
-                 resolution: Optional[tuple[float, float]] = None,
-                 resampling_method: Union[Resampling, ResamplingMethod] = "nearest",
-                 plot_kwargs=None,
-                 show_preview: bool = False
-                 ) -> EEORasterDataset:
+    def resample(
+        self,
+        *,
+        size: tuple[int, int] | None = None,
+        scale_factor: float | None = None,
+        resolution: tuple[float, float] | None = None,
+        resampling_method: Resampling | ResamplingMethod = "nearest",
+        plot_kwargs=None,
+        show_preview: bool = False,
+    ) -> EEORasterDataset:
         """
         Resample a raster to a different resolution using a scaling factor
 
@@ -811,17 +754,17 @@ class EEORasterDataset:
     # VISUALIZATION MODULE
     # ===================================
     def plot_band_array(
-            self,
-            bands: int | Sequence[int] | None = None,
-            *,
-            cmap: str = "gray",
-            figsize: tuple[int, int] = (8, 8),
-            stretch: bool = False,
-            pmin: float = 2,
-            pmax: float = 98,
-            title: str | None = None,
-            save_path: str | None = None,
-            **imshow_kwargs
+        self,
+        bands: int | Sequence[int] | None = None,
+        *,
+        cmap: str = "gray",
+        figsize: tuple[int, int] = (8, 8),
+        stretch: bool = False,
+        pmin: float = 2,
+        pmax: float = 98,
+        title: str | None = None,
+        save_path: str | None = None,
+        **imshow_kwargs,
     ) -> None:
         """
         Plot raster bands as NumPy arrays using row/column coordinates.
@@ -842,17 +785,17 @@ class EEORasterDataset:
         ...
 
     def plot_raster(
-            self,
-            bands: int | Sequence[int] | None = None,
-            *,
-            cmap: str = "gray",
-            figsize: tuple[int, int] = (8, 8),
-            stretch: bool = False,
-            pmin: float = 2,
-            pmax: float = 98,
-            title: str | None = None,
-            save_path: str | None = None,
-            **show_kwargs
+        self,
+        bands: int | Sequence[int] | None = None,
+        *,
+        cmap: str = "gray",
+        figsize: tuple[int, int] = (8, 8),
+        stretch: bool = False,
+        pmin: float = 2,
+        pmax: float = 98,
+        title: str | None = None,
+        save_path: str | None = None,
+        **show_kwargs,
     ) -> None:
         """
         Plot raster bands in spatial (CRS-aware) coordinates.
@@ -871,15 +814,15 @@ class EEORasterDataset:
         ...
 
     def plot_histogram(
-            self,
-            bands: int | Sequence[int] | None = None,
-            *,
-            bins: int = 256,
-            figsize: tuple[int, int] = (8, 8),
-            log: bool = False,
-            title: str | None = None,
-            save_path: str | None = None,
-            **hist_kwargs
+        self,
+        bands: int | Sequence[int] | None = None,
+        *,
+        bins: int = 256,
+        figsize: tuple[int, int] = (8, 8),
+        log: bool = False,
+        title: str | None = None,
+        save_path: str | None = None,
+        **hist_kwargs,
     ) -> None:
         """
         Plot histograms of raster band values.
@@ -896,18 +839,18 @@ class EEORasterDataset:
         ...
 
     def plot_raster_with_histogram(
-            self,
-            bands: int | Sequence[int] | None = None,
-            *,
-            cmap: str = "gray",
-            figsize: tuple[int, int] = (10, 5),
-            bins: int = 256,
-            pmin: float = 2,
-            pmax: float = 98,
-            stretch: bool = False,
-            sharey: bool = False,
-            title: str | None = None,
-            save_path: str | None = None,
+        self,
+        bands: int | Sequence[int] | None = None,
+        *,
+        cmap: str = "gray",
+        figsize: tuple[int, int] = (10, 5),
+        bins: int = 256,
+        pmin: float = 2,
+        pmax: float = 98,
+        stretch: bool = False,
+        sharey: bool = False,
+        title: str | None = None,
+        save_path: str | None = None,
     ) -> None:
         """
         Plot raster bands alongside their histograms.
@@ -930,15 +873,15 @@ class EEORasterDataset:
         ...
 
     def plot_composite(
-            self,
-            bands: tuple[int, int, int],
-            *,
-            stretch: bool = False,
-            figsize: tuple[int, int] = (8, 8),
-            pmin: float = 2,
-            pmax: float = 98,
-            title: str | None = None,
-            save_path: str | None = None,
+        self,
+        bands: tuple[int, int, int],
+        *,
+        stretch: bool = False,
+        figsize: tuple[int, int] = (8, 8),
+        pmin: float = 2,
+        pmax: float = 98,
+        title: str | None = None,
+        save_path: str | None = None,
     ) -> None:
         """
         Plot a three-band raster composite (e.g., RGB or false-color).

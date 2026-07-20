@@ -18,9 +18,7 @@ def test_single_band_float32_contract(single_band_float32):
     assert ds.get_shape() == (6, 6)
     data = ds.read()
     assert data.dtype == np.float32
-    np.testing.assert_array_equal(
-        data[0], np.arange(36, dtype=np.float32).reshape(6, 6)
-    )
+    np.testing.assert_array_equal(data[0], np.arange(36, dtype=np.float32).reshape(6, 6))
     assert ds.get_crs() == CRS.from_epsg(32633)
 
 
@@ -30,9 +28,7 @@ def test_multiband_uint16_contract(multiband_uint16):
     assert ds.get_count() == 4
     data = ds.read()
     assert data.dtype == np.uint16
-    np.testing.assert_array_equal(
-        data[2], 3000 + np.arange(36, dtype=np.uint16).reshape(6, 6)
-    )
+    np.testing.assert_array_equal(data[2], 3000 + np.arange(36, dtype=np.uint16).reshape(6, 6))
 
 
 def test_raster_with_nodata_contract(raster_with_nodata):
@@ -67,7 +63,5 @@ def test_numpy_backed_dataset_contract(numpy_backed_dataset):
 def test_raster_3x3_contract(raster_3x3):
     ds = raster_3x3
     assert isinstance(ds._adapter, NumpyRasterioAdapter)
-    np.testing.assert_array_equal(
-        ds.read()[0], np.arange(1, 10, dtype=np.float32).reshape(3, 3)
-    )
+    np.testing.assert_array_equal(ds.read()[0], np.arange(1, 10, dtype=np.float32).reshape(3, 3))
     assert ds.get_crs() == CRS.from_epsg(4326)

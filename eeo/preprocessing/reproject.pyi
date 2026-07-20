@@ -1,17 +1,14 @@
-from typing import Union, Optional
-
 from pyproj import CRS
 from rasterio.warp import Resampling
 
 from eeo.core.core import EEORasterDataset
 from eeo.core.types import ResamplingMethod
 
-
 def reproject_raster(
     ds: EEORasterDataset,
     *,
-    target_crs: Union[int, str, CRS],
-    resampling_method: Union[Resampling, ResamplingMethod] = "nearest",
+    target_crs: int | str | CRS,
+    resampling_method: Resampling | ResamplingMethod = "nearest",
 ) -> EEORasterDataset:
     """
     Reproject a raster to a new CRS.

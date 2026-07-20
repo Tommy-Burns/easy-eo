@@ -1,5 +1,4 @@
 import os
-from typing import Union
 
 import geopandas as gpd
 import rasterio as rio
@@ -13,13 +12,13 @@ from eeo.core.decorators import eeo_raster_op
 @eeo_raster_op
 def clip_raster_with_vector(
     ds: EEORasterDataset,
-    vector_file: Union[gpd.GeoDataFrame, str],
+    vector_file: gpd.GeoDataFrame | str,
     *,
     crop: bool = True,
     pad: bool = False,
     all_touched: bool = False,
     invert: bool = False,
-    nodata: Union[int, float, None] = None,
+    nodata: int | float | None = None,
     show_preview: bool = False,
     plot_kwargs: dict | None = None,
 ) -> EEORasterDataset:
@@ -34,9 +33,7 @@ def clip_raster_with_vector(
     elif isinstance(vector_file, str) and os.path.isfile(vector_file):
         gdf = gpd.read_file(vector_file)
     else:
-        raise TypeError(
-            "vector_file must be a GeoDataFrame or a valid file path"
-        )
+        raise TypeError("vector_file must be a GeoDataFrame or a valid file path")
 
     # Reproject vector geometries if needed
     if gdf.crs != ds.get_crs():
@@ -78,15 +75,10 @@ def clip_raster_with_vector(
 
     return EEORasterDataset.from_rasterio(out_ds)
 
-from rasterio.windows import from_bounds, Window
-
 
 @eeo_raster_op
 def clip_raster_with_bbox(
-        ds,
-        bbox: tuple | list,
-        plot_kwargs=None,
-        show_preview: bool = False
+    ds, bbox: tuple | list, plot_kwargs=None, show_preview: bool = False
 ) -> "EEORasterDataset":
 
     # Ensure rasterio backend
@@ -133,4 +125,3 @@ def clip_raster_with_bbox(
         EEORasterDataset.from_rasterio(dataset).plot_raster(**(plot_kwargs or {}))
 
     return EEORasterDataset.from_rasterio(dataset)
-

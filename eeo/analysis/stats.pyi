@@ -1,14 +1,12 @@
-from typing import Union
-
 from eeo.core.core import EEORasterDataset
 
-Coordinate = Union[tuple[float, float], list[float]]
+Coordinate = tuple[float, float] | list[float]
 
 def extract_value_at_coordinate(
     ds: EEORasterDataset,
     coordinates: Coordinate,
     band_idx: int = 1,
-) -> Union[int, float]:
+) -> int | float:
     """
     Extract the pixel value from an EEORasterDataset at a given geographic coordinate.
 
@@ -25,7 +23,6 @@ def extract_value_at_coordinate(
     :raises ValueError: If the provided coordinates do not contain exactly two elements.
     """
     ...
-
 
 def get_maximum_pixel(
     ds: EEORasterDataset,

@@ -1,17 +1,17 @@
 """
 Core functionalities for easy-eo
 """
+
 from __future__ import annotations
 
-from typing import Union
+import contextlib
 
 import numpy as np
 import rasterio as rio
 from rasterio import CRS
 from rasterio.transform import Affine
 
-from eeo.core.adapters import NumpyRasterioAdapter
-from eeo.core.adapters import RasterioAdapter, BaseRasterAdapter
+from eeo.core.adapters import BaseRasterAdapter, NumpyRasterioAdapter, RasterioAdapter
 
 
 # IO helper
@@ -33,23 +33,23 @@ class EEORasterDataset:
     # Constructors
     # ========================
     @classmethod
-    def from_path(cls, path: str) -> "EEORasterDataset":
+    def from_path(cls, path: str) -> EEORasterDataset:
         adapter = RasterioAdapter.from_path(path)
         return cls(adapter=adapter, path=path)
 
     @classmethod
-    def from_rasterio(cls, dataset: rio.DatasetReader) -> "EEORasterDataset":
+    def from_rasterio(cls, dataset: rio.DatasetReader) -> EEORasterDataset:
         return cls(adapter=RasterioAdapter(dataset))
 
     @classmethod
     def from_array(
-            cls,
-            array: np.ndarray,
-            transform: Affine,
-            crs: Union[CRS, str, int],
-            driver: str = "GTiff",
-            nodata=None,
-    ) -> "EEORasterDataset":
+        cls,
+        array: np.ndarray,
+        transform: Affine,
+        crs: CRS | str | int,
+        driver: str = "GTiff",
+        nodata=None,
+    ) -> EEORasterDataset:
         adapter = NumpyRasterioAdapter(
             array=array,
             transform=transform,
@@ -63,7 +63,7 @@ class EEORasterDataset:
     # Conversion between adapters
     # ========================
 
-    def to_rasterio(self) -> "EEORasterDataset":
+    def to_rasterio(self) -> EEORasterDataset:
         backend = self._adapter.backend
 
         # already a rasterio backend
@@ -127,7 +127,7 @@ class EEORasterDataset:
     # ========================
     # Saving
     # ========================
-    def save_raster(self, path: str, driver: str="GTiff") -> None:
+    def save_raster(self, path: str, driver: str = "GTiff") -> None:
         self._adapter.write(path=path, driver=driver)
 
     # ========================
@@ -137,19 +137,19 @@ class EEORasterDataset:
         self._adapter.close()
 
     def __del__(self):
-        try:
+        with contextlib.suppress(Exception):
             self.close()
-        except Exception:
-            pass
 
     # ========================
     # Constructors
     # ========================
     def _bind(self, func):
         """Helper that wraps external functions as bound methods"""
+
         def method(*args, **kwargs):
             result = func(*args, **kwargs)
             return self if result is None else result
+
         return method
 
     # ========================
@@ -158,7 +158,6 @@ class EEORasterDataset:
     @property
     def ds(self):
         return self._adapter.backend
-
 
     # ========================
     # Arithmetic Operators
@@ -195,4 +194,3 @@ class EEORasterDataset:
 
     def __pow__(self, exponent):
         return self.power(exponent)
-

@@ -4,8 +4,6 @@ Most vegetation and water indices can be expressed directly using
 ``normalized_difference`` or raster arithmetic.
 """
 
-from typing import Union
-
 import numpy as np
 import rasterio as rio
 
@@ -16,13 +14,13 @@ from eeo.core.decorators import eeo_raster_op
 
 @eeo_raster_op
 def normalized_difference(
-        ds: EEORasterDataset,
-        other: EEORasterDataset,
-        *,
-        auto_align: bool = True,
-        method: str = "bilinear",
-        return_as_ndarray: bool = False
-) -> Union[np.ndarray, EEORasterDataset]:
+    ds: EEORasterDataset,
+    other: EEORasterDataset,
+    *,
+    auto_align: bool = True,
+    method: str = "bilinear",
+    return_as_ndarray: bool = False,
+) -> np.ndarray | EEORasterDataset:
     # Ensure reprojection for only rasterio-backend datasets
     backend = ds._adapter.backend
     if not isinstance(backend, rio.DatasetReader):
@@ -32,7 +30,6 @@ def normalized_difference(
             other = align_raster_to_target(other, ds, method=method)
         else:
             raise ValueError("Rasters must have the same shape and alignment")
-
 
     a = ds.read().astype(rio.float32)
     b = other.read().astype(rio.float32)

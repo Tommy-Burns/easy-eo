@@ -1,8 +1,7 @@
-from typing import Union, Optional
 import pyproj
-from pyproj import CRS
 import rasterio as rio
-from rasterio.warp import calculate_default_transform, reproject, Resampling
+from pyproj import CRS
+from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 from eeo.common import normalize_resampling_method
 from eeo.core.core import EEORasterDataset
@@ -11,10 +10,10 @@ from eeo.core.decorators import eeo_raster_op
 
 @eeo_raster_op
 def reproject_raster(
-        ds: EEORasterDataset,
-        *,
-        target_crs: Union[int, str, CRS],
-        resampling_method: Resampling = Resampling.nearest
+    ds: EEORasterDataset,
+    *,
+    target_crs: int | str | CRS,
+    resampling_method: Resampling = Resampling.nearest,
 ) -> EEORasterDataset:
     # Ensure reprojection for only rasterio-backend datasets
     backend = ds._adapter.backend
@@ -44,17 +43,12 @@ def reproject_raster(
         left=left,
         bottom=bottom,
         right=right,
-        top=top
+        top=top,
     )
 
     # Update the metadata
     meta = ds.get_metadata()
-    meta.update({
-        'crs': crs,
-        'transform': transform,
-        'width': width,
-        'height': height
-    })
+    meta.update({"crs": crs, "transform": transform, "width": width, "height": height})
 
     # return in-memory dataset
     memfile = rio.io.MemoryFile()
@@ -68,6 +62,6 @@ def reproject_raster(
             src_crs=ds.get_crs(),
             dst_transform=transform,
             dst_crs=crs,
-            resampling=resampling_method
+            resampling=resampling_method,
         )
     return EEORasterDataset.from_rasterio(dataset)

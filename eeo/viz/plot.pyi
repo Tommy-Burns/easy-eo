@@ -1,31 +1,24 @@
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from eeo.core.core import EEORasterDataset
 
-
-def _as_list(obj):
-    ...
-
-def _normalize_bands(ds: EEORasterDataset, bands):
-    ...
-
-def _percentile_stretch(array, pmin=2, pmax=98):
-    ...
-
+def _as_list(obj): ...
+def _normalize_bands(ds: EEORasterDataset, bands): ...
+def _percentile_stretch(array, pmin=2, pmax=98): ...
 def plot_band_array(
-        ds: EEORasterDataset | list[EEORasterDataset],
-        bands: int | Sequence[int] | None = None,
-        *,
-        cmap: str = "gray",
-        figsize: tuple[int, int] = (8, 8),
-        stretch: bool = False,
-        pmin: float = 2,
-        pmax: float = 98,
-        title: str | None = None,
-        save_path: str | None = None,
-        **imshow_kwargs
+    ds: EEORasterDataset | list[EEORasterDataset],
+    bands: int | Sequence[int] | None = None,
+    *,
+    cmap: str = "gray",
+    figsize: tuple[int, int] = (8, 8),
+    stretch: bool = False,
+    pmin: float = 2,
+    pmax: float = 98,
+    title: str | None = None,
+    save_path: str | None = None,
+    **imshow_kwargs,
 ) -> None:
     """
     Plot raster bands as NumPy arrays using row/column coordinates.
@@ -45,19 +38,18 @@ def plot_band_array(
     """
     ...
 
-
 def plot_raster(
-        ds: EEORasterDataset | list[EEORasterDataset],
-        bands: int | Sequence[int] | None = None,
-        *,
-        cmap: str = "gray",
-        figsize: tuple[int, int] = (8, 8),
-        stretch: bool = False,
-        pmin: float = 2,
-        pmax: float = 98,
-        title: str | None = None,
-        save_path: str | None = None,
-        **show_kwargs
+    ds: EEORasterDataset | list[EEORasterDataset],
+    bands: int | Sequence[int] | None = None,
+    *,
+    cmap: str = "gray",
+    figsize: tuple[int, int] = (8, 8),
+    stretch: bool = False,
+    pmin: float = 2,
+    pmax: float = 98,
+    title: str | None = None,
+    save_path: str | None = None,
+    **show_kwargs,
 ) -> None:
     """
     Plot raster bands in spatial (CRS-aware) coordinates.
@@ -75,17 +67,16 @@ def plot_raster(
     """
     ...
 
-
 def plot_histogram(
-        ds: EEORasterDataset | list[EEORasterDataset],
-        bands: int | Sequence[int] | None = None,
-        *,
-        bins: int = 256,
-        figsize: tuple[int, int] = (8, 8),
-        log: bool = False,
-        title: str | None = None,
-        save_path: str | None = None,
-        **hist_kwargs
+    ds: EEORasterDataset | list[EEORasterDataset],
+    bands: int | Sequence[int] | None = None,
+    *,
+    bins: int = 256,
+    figsize: tuple[int, int] = (8, 8),
+    log: bool = False,
+    title: str | None = None,
+    save_path: str | None = None,
+    **hist_kwargs,
 ) -> None:
     """
     Plot histograms of raster band values.
@@ -101,20 +92,19 @@ def plot_histogram(
     """
     ...
 
-
 def plot_raster_with_histogram(
-        ds: EEORasterDataset,
-        bands: int | Sequence[int] | None = None,
-        *,
-        cmap: str = "gray",
-        figsize: tuple[int, int] = (10, 5),
-        bins: int = 256,
-        pmin: float = 2,
-        pmax: float = 98,
-        stretch: bool = False,
-        sharey: bool = False,
-        title: str | None = None,
-        save_path: str | None = None,
+    ds: EEORasterDataset,
+    bands: int | Sequence[int] | None = None,
+    *,
+    cmap: str = "gray",
+    figsize: tuple[int, int] = (10, 5),
+    bins: int = 256,
+    pmin: float = 2,
+    pmax: float = 98,
+    stretch: bool = False,
+    sharey: bool = False,
+    title: str | None = None,
+    save_path: str | None = None,
 ) -> None:
     """
     Plot raster bands alongside their histograms.
@@ -136,17 +126,16 @@ def plot_raster_with_histogram(
     """
     ...
 
-
 def plot_composite(
-        ds: EEORasterDataset,
-        bands: tuple[int, int, int],
-        *,
-        stretch: bool = False,
-        figsize: tuple[int, int] = (8, 8),
-        pmin: float = 2,
-        pmax: float = 98,
-        title: str | None = None,
-        save_path: str | None = None,
+    ds: EEORasterDataset,
+    bands: tuple[int, int, int],
+    *,
+    stretch: bool = False,
+    figsize: tuple[int, int] = (8, 8),
+    pmin: float = 2,
+    pmax: float = 98,
+    title: str | None = None,
+    save_path: str | None = None,
 ) -> None:
     """
     Plot a three-band raster composite (e.g., RGB or false-color).

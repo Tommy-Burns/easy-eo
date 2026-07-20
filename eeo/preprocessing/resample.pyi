@@ -1,22 +1,20 @@
-from typing import Optional, Union
-
 from rasterio.enums import Resampling
 
 from eeo.core.core import EEORasterDataset
 from eeo.core.types import ResamplingMethod
 
-
-def resample(ds: EEORasterDataset,
-             *,
-             size: Optional[tuple[int, int]] = None,
-             scale_factor: Optional[float] = None,
-             resolution: Optional[tuple[float, float]] = None,
-             save_path: str = None,
-             resampling_method: Union[Resampling, ResamplingMethod] = "nearest",
-             save_driver: str = "GTiff",
-             plot_kwargs=None,
-             show_preview: bool = False
-             ) -> Union[EEORasterDataset, None]:
+def resample(
+    ds: EEORasterDataset,
+    *,
+    size: tuple[int, int] | None = None,
+    scale_factor: float | None = None,
+    resolution: tuple[float, float] | None = None,
+    save_path: str = None,
+    resampling_method: Resampling | ResamplingMethod = "nearest",
+    save_driver: str = "GTiff",
+    plot_kwargs=None,
+    show_preview: bool = False,
+) -> EEORasterDataset | None:
     """
     Resample a raster to a different resolution using a scaling factor
 
