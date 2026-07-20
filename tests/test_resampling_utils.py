@@ -3,8 +3,6 @@ import pytest
 from rasterio.enums import Resampling
 
 import numpy as np
-from affine import Affine
-from rasterio.crs import CRS
 
 from eeo import load_array
 from eeo.common import normalize_resampling_method, align_raster_to_target, mask_nodata
@@ -37,36 +35,20 @@ def test_normalize_resampling_invalid_type():
 
 
 # ALIGN RASTER TO TARGET
-# Reject when shape and transform match
-def test_align_raster_noop():
-    array = np.ones((10, 10))
-    transform = Affine.identity()
-    crs = CRS.from_epsg(4326)
+# Returns the input unchanged when shape and transform already match
+def test_align_raster_noop(single_band_float32):
+    result = align_raster_to_target(single_band_float32, single_band_float32)
 
-    ds = load_array(array, transform=transform, crs=crs)
-    target = load_array(array, transform=transform, crs=crs)
+    assert result is single_band_float32
 
-    result = align_raster_to_target(ds, target)
 
-    assert result is ds
+# Resamples when shape/resolution differs
+def test_align_raster_resamples(shape_mismatch_pair):
+    fine, coarse = shape_mismatch_pair
 
-# Resamples when shape differs
-def test_align_raster_resamples():
-    src = load_array(
-        np.ones((10, 10)),
-        transform=Affine.identity(),
-        crs=CRS.from_epsg(4326),
-    )
+    result = align_raster_to_target(coarse, fine)
 
-    target = load_array(
-        np.ones((20, 20)),
-        transform=Affine.scale(2, 2),  # <-- force mismatch
-        crs=CRS.from_epsg(4326),
-    )
-
-    result = align_raster_to_target(src, target)
-
-    assert result.get_shape() == target.get_shape()
+    assert result.get_shape() == fine.get_shape()
 
 
 # NO DATA MASKING
@@ -82,6 +64,7 @@ def test_mask_nodata_applies_nan():
     assert np.isnan(masked[0, 1])
     assert masked[0, 0] == 1
 
+
 # No data gives unchanged array
 def test_mask_nodata_no_nodata():
     array = np.array([[1, 2], [3, 4]], dtype=float)
@@ -91,4 +74,3 @@ def test_mask_nodata_no_nodata():
     masked = mask_nodata(ds, array)
 
     np.testing.assert_array_equal(masked, array)
-

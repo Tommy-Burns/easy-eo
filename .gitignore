@@ -13,12 +13,14 @@ dist/
 
 # Data
 data/
+others/
 
 # Docs
 docs/build/
 
 # Tests
 .pytest_cache/
+.ruff_cache/
 
 # IDE
 .vscode/

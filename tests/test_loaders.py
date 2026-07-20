@@ -1,4 +1,3 @@
-import os
 import numpy as np
 import pytest
 import rasterio as rio
@@ -29,7 +28,7 @@ def test_load_raster_success(tmp_path):
     path = tmp_path / "test.tif"
 
     data = np.array([[1, 2], [3, 4]], dtype=np.uint8)
-    transform = Affine.identity()
+    transform = Affine.translation(0, 2) * Affine.scale(1, -1)
     crs = CRS.from_epsg(4326)
 
     with rio.open(
@@ -82,7 +81,7 @@ def test_load_array_2d_success():
 
 # Load 3D array successfully (multi-band)
 def test_load_array_3d_success():
-    array = np.random.rand(3, 4, 5)
+    array = np.arange(60, dtype=np.float32).reshape(3, 4, 5)
     transform = Affine.identity()
     crs = CRS.from_epsg(3857)
 
