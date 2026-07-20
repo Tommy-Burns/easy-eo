@@ -38,10 +38,10 @@ def add(
     Returns
     -------
     EEORasterDataset
-        New dataset in the **same dtype as** ``ds`` (integer inputs are not
-        promoted, so fractional results are truncated — cast to a floating
-        dtype first if that matters; see WP-06). The nodata value is carried
-        over unchanged.
+        New dataset in the same dtype as ``ds``. Integer inputs are not
+        promoted, so fractional results are truncated; cast to a floating
+        dtype first if that matters. The nodata value is carried over
+        unchanged.
 
     Raises
     ------
@@ -51,10 +51,10 @@ def add(
 
     Notes
     -----
-    Reads the full array(s) into memory rather than streaming block-wise
-    (WP-16). Nodata pixels are **not** masked: they take part in the
-    arithmetic and are corrupted in the output, even though the nodata value
-    in the metadata is preserved (WP-06).
+    Reads the full array(s) into memory rather than streaming block-wise.
+    Nodata pixels are not masked: they take part in the arithmetic and are
+    corrupted in the output, although the nodata value in the metadata is
+    preserved.
 
     Examples
     --------
@@ -111,10 +111,10 @@ def subtract(
     Returns
     -------
     EEORasterDataset
-        New dataset in the **same dtype as** ``ds`` (integer inputs are not
-        promoted, so fractional or negative results may wrap or truncate —
-        cast to a floating dtype first if that matters; see WP-06). The
-        nodata value is carried over unchanged.
+        New dataset in the same dtype as ``ds``. Integer inputs are not
+        promoted, so fractional or negative results may wrap or truncate;
+        cast to a floating dtype first if that matters. The nodata value is
+        carried over unchanged.
 
     Raises
     ------
@@ -124,10 +124,10 @@ def subtract(
 
     Notes
     -----
-    Reads the full array(s) into memory rather than streaming block-wise
-    (WP-16). Nodata pixels are **not** masked: they take part in the
-    arithmetic and are corrupted in the output, even though the nodata value
-    in the metadata is preserved (WP-06).
+    Reads the full array(s) into memory rather than streaming block-wise.
+    Nodata pixels are not masked: they take part in the arithmetic and are
+    corrupted in the output, although the nodata value in the metadata is
+    preserved.
 
     Examples
     --------
@@ -182,10 +182,10 @@ def multiply(
     Returns
     -------
     EEORasterDataset
-        New dataset in the **same dtype as** ``ds`` (integer inputs are not
-        promoted, so fractional results are truncated — cast to a floating
-        dtype first if that matters; see WP-06). The nodata value is carried
-        over unchanged.
+        New dataset in the same dtype as ``ds``. Integer inputs are not
+        promoted, so fractional results are truncated; cast to a floating
+        dtype first if that matters. The nodata value is carried over
+        unchanged.
 
     Raises
     ------
@@ -195,10 +195,10 @@ def multiply(
 
     Notes
     -----
-    Reads the full array(s) into memory rather than streaming block-wise
-    (WP-16). Nodata pixels are **not** masked: they take part in the
-    arithmetic and are corrupted in the output, even though the nodata value
-    in the metadata is preserved (WP-06).
+    Reads the full array(s) into memory rather than streaming block-wise.
+    Nodata pixels are not masked: they take part in the arithmetic and are
+    corrupted in the output, although the nodata value in the metadata is
+    preserved.
 
     Examples
     --------
@@ -260,9 +260,9 @@ def divide(
     -------
     EEORasterDataset
         New dataset. The quotient is computed in float32 but written back in
-        the **same dtype as** ``ds``, so integer inputs truncate the result —
-        divide a floating-dtype raster to keep fractional values (see WP-06).
-        The nodata value is carried over unchanged.
+        the same dtype as ``ds``, so integer inputs truncate the result;
+        divide a floating-dtype raster to keep fractional values. The nodata
+        value is carried over unchanged.
 
     Raises
     ------
@@ -272,10 +272,10 @@ def divide(
 
     Notes
     -----
-    Reads the full array(s) into memory rather than streaming block-wise
-    (WP-16). Nodata pixels are **not** masked: they take part in the
-    division and are corrupted in the output, even though the nodata value
-    in the metadata is preserved (WP-06).
+    Reads the full array(s) into memory rather than streaming block-wise.
+    Nodata pixels are not masked: they take part in the division and are
+    corrupted in the output, although the nodata value in the metadata is
+    preserved.
 
     Examples
     --------
@@ -337,16 +337,16 @@ def power(ds: EEORasterDataset, exponent: int | float) -> EEORasterDataset:
     Returns
     -------
     EEORasterDataset
-        New dataset in the **same dtype as** ``ds`` (fractional results are
-        truncated for integer inputs; see WP-06). The nodata value is carried
-        over unchanged.
+        New dataset in the same dtype as ``ds`` (fractional results are
+        truncated for integer inputs). The nodata value is carried over
+        unchanged.
 
     Notes
     -----
     Follows NumPy's ``**`` semantics; a negative pixel raised to a
     non-integer exponent yields ``nan``. Reads the full array into memory
-    rather than streaming block-wise (WP-16). Nodata pixels are **not**
-    masked and are corrupted in the output (WP-06).
+    rather than streaming block-wise. Nodata pixels are not masked and are
+    corrupted in the output.
 
     Examples
     --------
@@ -376,15 +376,15 @@ def sqrt(ds: EEORasterDataset) -> EEORasterDataset:
     Returns
     -------
     EEORasterDataset
-        New dataset in the **same dtype as** ``ds``; the root is truncated
-        for integer inputs, so use a floating dtype to keep fractional values
-        (see WP-06). The nodata value is carried over unchanged.
+        New dataset in the same dtype as ``ds``; the root is truncated for
+        integer inputs, so use a floating dtype to keep fractional values.
+        The nodata value is carried over unchanged.
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise
-    (WP-16). Nodata pixels are **not** masked; a negative nodata sentinel is
-    clamped to 0 and thus corrupted in the output (WP-06).
+    Reads the full array into memory rather than streaming block-wise. Nodata
+    pixels are not masked; a negative nodata sentinel is clamped to 0 and thus
+    corrupted in the output.
 
     Examples
     --------
@@ -415,15 +415,15 @@ def log(ds: EEORasterDataset, base: int | float = np.e) -> EEORasterDataset:
     Returns
     -------
     EEORasterDataset
-        New dataset in the **same dtype as** ``ds``; the result is truncated
-        for integer inputs, so use a floating dtype to keep fractional values
-        (see WP-06). The nodata value is carried over unchanged.
+        New dataset in the same dtype as ``ds``; the result is truncated for
+        integer inputs, so use a floating dtype to keep fractional values.
+        The nodata value is carried over unchanged.
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise
-    (WP-16). Nodata pixels are **not** masked; because inputs are clamped to
-    ``1e-10``, a nodata sentinel is corrupted in the output (WP-06).
+    Reads the full array into memory rather than streaming block-wise. Nodata
+    pixels are not masked; because inputs are clamped to ``1e-10``, a nodata
+    sentinel is corrupted in the output.
 
     Examples
     --------
@@ -450,14 +450,14 @@ def absolute(ds: EEORasterDataset) -> EEORasterDataset:
     Returns
     -------
     EEORasterDataset
-        New dataset in the **same dtype as** ``ds``. The nodata value is
-        carried over unchanged.
+        New dataset in the same dtype as ``ds``. The nodata value is carried
+        over unchanged.
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise
-    (WP-16). Nodata pixels are **not** masked; a negative nodata sentinel
-    becomes its magnitude and is thus corrupted in the output (WP-06).
+    Reads the full array into memory rather than streaming block-wise. Nodata
+    pixels are not masked; a negative nodata sentinel becomes its magnitude
+    and is thus corrupted in the output.
 
     Examples
     --------

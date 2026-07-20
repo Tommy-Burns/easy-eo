@@ -12,7 +12,39 @@ Coordinate = tuple[float, float] | list[float]
 def extract_value_at_coordinate(
     ds: EEORasterDataset, coordinates: Coordinate, band_idx: int = 1
 ) -> int | float:
+    """Sample a single pixel value at a world coordinate.
 
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Raster to sample. NumPy-backed inputs are promoted to rasterio.
+    coordinates : tuple of float or list of float
+        ``(x, y)`` position in the raster's CRS units. Must contain exactly
+        two values and fall within the raster extent.
+    band_idx : int, default 1
+        1-based band to sample.
+
+    Returns
+    -------
+    int or float
+        The pixel value at ``coordinates`` for the selected band, in the
+        band's own dtype. The value is returned as-is with no nodata
+        handling, so sampling a nodata pixel returns the sentinel value.
+
+    Raises
+    ------
+    ValueError
+        If ``coordinates`` does not contain exactly two values.
+
+    Notes
+    -----
+    Reads the selected band into memory. Coordinates are ``(x, y)`` in CRS
+    units, distinct from the ``(row, col)`` pixel indexing used elsewhere.
+
+    Examples
+    --------
+    >>> value = ds.extract_value_at_coordinate((500000.0, 4200000.0))
+    """
     if len(coordinates) != 2:
         raise ValueError(f"Expected 2 coordinates, got {len(coordinates)}")
 
@@ -34,6 +66,33 @@ def get_maximum_pixel(
     *,
     return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
+    """Find the maximum pixel value in a band and its location.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Input raster dataset.
+    band_idx : int, default 1
+        1-based band to analyse.
+    return_position_as_pixel_coordinate : bool, default False
+        If True, return the position as ``(row, col)`` pixel indices;
+        otherwise as ``(x, y)`` world coordinates in the raster's CRS.
+
+    Returns
+    -------
+    dict
+        ``{"value": float, "position": tuple}`` — the maximum value and where
+        it occurs. Nodata pixels are excluded from the search.
+
+    Notes
+    -----
+    Reads the band into memory. Nodata pixels are masked to NaN and ignored.
+
+    Examples
+    --------
+    >>> peak = ds.get_maximum_pixel()
+    >>> peak["value"], peak["position"]
+    """
     band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
     band = mask_nodata(ds, band)
 
@@ -57,6 +116,33 @@ def get_minimum_pixel(
     *,
     return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
+    """Find the minimum pixel value in a band and its location.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Input raster dataset.
+    band_idx : int, default 1
+        1-based band to analyse.
+    return_position_as_pixel_coordinate : bool, default False
+        If True, return the position as ``(row, col)`` pixel indices;
+        otherwise as ``(x, y)`` world coordinates in the raster's CRS.
+
+    Returns
+    -------
+    dict
+        ``{"value": float, "position": tuple}`` — the minimum value and where
+        it occurs. Nodata pixels are excluded from the search.
+
+    Notes
+    -----
+    Reads the band into memory. Nodata pixels are masked to NaN and ignored.
+
+    Examples
+    --------
+    >>> low = ds.get_minimum_pixel()
+    >>> low["value"], low["position"]
+    """
     band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
     band = mask_nodata(ds, band)
 
@@ -80,6 +166,34 @@ def get_mean_pixel(
     *,
     return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
+    """Compute a band's mean and locate the pixel closest to it.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Input raster dataset.
+    band_idx : int, default 1
+        1-based band to analyse.
+    return_position_as_pixel_coordinate : bool, default False
+        If True, return the position as ``(row, col)`` pixel indices;
+        otherwise as ``(x, y)`` world coordinates in the raster's CRS.
+
+    Returns
+    -------
+    dict
+        ``{"value": float, "position": tuple}`` — ``value`` is the band mean
+        (nodata excluded), and ``position`` locates the pixel whose value is
+        nearest that mean.
+
+    Notes
+    -----
+    Reads the band into memory. Nodata pixels are masked to NaN and ignored.
+
+    Examples
+    --------
+    >>> centre = ds.get_mean_pixel()
+    >>> centre["value"], centre["position"]
+    """
     band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
     band = mask_nodata(ds, band)
 
@@ -105,6 +219,36 @@ def get_percentile_pixel(
     *,
     return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
+    """Compute a band percentile and locate the pixel closest to it.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Input raster dataset.
+    percentile : float
+        Percentile to compute, in the range ``[0, 100]``.
+    band_idx : int, default 1
+        1-based band to analyse.
+    return_position_as_pixel_coordinate : bool, default False
+        If True, return the position as ``(row, col)`` pixel indices;
+        otherwise as ``(x, y)`` world coordinates in the raster's CRS.
+
+    Returns
+    -------
+    dict
+        ``{"value": float, "position": tuple}`` — ``value`` is the requested
+        percentile of the band (nodata excluded), and ``position`` locates
+        the pixel whose value is nearest that percentile.
+
+    Notes
+    -----
+    Reads the band into memory. Nodata pixels are masked to NaN and ignored.
+
+    Examples
+    --------
+    >>> p95 = ds.get_percentile_pixel(95)
+    >>> p95["value"], p95["position"]
+    """
     band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
     band = mask_nodata(ds, band)
 
