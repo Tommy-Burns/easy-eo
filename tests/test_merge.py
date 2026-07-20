@@ -7,7 +7,6 @@ from eeo import load_raster
 from eeo.ops.merge import mosaic
 
 
-
 def _write_tile(tmp_path, name, origin_x, value, res=10.0):
     path = tmp_path / name
     array = np.full((3, 3), value, dtype=np.float32)
