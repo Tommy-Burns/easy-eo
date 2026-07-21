@@ -51,6 +51,14 @@ are called out under a **Breaking** heading.
 
 ### Changed
 
+- **Plot functions read at display resolution.** `plot_raster`,
+  `plot_band_array`, `plot_raster_with_histogram`, and `plot_composite` now
+  read rasterio-backed rasters decimated to the figure's display budget
+  (via `out_shape`, served from GDAL overviews when present) instead of at
+  full resolution, making plotting of large scenes fast and memory-safe.
+  Small rasters and NumPy-backed datasets are still read in full;
+  `plot_raster_with_histogram`'s histogram is computed from the decimated
+  pixels for large rasters. `plot_histogram` is unchanged (exact counts).
 - **Loosened runtime dependency bounds** to library-appropriate ranges:
   `rasterio>=1.4,<2`, `geopandas>=1.1,<2`, `numpy>=1.26,<3`, `matplotlib>=3.8`
   (previously over-tight caps such as a single matplotlib minor).
@@ -66,6 +74,21 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- **Statistics pixel locators work on multi-band rasters.**
+  `get_maximum_pixel`, `get_minimum_pixel`, `get_mean_pixel`, and
+  `get_percentile_pixel` previously crashed with `ValueError` on any raster
+  with more than one band. All four now analyse the band selected by
+  `band_idx` (default 1 — a single-band raster's only band) and raise
+  `IndexError` for an out-of-range band. Single-band results are unchanged.
+- `reproject_raster` computed the destination grid with the source raster's
+  **width passed as its height**, distorting the output resolution and shape
+  for non-square rasters (square rasters were unaffected). The destination
+  grid now matches rasterio's `calculate_default_transform` result.
+- `to_rasterio()` no longer re-reads and copies datasets that are already
+  rasterio-backed but were produced in memory by a previous operation
+  (`DatasetWriter`-backed); it now returns the same dataset unchanged. The
+  same needless re-promotion is fixed inside `normalized_difference` and
+  `extract_value_at_coordinate`.
 - **Backend detection for chained operations.** `clip_raster_with_bbox`,
   `clip_raster_with_vector`, `mosaic`, `stack`, and `reproject_raster` no
   longer reject genuinely rasterio-backed datasets produced by a previous

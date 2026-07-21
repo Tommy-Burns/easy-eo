@@ -15,7 +15,7 @@ General Behavior
 ----------------
 All statistical location functions:
     - Mask nodata values automatically
-    - Operate on a single band
+    - Operate on a single band, selected with ``band_idx``
     - Are chainable via ``EEORasterDataset``
     - Return structured dictionaries
 
@@ -27,6 +27,18 @@ Returned structure:
         "value": float,
         "position": (row, col)  # or (x, y)
     }
+
+-------------------------------------
+
+Band Selection
+--------------
+Each function analyses one band at a time. The default ``band_idx=1`` uses a
+single-band raster's only band; for a multi-band raster, pass the 1-based
+band number to analyse:
+
+.. code-block:: python
+
+    ds.get_maximum_pixel(band_idx=3)
 
 -------------------------------------
 

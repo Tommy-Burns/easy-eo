@@ -1,5 +1,7 @@
 import numpy as np
 import pytest
+from rasterio.crs import CRS
+from rasterio.warp import calculate_default_transform
 
 from eeo.core.exceptions import ValidationError
 from eeo.preprocessing import (
@@ -95,3 +97,34 @@ def test_resample_default_is_nearest(single_band_float32):
     resampled_values = set(resampled.read().ravel().tolist())
 
     assert resampled_values <= original_values
+
+
+# ---------------------------------------------------------------------
+# Reproject
+# ---------------------------------------------------------------------
+
+
+def test_reproject_nonsquare_raster_uses_correct_dimensions(nonsquare_float32):
+    # A prior version passed the raster's width as the source height when
+    # computing the destination grid, distorting the output resolution and
+    # shape for any non-square raster (square fixtures hid it).
+    target_crs = CRS.from_epsg(4326)
+    left, bottom, right, top = nonsquare_float32.get_bounds()
+    expected_transform, expected_width, expected_height = calculate_default_transform(
+        src_crs=nonsquare_float32.get_crs(),
+        dst_crs=target_crs,
+        width=nonsquare_float32.get_width(),
+        height=nonsquare_float32.get_height(),
+        left=left,
+        bottom=bottom,
+        right=right,
+        top=top,
+    )
+
+    reprojected = nonsquare_float32.reproject_raster(target_crs=4326)
+
+    assert reprojected.get_width() == expected_width
+    assert reprojected.get_height() == expected_height
+    assert reprojected.get_transform() == expected_transform
+    # the 4x8 source must stay wider than it is tall
+    assert reprojected.get_width() > reprojected.get_height()

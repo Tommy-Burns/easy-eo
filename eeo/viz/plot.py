@@ -7,9 +7,16 @@ from collections.abc import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio.plot as rioplot
+from rasterio.transform import Affine
 
+from eeo.common import is_rasterio_backed
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_viz
+
+# Reads for display are capped at the figure's pixel resolution times this
+# oversampling factor, so moderate zooming stays sharp without ever pulling
+# the full-resolution array.
+_DISPLAY_OVERSAMPLE = 2.0
 
 
 # Visualization helper functions
@@ -81,6 +88,74 @@ def _percentile_stretch(array, pmin=2, pmax=98):
     return np.clip((array - low) / (high - low), 0, 1)
 
 
+def _display_out_shape(shape: tuple[int, int], figsize: tuple[int, int]) -> tuple[int, int] | None:
+    """Compute a decimated read shape capped at the figure's display budget.
+
+    The budget is the figure size in pixels (``figsize`` times the Matplotlib
+    ``figure.dpi``) times ``_DISPLAY_OVERSAMPLE``. Aspect ratio is preserved.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        Native raster shape as ``(height, width)`` in pixels.
+    figsize : tuple of int
+        Figure size in inches, as passed to ``matplotlib.pyplot.subplots``.
+
+    Returns
+    -------
+    tuple of int or None
+        Decimated ``(height, width)`` for the read, or None when the raster
+        already fits the display budget and should be read at full
+        resolution.
+    """
+    dpi = float(plt.rcParams.get("figure.dpi", 100.0))
+    max_height = figsize[1] * dpi * _DISPLAY_OVERSAMPLE
+    max_width = figsize[0] * dpi * _DISPLAY_OVERSAMPLE
+
+    height, width = shape
+    scale = min(max_height / height, max_width / width)
+    if scale >= 1.0:
+        return None
+    return max(1, round(height * scale)), max(1, round(width * scale))
+
+
+def _read_band_for_display(
+    ds: EEORasterDataset, band: int, figsize: tuple[int, int]
+) -> tuple[np.ndarray, Affine]:
+    """Read one band at display resolution, with a matching transform.
+
+    Rasterio-backed datasets larger than the display budget are read
+    decimated via ``out_shape`` (GDAL serves such reads from overviews when
+    present), and the returned transform is rescaled so the decimated array
+    still maps to the raster's true extent. Small rasters, and NumPy-backed
+    datasets (whose pixels are already in memory), are returned in full.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Dataset to read from.
+    band : int
+        1-based band index.
+    figsize : tuple of int
+        Figure size in inches, used to derive the display budget.
+
+    Returns
+    -------
+    tuple of (numpy.ndarray, affine.Affine)
+        The band as a 2D array, and the transform mapping that array to
+        world coordinates.
+    """
+    transform = ds.get_transform()
+    out_shape = _display_out_shape(ds.get_shape(), figsize)
+    if out_shape is None or not is_rasterio_backed(ds):
+        return ds.get_band(band), transform
+
+    array = ds.read(band, out_shape=out_shape)
+    height, width = ds.get_shape()
+    out_height, out_width = out_shape
+    return array, transform * Affine.scale(width / out_width, height / out_height)
+
+
 # Plot band as NumPy array
 @eeo_raster_viz
 def plot_band_array(
@@ -132,9 +207,11 @@ def plot_band_array(
 
     Notes
     -----
-    Reads each band at full resolution into memory. Displays the figure with
-    ``matplotlib.pyplot.show`` and, when ``save_path`` is given, writes it to
-    disk as a side effect.
+    Reads each band decimated to the figure's display resolution (rasterio
+    ``out_shape``, served from overviews when present); rasters already
+    within the display budget, and NumPy-backed datasets, are read in full.
+    Displays the figure with ``matplotlib.pyplot.show`` and, when
+    ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
     --------
@@ -148,7 +225,7 @@ def plot_band_array(
     for col, d in enumerate(datasets):
         for row, band in enumerate(bands_list):
             ax = axes[row, col]
-            array = d.get_band(band)
+            array, _ = _read_band_for_display(d, band, figsize)
             if stretch:
                 array = _percentile_stretch(array, pmin, pmax)
             ax.imshow(array, cmap=cmap, **imshow_kwargs)
@@ -217,9 +294,11 @@ def plot_raster(
 
     Notes
     -----
-    Reads each band at full resolution into memory. Displays the figure with
-    ``matplotlib.pyplot.show`` and, when ``save_path`` is given, writes it to
-    disk as a side effect.
+    Reads each band decimated to the figure's display resolution (rasterio
+    ``out_shape``, served from overviews when present); rasters already
+    within the display budget, and NumPy-backed datasets, are read in full.
+    Displays the figure with ``matplotlib.pyplot.show`` and, when
+    ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
     --------
@@ -233,10 +312,10 @@ def plot_raster(
     for col, d in enumerate(datasets):
         for row, band in enumerate(bands_list):
             ax = axes[row, col]
-            array = d.get_band(band)
+            array, transform = _read_band_for_display(d, band, figsize)
             if stretch:
                 array = _percentile_stretch(array, pmin, pmax)
-            rioplot.show(array, transform=d.get_transform(), ax=ax, cmap=cmap, **show_kwargs)
+            rioplot.show(array, transform=transform, ax=ax, cmap=cmap, **show_kwargs)
             ax.set_title(f"Band {band}")
 
     if title:
@@ -378,9 +457,13 @@ def plot_raster_with_histogram(
 
     Notes
     -----
-    Reads each band at full resolution into memory. Displays the figure with
-    ``matplotlib.pyplot.show`` and, when ``save_path`` is given, writes it to
-    disk as a side effect.
+    Reads each band decimated to the figure's display resolution (rasterio
+    ``out_shape``, served from overviews when present); rasters already
+    within the display budget, and NumPy-backed datasets, are read in full.
+    For a decimated raster the histogram is computed from the decimated
+    pixels, so bin counts are an approximation of the full-resolution
+    histogram. Displays the figure with ``matplotlib.pyplot.show`` and, when
+    ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
     --------
@@ -391,11 +474,11 @@ def plot_raster_with_histogram(
     fig, axes = plt.subplots(len(bands_list), 2, squeeze=False, sharey=sharey, figsize=figsize)
 
     for row, band in enumerate(bands_list):
-        array = ds.get_band(band)
+        array, transform = _read_band_for_display(ds, band, figsize)
         if stretch:
             array = _percentile_stretch(array, pmin, pmax)
 
-        rioplot.show(array, transform=ds.get_transform(), ax=axes[row, 0], cmap=cmap)
+        rioplot.show(array, transform=transform, ax=axes[row, 0], cmap=cmap)
         axes[row, 1].hist(array.ravel(), bins=bins)
 
         axes[row, 0].set_title(f"Band {band}")
@@ -455,17 +538,19 @@ def plot_composite(
 
     Notes
     -----
-    Reads the three bands at full resolution into memory. Percentile
-    stretching writes the scaled values back into the composite's own dtype,
-    so stretch a floating-dtype raster to avoid truncating them. Displays the
-    figure with ``matplotlib.pyplot.show`` and, when ``save_path`` is given,
-    writes it to disk as a side effect.
+    Reads the three bands decimated to the figure's display resolution
+    (rasterio ``out_shape``, served from overviews when present); rasters
+    already within the display budget, and NumPy-backed datasets, are read
+    in full. Percentile stretching writes the scaled values back into the
+    composite's own dtype, so stretch a floating-dtype raster to avoid
+    truncating them. Displays the figure with ``matplotlib.pyplot.show``
+    and, when ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
     --------
     >>> ds.plot_composite(bands=(3, 2, 1))
     """
-    composite = np.stack([ds.get_band(b) for b in bands], axis=-1)
+    composite = np.stack([_read_band_for_display(ds, b, figsize)[0] for b in bands], axis=-1)
 
     if stretch:
         for i in range(3):

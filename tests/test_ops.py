@@ -57,6 +57,16 @@ def test_divide_safe(raster_a):
     assert np.all(result.read() == 0)
 
 
+def test_divide_safe_raster_with_zero_denominators(raster_a):
+    denom = load_array(
+        np.array([[2, 0], [0, 4]], dtype=np.float32),
+        transform=GRID,
+        crs=CRS.from_epsg(4326),
+    )
+    result = raster_a.divide(denom)
+    np.testing.assert_array_equal(result.read()[0], [[0.5, 0], [0, 1]])
+
+
 def test_power(raster_a):
     result = raster_a.power(2)
     np.testing.assert_array_equal(result.read()[0], [[1, 4], [9, 16]])

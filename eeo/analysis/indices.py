@@ -70,10 +70,8 @@ def normalized_difference(
     >>> ndvi = ds_nir.normalized_difference(ds_red)
     >>> ndvi_array = ds_nir.normalized_difference(ds_red, return_as_ndarray=True)
     """
-    # Ensure reprojection for only rasterio-backend datasets
-    backend = ds._adapter.backend
-    if not isinstance(backend, rio.DatasetReader):
-        ds = ds.to_rasterio()
+    # No-op when the dataset is already rasterio-backed
+    ds = ds.to_rasterio()
     if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
         if auto_align:
             other = align_raster_to_target(other, ds, method=method)
@@ -87,9 +85,11 @@ def normalized_difference(
     a = ds.read().astype(rio.float32)
     b = other.read().astype(rio.float32)
 
+    # np.where instead of in-place mask assignment so the expression stays
+    # dispatchable to lazy array backends (which reject item assignment).
     with np.errstate(divide="ignore", invalid="ignore"):
         nd = (a - b) / (a + b)
-        nd[np.isnan(nd)] = 0
+    nd = np.where(np.isnan(nd), np.float32(0), nd)
 
     if return_as_ndarray:
         return nd

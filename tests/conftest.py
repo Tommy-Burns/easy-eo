@@ -92,6 +92,22 @@ def multiband_uint16():
 
 
 @pytest.fixture
+def nonsquare_float32():
+    """4x8 single-band float32 raster on the UTM grid, rasterio-backed.
+
+    Non-square (4 rows, 8 columns) so that height/width mix-ups produce
+    observable differences.
+    """
+    ds = load_array(
+        _gradient((4, 8), np.float32),
+        transform=_north_up(),
+        crs=UTM_CRS,
+    ).to_rasterio()
+    yield ds
+    ds.close()
+
+
+@pytest.fixture
 def raster_with_nodata():
     """6x6 float32 raster with nodata=-9999 in the top-left 2x2 block."""
     array = _gradient((6, 6), np.float32)
