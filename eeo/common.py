@@ -43,7 +43,6 @@ def is_rasterio_backed(ds: EEORasterDataset) -> bool:
 
 def normalize_resampling_method(value):
     """Normalize a resampling method to a ``rasterio.enums.Resampling`` value."""
-
     from eeo.core.exceptions import ValidationError
 
     if isinstance(value, Resampling):
