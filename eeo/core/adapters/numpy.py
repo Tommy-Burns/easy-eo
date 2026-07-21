@@ -78,7 +78,10 @@ class NumpyRasterioAdapter(BaseRasterAdapter):
 
     def read_band(self, idx: int) -> np.ndarray:
         if idx < 1 or idx > self.get_count():
-            raise IndexError(f"Band index {idx} out of range")
+            raise IndexError(
+                f"band index {idx} out of range; dataset has {self.get_count()} "
+                f"band(s) (valid 1..{self.get_count()})"
+            )
         return self._array[idx - 1]
 
     # ========================

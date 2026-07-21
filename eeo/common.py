@@ -43,6 +43,8 @@ def is_rasterio_backed(ds: EEORasterDataset) -> bool:
 
 def normalize_resampling_method(value):
     """Normalize a resampling method to a ``rasterio.enums.Resampling`` value."""
+    from eeo.core.exceptions import ValidationError
+
     if isinstance(value, Resampling):
         return value
     if isinstance(value, str):
@@ -51,8 +53,12 @@ def normalize_resampling_method(value):
             return Resampling[name]
         except KeyError as e:
             valid = ", ".join([r.name for r in Resampling])
-            raise ValueError(f"Invalid resampling method {value}. Valid values are: {valid}") from e
-    raise TypeError("resampling method must be one from rasterio.enums.Resampling or a string")
+            raise ValidationError(
+                f"invalid resampling method {value!r}; expected one of: {valid}"
+            ) from e
+    raise ValidationError(
+        f"resampling method must be a str or rasterio.enums.Resampling; got {type(value).__name__}"
+    )
 
 
 # Helper function for raster auto-alignment

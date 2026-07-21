@@ -9,6 +9,7 @@ from rasterio.crs import CRS
 from rasterio.transform import Affine
 
 from eeo.core.core import EEORasterDataset
+from eeo.core.exceptions import BackendError, ValidationError
 
 
 def load_raster(path: str) -> EEORasterDataset:
@@ -31,7 +32,7 @@ def load_raster(path: str) -> EEORasterDataset:
     ------
     FileNotFoundError
         If ``path`` does not exist.
-    RuntimeError
+    BackendError
         If the file exists but cannot be opened as a raster.
 
     Examples
@@ -39,11 +40,11 @@ def load_raster(path: str) -> EEORasterDataset:
     >>> ds = load_raster("scene.tif")
     """
     if not os.path.isfile(path):
-        raise FileNotFoundError(f'The file "{path}" does not exist')
+        raise FileNotFoundError(f'the file "{path}" does not exist')
     try:
         return EEORasterDataset.from_path(path)
     except Exception as e:
-        raise RuntimeError(f'File "{path}" could not be opened as a rasterio dataset') from e
+        raise BackendError(f'file "{path}" could not be opened as a rasterio dataset') from e
 
 
 def load_array(
@@ -78,10 +79,8 @@ def load_array(
 
     Raises
     ------
-    TypeError
-        If ``array`` is not a NumPy array.
-    ValueError
-        If ``array`` is neither 2D nor 3D.
+    ValidationError
+        If ``array`` is not a NumPy array, or is neither 2D nor 3D.
 
     Examples
     --------
@@ -89,9 +88,12 @@ def load_array(
     >>> ds = load_array(np.zeros((64, 64), dtype="float32"), crs=4326)
     """
     if not isinstance(array, np.ndarray):
-        raise TypeError("The array must be a numpy array")
+        raise ValidationError(f"array must be a NumPy ndarray; got {type(array).__name__}")
 
     if array.ndim not in (2, 3):
-        raise ValueError("The array must be 2D or 3D (bands, height, width)")
+        raise ValidationError(
+            "array must be 2D (height, width) or 3D (bands, height, width); "
+            f"got {array.ndim}D with shape {array.shape}"
+        )
 
     return EEORasterDataset.from_array(array=array, transform=transform, crs=crs, nodata=nodata)

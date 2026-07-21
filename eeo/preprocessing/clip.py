@@ -10,6 +10,7 @@ from rasterio.windows import from_bounds
 from eeo.common import is_rasterio_backed
 from eeo.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+from eeo.core.exceptions import BackendError, ValidationError
 
 
 @eeo_raster_op
@@ -66,9 +67,10 @@ def clip_raster_with_vector(
 
     Raises
     ------
-    TypeError
-        If ``ds`` is not backed by rasterio, or ``vector_file`` is neither a
-        GeoDataFrame nor a valid file path.
+    BackendError
+        If ``ds`` is not backed by rasterio.
+    ValidationError
+        If ``vector_file`` is neither a GeoDataFrame nor a valid file path.
 
     Notes
     -----
@@ -82,7 +84,10 @@ def clip_raster_with_vector(
     """
     # Ensure clipping for only rasterio-backend datasets
     if not is_rasterio_backed(ds):
-        raise TypeError("Clipping is only allowed on rasterio backend rasters")
+        raise BackendError(
+            "clip requires a rasterio-backed dataset; this dataset uses the "
+            "NumPy backend. Call .to_rasterio() first."
+        )
 
     # Load vector data
     if isinstance(vector_file, gpd.GeoDataFrame):
@@ -90,7 +95,10 @@ def clip_raster_with_vector(
     elif isinstance(vector_file, str) and os.path.isfile(vector_file):
         gdf = gpd.read_file(vector_file)
     else:
-        raise TypeError("vector_file must be a GeoDataFrame or a valid file path")
+        raise ValidationError(
+            "vector_file must be a GeoDataFrame or a path to an existing vector "
+            f"file; got {vector_file!r}"
+        )
 
     # Reproject vector geometries if needed
     if gdf.crs != ds.get_crs():
@@ -160,9 +168,9 @@ def clip_raster_with_bbox(
 
     Raises
     ------
-    TypeError
+    BackendError
         If ``ds`` is not backed by rasterio.
-    ValueError
+    ValidationError
         If ``bbox`` is not four values, or does not intersect the raster.
 
     Notes
@@ -175,11 +183,14 @@ def clip_raster_with_bbox(
     """
     # Ensure rasterio backend
     if not is_rasterio_backed(ds):
-        raise TypeError("Clipping is only allowed on rasterio backend rasters")
+        raise BackendError(
+            "clip requires a rasterio-backed dataset; this dataset uses the "
+            "NumPy backend. Call .to_rasterio() first."
+        )
 
     # Validate bbox
     if not (isinstance(bbox, (tuple, list)) and len(bbox) == 4):
-        raise ValueError("bbox must be (minx, miny, maxx, maxy)")
+        raise ValidationError(f"bbox must be (minx, miny, maxx, maxy) — 4 values; got {bbox!r}")
 
     minx, miny, maxx, maxy = bbox
 
@@ -187,11 +198,19 @@ def clip_raster_with_bbox(
     window = from_bounds(minx, miny, maxx, maxy, ds.ds.transform)
     window = window.round_offsets().round_lengths()
 
-    # Ensure correct bbox
-    if window.width <= 0 or window.height <= 0:
-        raise ValueError(
-            "Bounding box does not intersect raster extent. "
-            f"Raster bounds: {ds.get_bounds()}, bbox: {bbox}"
+    # Ensure the bbox actually overlaps the raster. A degenerate box collapses
+    # to zero width/height here; a box that lies entirely outside keeps a
+    # positive size but does not intersect the raster window, and would
+    # otherwise fail later with a cryptic "0x0 dataset" read error.
+    raster_window = rio.windows.Window(0, 0, ds.ds.width, ds.ds.height)
+    if (
+        window.width <= 0
+        or window.height <= 0
+        or not rio.windows.intersect([window, raster_window])
+    ):
+        raise ValidationError(
+            "bounding box does not intersect raster extent; "
+            f"raster bounds: {ds.get_bounds()}, bbox: {bbox}"
         )
 
     transform = rio.windows.transform(window, ds.ds.transform)

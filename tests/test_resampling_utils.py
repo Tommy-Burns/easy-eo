@@ -6,6 +6,7 @@ from rasterio.enums import Resampling
 
 from eeo import load_array
 from eeo.common import align_raster_to_target, mask_nodata, normalize_resampling_method
+from eeo.core.exceptions import ValidationError
 
 
 # RESAMPLING NORMALIZATION
@@ -24,13 +25,13 @@ def test_normalize_resampling_string(value):
 
 # Rejects invalid string
 def test_normalize_resampling_invalid_string():
-    with pytest.raises(ValueError, match="Invalid resampling method"):
+    with pytest.raises(ValidationError, match="invalid resampling method"):
         normalize_resampling_method("invalid_method")
 
 
 # Rejects invalid type
 def test_normalize_resampling_invalid_type():
-    with pytest.raises(TypeError):
+    with pytest.raises(ValidationError):
         normalize_resampling_method(123)
 
 

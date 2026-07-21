@@ -4,6 +4,7 @@ from affine import Affine
 from rasterio.crs import CRS
 
 from eeo import load_array
+from eeo.core.exceptions import ValidationError
 
 
 # normalized difference
@@ -49,7 +50,7 @@ def test_extract_value_at_coordinate(raster_3x3):
 
 # invalid coordinate length
 def test_extract_value_invalid_coordinates(raster_3x3):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         raster_3x3.extract_value_at_coordinate((1,))
 
 

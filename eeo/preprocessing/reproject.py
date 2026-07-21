@@ -7,6 +7,7 @@ from rasterio.warp import Resampling, calculate_default_transform, reproject
 from eeo.common import is_rasterio_backed, normalize_resampling_method
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+from eeo.core.exceptions import BackendError, ValidationError
 
 
 @eeo_raster_op
@@ -38,9 +39,10 @@ def reproject_raster(
 
     Raises
     ------
-    TypeError
-        If ``ds`` is not backed by rasterio, or ``target_crs`` cannot be
-        interpreted as a CRS.
+    BackendError
+        If ``ds`` is not backed by rasterio.
+    ValidationError
+        If ``target_crs`` cannot be interpreted as a CRS.
 
     Notes
     -----
@@ -53,7 +55,10 @@ def reproject_raster(
     """
     # Ensure reprojection for only rasterio-backend datasets
     if not is_rasterio_backed(ds):
-        raise TypeError("Reprojection is only allowed on rasterio backend rasters")
+        raise BackendError(
+            "reproject requires a rasterio-backed dataset; this dataset uses "
+            "the NumPy backend. Call .to_rasterio() first."
+        )
 
     # Normalize resampling method
     resampling_method = normalize_resampling_method(resampling_method)
@@ -64,7 +69,9 @@ def reproject_raster(
         crs = target_crs
 
     if not isinstance(crs, pyproj.CRS):
-        raise TypeError("Invalid CRS. Must be int, str, or pyproj.CRS")
+        raise ValidationError(
+            f"target_crs must be an int, str, or pyproj.CRS; got {type(target_crs).__name__}"
+        )
 
     # Get dataset bounds
     left, bottom, right, top = ds.get_bounds()

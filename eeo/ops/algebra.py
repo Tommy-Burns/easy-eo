@@ -6,6 +6,7 @@ import rasterio as rio
 from eeo.common import align_raster_to_target
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+from eeo.core.exceptions import AlignmentError
 
 
 # ARITHMETIC AND ALGEBRA
@@ -32,7 +33,7 @@ def add(
         every pixel.
     auto_align : bool, default True
         If True, resample ``other`` onto ``ds``'s grid when their shape or
-        transform differ. If False, a mismatch raises ``ValueError``.
+        transform differ. If False, a mismatch raises ``AlignmentError``.
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
@@ -47,7 +48,7 @@ def add(
 
     Raises
     ------
-    ValueError
+    AlignmentError
         If ``other`` is a dataset on a different grid and ``auto_align`` is
         False.
 
@@ -68,8 +69,10 @@ def add(
             if auto_align:
                 other = align_raster_to_target(other, ds, method=method)
             else:
-                raise ValueError(
-                    "Rasters must have the same shape and alignment for arithmetic operations"
+                raise AlignmentError(
+                    "rasters must share the same grid for arithmetic; "
+                    f"got shape {other.get_shape()} vs {ds.get_shape()}. "
+                    "Pass auto_align=True to resample the other raster onto this grid."
                 )
         data = ds.read() + other.read()
     else:
@@ -105,7 +108,7 @@ def subtract(
         a scalar is subtracted from every pixel.
     auto_align : bool, default True
         If True, resample ``other`` onto ``ds``'s grid when their shape or
-        transform differ. If False, a mismatch raises ``ValueError``.
+        transform differ. If False, a mismatch raises ``AlignmentError``.
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
@@ -120,7 +123,7 @@ def subtract(
 
     Raises
     ------
-    ValueError
+    AlignmentError
         If ``other`` is a dataset on a different grid and ``auto_align`` is
         False.
 
@@ -140,8 +143,10 @@ def subtract(
             if auto_align:
                 other = align_raster_to_target(other, ds, method=method)
             else:
-                raise ValueError(
-                    "Rasters must have the same shape and alignment for arithmetic operations"
+                raise AlignmentError(
+                    "rasters must share the same grid for arithmetic; "
+                    f"got shape {other.get_shape()} vs {ds.get_shape()}. "
+                    "Pass auto_align=True to resample the other raster onto this grid."
                 )
         data = ds.read() - other.read()
     else:
@@ -176,7 +181,7 @@ def multiply(
         every pixel.
     auto_align : bool, default True
         If True, resample ``other`` onto ``ds``'s grid when their shape or
-        transform differ. If False, a mismatch raises ``ValueError``.
+        transform differ. If False, a mismatch raises ``AlignmentError``.
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
@@ -191,7 +196,7 @@ def multiply(
 
     Raises
     ------
-    ValueError
+    AlignmentError
         If ``other`` is a dataset on a different grid and ``auto_align`` is
         False.
 
@@ -211,8 +216,10 @@ def multiply(
             if auto_align:
                 other = align_raster_to_target(other, ds, method=method)
             else:
-                raise ValueError(
-                    "Rasters must have the same shape and alignment for arithmetic operations"
+                raise AlignmentError(
+                    "rasters must share the same grid for arithmetic; "
+                    f"got shape {other.get_shape()} vs {ds.get_shape()}. "
+                    "Pass auto_align=True to resample the other raster onto this grid."
                 )
 
         data = ds.read() * other.read()
@@ -249,7 +256,7 @@ def divide(
         pixel.
     auto_align : bool, default True
         If True, resample ``other`` onto ``ds``'s grid when their shape or
-        transform differ. If False, a mismatch raises ``ValueError``.
+        transform differ. If False, a mismatch raises ``AlignmentError``.
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
@@ -268,7 +275,7 @@ def divide(
 
     Raises
     ------
-    ValueError
+    AlignmentError
         If ``other`` is a dataset on a different grid and ``auto_align`` is
         False.
 
@@ -292,8 +299,10 @@ def divide(
             if auto_align:
                 other = align_raster_to_target(other, ds, method=method)
             else:
-                raise ValueError(
-                    "Rasters must have the same shape and alignment for arithmetic operations"
+                raise AlignmentError(
+                    "rasters must share the same grid for arithmetic; "
+                    f"got shape {other.get_shape()} vs {ds.get_shape()}. "
+                    "Pass auto_align=True to resample the other raster onto this grid."
                 )
         other_data: np.ndarray | float | int = other.read()
     else:
