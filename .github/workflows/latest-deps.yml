@@ -1,11 +1,11 @@
 name: Latest deps
 
-# Weekly canary: run the suite against the newest dependency releases allowed
+# Monthly canary: run the suite against the newest dependency releases allowed
 # by our version ranges, ignoring the committed lockfile. Catches upstream
 # breakage before it reaches users, independent of Dependabot lock bumps.
 on:
   schedule:
-    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+    - cron: "0 6 1 * *" # 1st of each month, 06:00 UTC
   workflow_dispatch:
 
 permissions:
