@@ -1,0 +1,39 @@
+version: 2
+updates:
+  # Python dependencies: keep uv.lock current within the ranges declared in
+  # pyproject.toml. Dependabot opens reviewed PRs; the maintainer merges them.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+    groups:
+      # One PR for dev-tooling bumps (pytest, ruff, mypy, pre-commit, ...).
+      dev-dependencies:
+        dependency-type: "development"
+      # One PR for runtime dependency bumps (rasterio, numpy, geopandas, ...).
+      runtime-dependencies:
+        dependency-type: "production"
+
+  # GitHub Actions used in the workflows (checkout, setup-uv, codecov, ...).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
