@@ -103,7 +103,7 @@ jobs:
       # wheels for the newest Python. The lockfile is deliberately ignored.
       - name: Install lowest supported dependency versions
         run: |
-          uv venv --python 3.10
+          uv venv --python 3.10 --clear
           uv pip install --resolution lowest-direct -e ".[dev]"
 
       # Old dependency versions legitimately emit their own deprecation
