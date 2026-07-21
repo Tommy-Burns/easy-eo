@@ -1,3 +1,5 @@
+"""Terminal visualization helpers for rasters."""
+
 from .plot import (
     plot_band_array,
     plot_composite,

@@ -1,3 +1,5 @@
+"""Analysis operations: spectral indices and pixel statistics."""
+
 from .indices import normalized_difference
 from .stats import (
     extract_value_at_coordinate,

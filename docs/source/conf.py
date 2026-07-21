@@ -12,10 +12,10 @@ import sys
 sys.path.insert(0, os.path.abspath("../.."))
 
 
-project = 'Easy-EO'
-copyright = '2025, Thomas Burns Botchwey'
-author = 'Thomas Burns Botchwey'
-release = '0.1.0b1'
+project = "Easy-EO"
+copyright = "2025, Thomas Burns Botchwey"
+author = "Thomas Burns Botchwey"
+release = "0.1.0b1"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -25,7 +25,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
-    ]
+]
 
 extensions.append("sphinx_copybutton")
 
@@ -49,9 +49,8 @@ intersphinx_mapping = {
     "pyproj": ("https://pyproj4.github.io/pyproj/stable/", None),
 }
 
-templates_path = ['_templates']
+templates_path = ["_templates"]
 exclude_patterns = []
-
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -65,4 +64,4 @@ html_theme_options = {
     "sticky_navigation": True,
     "navigation_depth": 4,
 }
-html_static_path = ['_static']
+html_static_path = ["_static"]

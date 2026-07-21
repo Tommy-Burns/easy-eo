@@ -1,3 +1,5 @@
+"""Clipping operations by bounding box or vector geometry."""
+
 import os
 
 import geopandas as gpd

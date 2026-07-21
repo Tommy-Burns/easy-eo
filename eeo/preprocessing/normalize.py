@@ -1,3 +1,5 @@
+"""Normalization operations: min-max, percentile, and standardize."""
+
 import numpy as np
 import rasterio as rio
 

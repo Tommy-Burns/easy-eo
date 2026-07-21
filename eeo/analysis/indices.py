@@ -1,6 +1,7 @@
-"""
-This library exposes algebraic primitives instead of predefined indices.
-Most vegetation and water indices can be expressed directly using
+"""Spectral analysis helpers built on the algebra primitives.
+
+Rather than predefined indices, this module exposes algebraic primitives:
+most vegetation and water indices can be expressed directly using
 ``normalized_difference`` or raster arithmetic.
 """
 

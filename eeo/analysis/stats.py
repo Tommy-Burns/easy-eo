@@ -1,3 +1,5 @@
+"""Per-pixel statistics and coordinate sampling."""
+
 import numpy as np
 import rasterio as rio
 
@@ -54,7 +56,10 @@ def extract_value_at_coordinate(
         backend = ds._adapter.backend
 
     x, y = coordinates
+    # rasterio's DatasetReader.index returns ints on 1.5+ but floats on 1.4,
+    # so coerce before indexing to stay correct across the supported range.
     row, col = backend.index(x, y)
+    row, col = int(row), int(col)
 
     return ds.get_band(band_idx)[row, col]
 

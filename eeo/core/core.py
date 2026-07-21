@@ -1,6 +1,4 @@
-"""
-Core functionalities for easy-eo
-"""
+"""Core functionality for Easy-EO."""
 
 from __future__ import annotations
 
@@ -362,7 +360,7 @@ class EEORasterDataset:
     # Constructors
     # ========================
     def _bind(self, func):
-        """Helper that wraps external functions as bound methods"""
+        """Wrap an external function as a bound, chainable method."""
 
         def method(*args, **kwargs):
             result = func(*args, **kwargs)

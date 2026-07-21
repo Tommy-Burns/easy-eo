@@ -1,6 +1,4 @@
-"""
-Decorators for easy-eo
-"""
+"""Decorators for Easy-EO."""
 
 from __future__ import annotations
 
@@ -43,13 +41,19 @@ def eeo_raster_op(func=None, *, preserve_none=False):
     (e.g. ``mosaic`` returns ``None`` when it writes to ``save_path``); the
     bound method then returns that ``None`` unchanged instead of ``self``.
     """
-
     from .core import EEORasterDataset
 
     def decorate(func: Callable[P, R]) -> Callable[P, R]:
+        # ``func`` already takes the dataset as its first parameter, so the
+        # bound method cannot reuse ``P`` (which includes that parameter)
+        # without mypy rejecting the ``func(self, ...)`` call. Reference it as
+        # a plain callable internally; the returned ``func`` keeps its precise
+        # ``Callable[P, R]`` signature for callers.
+        op: Callable[..., R] = func
+
         @wraps(func)
-        def method(self: EEORasterDataset, *args: P.args, **kwargs: P.kwargs) -> R:
-            result = func(self, *args, **kwargs)
+        def method(self: EEORasterDataset, *args: object, **kwargs: object) -> R | EEORasterDataset:
+            result = op(self, *args, **kwargs)
             if preserve_none:
                 return result
             # allow functions to be chained
@@ -69,9 +73,7 @@ def eeo_raster_op(func=None, *, preserve_none=False):
 
 
 def eeo_raster_viz(func: Callable[..., R]) -> Callable[..., R]:
-    """
-    Decorator that binds a visualization function to EEORasterDataset
-    as a terminal (non-chainable) method.
+    """Bind a visualization function to EEORasterDataset as a terminal method.
 
     Visualization methods:
         - operate on the dataset

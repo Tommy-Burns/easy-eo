@@ -1,0 +1,39 @@
+name: Latest deps
+
+# Monthly canary: run the suite against the newest dependency releases allowed
+# by our version ranges, ignoring the committed lockfile. Catches upstream
+# breakage before it reaches users, independent of Dependabot lock bumps.
+on:
+  schedule:
+    - cron: "0 6 1 * *" # 1st of each month, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  latest:
+    name: Test (latest deps · py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest and newest supported Python, against latest dependencies.
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # `--upgrade` re-resolves to the newest versions within our ranges,
+      # ignoring uv.lock, so this tests against fresh upstream releases.
+      - name: Install latest dependency versions
+        run: uv sync --upgrade --extra dev
+
+      # Newer upstream releases may introduce their own deprecation warnings;
+      # this canary tracks functional pass/fail, so they are not fatal here.
+      - name: Run tests
+        run: uv run --no-sync pytest -W ignore::DeprecationWarning

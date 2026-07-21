@@ -1,3 +1,5 @@
+"""Shared type aliases for the public API."""
+
 from typing import Literal
 
 # Auto-complete literal strings for rasterio resampling

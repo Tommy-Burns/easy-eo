@@ -93,10 +93,14 @@ select = [
     "UP",  # pyupgrade
     "B",   # flake8-bugbear
     "SIM", # flake8-simplify
+    "D",   # pydocstyle (numpy convention, see [tool.ruff.lint.pydocstyle])
 ]
 ignore = [
     "E501", # line length is enforced by the formatter, not the linter
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
 
 [tool.ruff.lint.isort]
 known-first-party = ["eeo"]
@@ -107,7 +111,120 @@ known-first-party = ["eeo"]
 # @eeo_raster_viz decorators (see eeo/core/decorators.py) — this is a
 # deliberate plugin-registration side effect, not an oversight.
 "eeo/__init__.py" = ["F403"]
+# Docstring rules target the library's public API only. Tests, the stub
+# generator, and docs config are exempt from D-category checks.
+"tests/**" = ["D"]
+"scripts/**" = ["D"]
+"docs/**" = ["D"]
+# The adapter contract is documented once on the BaseRasterAdapter ABC
+# (eeo/core/adapters/base.py); the concrete backends only implement it, so
+# per-method docstrings on the overrides would just duplicate the interface.
+"eeo/core/adapters/numpy.py" = ["D102"]
+"eeo/core/adapters/rasterio.py" = ["D102"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+# ---------------------
+# mypy (type checking)
+# ---------------------
+[tool.mypy]
+# modern numpy (>=2.2) ships stubs that use PEP
+# 695 `type` statements, which mypy only parses when python_version >= 3.12.
+# Runtime support still starts at 3.10 (enforced by ruff target-version and the
+# py3.10 test-matrix leg); this only sets the language level mypy assumes.
+python_version = "3.12"
+files = ["eeo"]
+namespace_packages = true
+explicit_package_bases = true
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+# The geospatial stack ships no type information (no py.typed, no stub
+# packages), so mypy cannot analyze it. Suppress the resulting
+# import-untyped noise rather than annotating third-party internals.
+[[tool.mypy.overrides]]
+module = [
+    "rasterio",
+    "rasterio.*",
+    "geopandas",
+    "affine",
+    "pyproj",
+    "pyproj.*",
+]
+ignore_missing_imports = true
+
+# ---------------------
+# pytest
+# ---------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# Coverage is always measured; the suite fails below the documented ≥80%
+# target (see CODE_STYLE.md "Testing Expectations").
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=eeo",
+    "--cov-branch",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+]
+xfail_strict = true
+# Surface warnings as failures so deprecations and numerical warnings can't
+# slip through unnoticed. Tests that expect a warning use pytest.warns.
+filterwarnings = [
+    "error",
+    # rasterio 1.5.x sets `.shape` on ndarrays inside its Cython read path;
+    # numpy 2.5 deprecated that. Out of our control until rasterio ships a
+    # fix — ignore the specific message rather than weakening the gate.
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
+]
+
+# ---------------------
+# coverage.py
+# ---------------------
+[tool.coverage.run]
+source = ["eeo"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+]
+
+# ---------------------
+# numpydoc validation
+# ---------------------
+# Complements ruff's pydocstyle (D) rules with section/signature consistency
+# checks (parameters match the signature, Returns present with a description,
+# etc.). Applied in CI (`numpydoc lint`) and pre-commit to the public
+# operation API only — ops, analysis, preprocessing, viz, the loaders, and
+# show_versions. Internal infrastructure (EEORasterDataset getters and dunder
+# operators, decorator factories, alignment/resampling helpers) uses concise
+# docstrings by design; ruff's D-rules still require those to be well-formed.
+# The optional-narrative checks are disabled so a concise summary suffices.
+[tool.numpydoc_validation]
+checks = [
+    "all",
+    "ES01", # extended summary not required
+    "EX01", # examples not required on every object
+    "SA01", # "See Also" not required
+    "GL08", # missing-docstring is enforced by ruff (D-rules)
+    "GL01", # conflicts with the one-line-summary style ruff enforces
+    "GL02", # allow the closing quotes on the summary line
+]
+exclude = [
+    '\.__init__$',
+    '\.__repr__$',
+    '\.__str__$',
+]

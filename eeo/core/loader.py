@@ -1,6 +1,4 @@
-"""
-Input/Output functionalities for easy-eo
-"""
+"""Input/output functionality for Easy-EO."""
 
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+"""Rasterio-backed raster adapter."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -8,9 +10,7 @@ from .base import BaseRasterAdapter
 
 
 class RasterioAdapter(BaseRasterAdapter):
-    """
-    Rasterio-backend adapter for EEORasterDataset
-    """
+    """Rasterio-backed raster adapter for EEORasterDataset."""
 
     def __init__(
         self,
@@ -42,9 +42,7 @@ class RasterioAdapter(BaseRasterAdapter):
         nodata: float | None = None,
         dtype: str | None = None,
     ) -> RasterioAdapter:
-        """
-        Create an in-memory adapter from a NumPy array
-        """
+        """Create an in-memory adapter from a NumPy array."""
         if array.ndim == 2:
             array = array[np.newaxis, ...]
 
