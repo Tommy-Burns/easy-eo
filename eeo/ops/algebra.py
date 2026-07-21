@@ -317,12 +317,11 @@ def divide(
             else:
                 data = src_data / other_data
         else:
-            data = np.divide(
-                src_data,
-                other_data,
-                out=np.zeros_like(src_data, dtype=np.float32),
-                where=other_data != 0,
-            )
+            # np.where instead of the in-place out=/where= ufunc form so the
+            # expression stays dispatchable to lazy array backends.
+            with np.errstate(divide="ignore", invalid="ignore"):
+                quotient = np.divide(src_data, other_data)
+            data = np.where(other_data != 0, quotient, np.float32(0)).astype(np.float32)
     else:
         data = src_data / other_data
 

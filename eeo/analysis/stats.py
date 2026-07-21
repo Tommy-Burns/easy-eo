@@ -1,7 +1,6 @@
 """Per-pixel statistics and coordinate sampling."""
 
 import numpy as np
-import rasterio as rio
 
 from eeo.common import mask_nodata
 from eeo.core.core import EEORasterDataset
@@ -53,10 +52,9 @@ def extract_value_at_coordinate(
             f"coordinates must contain exactly 2 values (x, y); got {len(coordinates)}"
         )
 
+    # No-op when the dataset is already rasterio-backed
+    ds = ds.to_rasterio()
     backend = ds._adapter.backend
-    if not isinstance(backend, rio.DatasetReader):
-        ds = ds.to_rasterio()
-        backend = ds._adapter.backend
 
     x, y = coordinates
     # rasterio's DatasetReader.index returns ints on 1.5+ but floats on 1.4,

@@ -66,6 +66,11 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- `to_rasterio()` no longer re-reads and copies datasets that are already
+  rasterio-backed but were produced in memory by a previous operation
+  (`DatasetWriter`-backed); it now returns the same dataset unchanged. The
+  same needless re-promotion is fixed inside `normalized_difference` and
+  `extract_value_at_coordinate`.
 - **Backend detection for chained operations.** `clip_raster_with_bbox`,
   `clip_raster_with_vector`, `mosaic`, `stack`, and `reproject_raster` no
   longer reject genuinely rasterio-backed datasets produced by a previous
