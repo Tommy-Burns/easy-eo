@@ -46,8 +46,9 @@ def reproject_raster(
 
     Notes
     -----
-    Reads the full raster into memory and warps it band-by-band with
-    ``rasterio.warp.reproject``.
+    Warps band-by-band with ``rasterio.warp.reproject`` through rasterio band
+    handles, so the full source array is never materialized at once; the
+    warped output is held in an in-memory dataset.
 
     Examples
     --------
