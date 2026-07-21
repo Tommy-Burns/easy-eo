@@ -102,6 +102,59 @@ def test_get_percentile_pixel_pixel_coordinates(raster_3x3):
     assert result["position"] == (1, 1)
 
 
+# multi-band: locators operate on the selected band (default: band 1)
+def test_get_maximum_pixel_multiband_default_first_band(multiband_uint16):
+    result = multiband_uint16.get_maximum_pixel(return_position_as_pixel_coordinate=True)
+
+    assert result["value"] == 1035.0
+    assert result["position"] == (5, 5)
+
+
+def test_get_maximum_pixel_multiband_band_override(multiband_uint16):
+    result = multiband_uint16.get_maximum_pixel(
+        band_idx=2, return_position_as_pixel_coordinate=True
+    )
+
+    assert result["value"] == 2035.0
+    assert result["position"] == (5, 5)
+
+
+def test_get_minimum_pixel_multiband_band_override(multiband_uint16):
+    result = multiband_uint16.get_minimum_pixel(
+        band_idx=3, return_position_as_pixel_coordinate=True
+    )
+
+    assert result["value"] == 3000.0
+    assert result["position"] == (0, 0)
+
+
+def test_get_mean_pixel_multiband_band_override(multiband_uint16):
+    result = multiband_uint16.get_mean_pixel(band_idx=2, return_position_as_pixel_coordinate=True)
+
+    # band 2 mean is 2017.5; the first pixel nearest it is 2017 at (2, 5)
+    assert result["value"] == 2017.5
+    assert result["position"] == (2, 5)
+
+
+def test_get_percentile_pixel_multiband_band_override(multiband_uint16):
+    result = multiband_uint16.get_percentile_pixel(50, band_idx=4)
+
+    assert result["value"] == 4017.5
+
+
+def test_extract_value_at_coordinate_multiband_band_override(multiband_uint16):
+    # 10 m UTM grid, origin (500000, 4200000): world (500015, 4199985) is
+    # pixel (1, 1) = gradient value 7
+    value = multiband_uint16.extract_value_at_coordinate((500_015.0, 4_199_985.0), band_idx=2)
+
+    assert value == 2007
+
+
+def test_stats_locators_reject_out_of_range_band(multiband_uint16):
+    with pytest.raises(IndexError):
+        multiband_uint16.get_maximum_pixel(band_idx=9)
+
+
 # no data handling
 def test_nodata_is_masked_in_stats(raster_with_nodata):
     # nodata (-9999) occupies the top-left 2x2 block of the 0..35 gradient;

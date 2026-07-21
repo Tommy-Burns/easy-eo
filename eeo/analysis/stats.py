@@ -79,7 +79,9 @@ def get_maximum_pixel(
     ds : EEORasterDataset
         Input raster dataset.
     band_idx : int, default 1
-        1-based band to analyse.
+        1-based band to analyse. The default selects the first band, which
+        for a single-band raster is its only band; pass a band number to
+        analyse a different band of a multi-band raster.
     return_position_as_pixel_coordinate : bool, default False
         If True, return the position as ``(row, col)`` pixel indices;
         otherwise as ``(x, y)`` world coordinates in the raster's CRS.
@@ -90,6 +92,11 @@ def get_maximum_pixel(
         ``{"value": float, "position": tuple}`` — the maximum value and where
         it occurs. Nodata pixels are excluded from the search.
 
+    Raises
+    ------
+    IndexError
+        If ``band_idx`` is outside the range of available bands.
+
     Notes
     -----
     Reads the band into memory. Nodata pixels are masked to NaN and ignored.
@@ -99,12 +106,11 @@ def get_maximum_pixel(
     >>> peak = ds.get_maximum_pixel()
     >>> peak["value"], peak["position"]
     """
-    band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
-    band = mask_nodata(ds, band)
+    band = mask_nodata(ds, ds.get_band(band_idx))
 
     # get max value
     value = float(np.nanmax(band))
-    _, row, col = np.unravel_index(np.nanargmax(band), band.shape)
+    row, col = np.unravel_index(np.nanargmax(band), band.shape)
 
     if return_position_as_pixel_coordinate:
         position = (row, col)
@@ -129,7 +135,9 @@ def get_minimum_pixel(
     ds : EEORasterDataset
         Input raster dataset.
     band_idx : int, default 1
-        1-based band to analyse.
+        1-based band to analyse. The default selects the first band, which
+        for a single-band raster is its only band; pass a band number to
+        analyse a different band of a multi-band raster.
     return_position_as_pixel_coordinate : bool, default False
         If True, return the position as ``(row, col)`` pixel indices;
         otherwise as ``(x, y)`` world coordinates in the raster's CRS.
@@ -140,6 +148,11 @@ def get_minimum_pixel(
         ``{"value": float, "position": tuple}`` — the minimum value and where
         it occurs. Nodata pixels are excluded from the search.
 
+    Raises
+    ------
+    IndexError
+        If ``band_idx`` is outside the range of available bands.
+
     Notes
     -----
     Reads the band into memory. Nodata pixels are masked to NaN and ignored.
@@ -149,12 +162,11 @@ def get_minimum_pixel(
     >>> low = ds.get_minimum_pixel()
     >>> low["value"], low["position"]
     """
-    band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
-    band = mask_nodata(ds, band)
+    band = mask_nodata(ds, ds.get_band(band_idx))
 
     # get min value
     value = float(np.nanmin(band))
-    _, row, col = np.unravel_index(np.nanargmin(band), band.shape)
+    row, col = np.unravel_index(np.nanargmin(band), band.shape)
 
     if return_position_as_pixel_coordinate:
         position = (row, col)
@@ -179,7 +191,9 @@ def get_mean_pixel(
     ds : EEORasterDataset
         Input raster dataset.
     band_idx : int, default 1
-        1-based band to analyse.
+        1-based band to analyse. The default selects the first band, which
+        for a single-band raster is its only band; pass a band number to
+        analyse a different band of a multi-band raster.
     return_position_as_pixel_coordinate : bool, default False
         If True, return the position as ``(row, col)`` pixel indices;
         otherwise as ``(x, y)`` world coordinates in the raster's CRS.
@@ -191,6 +205,11 @@ def get_mean_pixel(
         (nodata excluded), and ``position`` locates the pixel whose value is
         nearest that mean.
 
+    Raises
+    ------
+    IndexError
+        If ``band_idx`` is outside the range of available bands.
+
     Notes
     -----
     Reads the band into memory. Nodata pixels are masked to NaN and ignored.
@@ -200,13 +219,12 @@ def get_mean_pixel(
     >>> centre = ds.get_mean_pixel()
     >>> centre["value"], centre["position"]
     """
-    band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
-    band = mask_nodata(ds, band)
+    band = mask_nodata(ds, ds.get_band(band_idx))
 
     mean_value = float(np.nanmean(band))
     diff = np.abs(band - mean_value)
 
-    _, row, col = np.unravel_index(np.nanargmin(diff), diff.shape)
+    row, col = np.unravel_index(np.nanargmin(diff), diff.shape)
 
     if return_position_as_pixel_coordinate:
         position = (row, col)
@@ -234,7 +252,9 @@ def get_percentile_pixel(
     percentile : float
         Percentile to compute, in the range ``[0, 100]``.
     band_idx : int, default 1
-        1-based band to analyse.
+        1-based band to analyse. The default selects the first band, which
+        for a single-band raster is its only band; pass a band number to
+        analyse a different band of a multi-band raster.
     return_position_as_pixel_coordinate : bool, default False
         If True, return the position as ``(row, col)`` pixel indices;
         otherwise as ``(x, y)`` world coordinates in the raster's CRS.
@@ -246,6 +266,11 @@ def get_percentile_pixel(
         percentile of the band (nodata excluded), and ``position`` locates
         the pixel whose value is nearest that percentile.
 
+    Raises
+    ------
+    IndexError
+        If ``band_idx`` is outside the range of available bands.
+
     Notes
     -----
     Reads the band into memory. Nodata pixels are masked to NaN and ignored.
@@ -255,13 +280,12 @@ def get_percentile_pixel(
     >>> p95 = ds.get_percentile_pixel(95)
     >>> p95["value"], p95["position"]
     """
-    band = ds.read() if ds.get_count() == 1 else ds.get_band(band_idx)
-    band = mask_nodata(ds, band)
+    band = mask_nodata(ds, ds.get_band(band_idx))
 
     perc_value = float(np.nanpercentile(band, percentile))
     diff = np.abs(band - perc_value)
 
-    _, row, col = np.unravel_index(np.nanargmin(diff), band.shape)
+    row, col = np.unravel_index(np.nanargmin(diff), diff.shape)
 
     if return_position_as_pixel_coordinate:
         position = (row, col)

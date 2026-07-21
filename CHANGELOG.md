@@ -74,6 +74,12 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- **Statistics pixel locators work on multi-band rasters.**
+  `get_maximum_pixel`, `get_minimum_pixel`, `get_mean_pixel`, and
+  `get_percentile_pixel` previously crashed with `ValueError` on any raster
+  with more than one band. All four now analyse the band selected by
+  `band_idx` (default 1 — a single-band raster's only band) and raise
+  `IndexError` for an out-of-range band. Single-band results are unchanged.
 - `to_rasterio()` no longer re-reads and copies datasets that are already
   rasterio-backed but were produced in memory by a previous operation
   (`DatasetWriter`-backed); it now returns the same dataset unchanged. The
