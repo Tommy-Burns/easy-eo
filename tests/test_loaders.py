@@ -5,8 +5,27 @@ from affine import Affine
 from rasterio.crs import CRS
 
 from eeo import load_array, load_raster
+from eeo.core.adapters import RasterioAdapter
 from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import BackendError, ValidationError
+
+
+def _write_tiny_tif(path):
+    data = np.array([[1, 2], [3, 4]], dtype=np.uint8)
+    transform = Affine.translation(0, 2) * Affine.scale(1, -1)
+
+    with rio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=2,
+        width=2,
+        count=1,
+        dtype=data.dtype,
+        crs=CRS.from_epsg(4326),
+        transform=transform,
+    ) as dst:
+        dst.write(data, 1)
 
 
 # File does not exist
@@ -53,6 +72,48 @@ def test_load_raster_success(tmp_path):
     assert ds.get_shape() == (2, 2)
     assert ds.get_count() == 1
     assert ds.get_crs() == crs
+
+
+# Memory model: opening a raster and touching metadata must not read pixels
+def test_load_raster_performs_no_pixel_read(tmp_path, monkeypatch):
+    path = tmp_path / "lazy.tif"
+    _write_tiny_tif(path)
+
+    read_calls = []
+    real_read = RasterioAdapter.read
+    real_read_band = RasterioAdapter.read_band
+
+    def spy_read(self, *args, **kwargs):
+        read_calls.append(("read", args, kwargs))
+        return real_read(self, *args, **kwargs)
+
+    def spy_read_band(self, idx):
+        read_calls.append(("read_band", idx))
+        return real_read_band(self, idx)
+
+    monkeypatch.setattr(RasterioAdapter, "read", spy_read)
+    monkeypatch.setattr(RasterioAdapter, "read_band", spy_read_band)
+
+    ds = load_raster(str(path))
+
+    # metadata access must also stay read-free
+    ds.get_crs()
+    ds.get_transform()
+    ds.get_shape()
+    ds.get_bounds()
+    ds.get_metadata()
+    ds.get_width()
+    ds.get_height()
+    ds.get_count()
+
+    assert read_calls == []
+
+    # the spy is live: an actual pixel read goes through it and still works
+    band = ds.get_band(1)
+    np.testing.assert_array_equal(band, np.array([[1, 2], [3, 4]], dtype=np.uint8))
+    assert read_calls == [("read_band", 1)]
+
+    ds.close()
 
 
 # Load array non-empty input
