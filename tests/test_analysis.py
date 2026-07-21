@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 from affine import Affine
@@ -161,6 +163,61 @@ def test_nodata_is_masked_in_stats(raster_with_nodata):
     # stats must skip it: max stays 35, min is 2 (0, 1, 6, 7 are nodata)
     assert raster_with_nodata.get_maximum_pixel()["value"] == 35.0
     assert raster_with_nodata.get_minimum_pixel()["value"] == 2.0
+
+
+def test_nodata_excluded_from_mean(raster_with_nodata):
+    # valid values are 0..35 minus the nodata block {0, 1, 6, 7}: sum 616 over
+    # 32 pixels -> 19.25. Including the -9999 sentinels would be strongly
+    # negative, so this proves the sentinel is not leaking into the mean.
+    assert raster_with_nodata.get_mean_pixel()["value"] == pytest.approx(19.25)
+
+
+def test_stat_value_is_python_float(raster_3x3):
+    assert isinstance(raster_3x3.get_maximum_pixel()["value"], float)
+
+
+def test_extract_at_nodata_pixel_returns_sentinel(raster_with_nodata):
+    # Point accessor (not a statistic): sampling a nodata pixel returns the
+    # stored sentinel in the band's dtype, as documented. Pixel (0, 0) centre
+    # on the 10 m UTM grid, origin (500000, 4200000), is (500005, 4199995).
+    value = raster_with_nodata.extract_value_at_coordinate((500_005.0, 4_199_995.0))
+    assert value == -9999.0
+
+
+# normalized difference: nodata & dtype contract
+def test_normalized_difference_masks_nodata_to_nan(raster_with_nodata):
+    nd = raster_with_nodata.normalized_difference(raster_with_nodata)
+    out = nd.read()[0]
+
+    assert out.dtype == np.float32
+    assert np.isnan(out[:2, :2]).all()  # nodata block masked to NaN
+    assert out[3, 3] == pytest.approx(0.0)  # (a - a) / (a + a) == 0 elsewhere
+    assert math.isnan(nd.get_metadata()["nodata"])
+
+
+def test_normalized_difference_nodata_is_contagious():
+    a = np.arange(1, 37, dtype=np.float32).reshape(6, 6)
+    a[:2, :2] = -9999.0
+    b = np.arange(1, 37, dtype=np.float32).reshape(6, 6)
+    b[4:, 4:] = -9999.0
+    transform = Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(10.0, -10.0)
+    crs = CRS.from_epsg(32633)
+    ds_a = load_array(a, transform=transform, crs=crs, nodata=-9999.0).to_rasterio()
+    ds_b = load_array(b, transform=transform, crs=crs, nodata=-9999.0).to_rasterio()
+
+    out = ds_a.normalized_difference(ds_b, return_as_ndarray=True)[0]
+
+    assert np.isnan(out[:2, :2]).all()  # nodata from a
+    assert np.isnan(out[4:, 4:]).all()  # nodata from b
+    assert np.isfinite(out[3, 3])  # valid in both operands
+
+
+def test_normalized_difference_without_nodata_has_no_nodata(multiband_uint16):
+    nd = multiband_uint16.normalized_difference(multiband_uint16)
+
+    assert nd.read().dtype == np.float32
+    assert nd.get_metadata()["nodata"] is None
+    assert not np.isnan(nd.read()).any()
 
 
 # chaining

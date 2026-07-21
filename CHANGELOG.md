@@ -50,6 +50,11 @@ are called out under a **Breaking** heading.
   Chains that relied on the old integer truncation or on nodata sentinels
   flowing through arithmetic will see different output dtypes and NaN-masked
   gaps. See the "Nodata & Dtype Contract" guide for the full policy.
+- **`normalized_difference` now masks nodata.** A pixel that is nodata in
+  either input band is NaN in the output (with `nodata=nan`); previously the
+  nodata sentinel took part in the ratio and the output carried the input's
+  nodata value unchanged. Output stays float32; the zero-denominator guard
+  (`ds + other == 0` → 0) is unchanged.
 
 ### Added
 
@@ -95,6 +100,9 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- `normalized_difference` no longer leaves `inf` where the denominator is zero
+  but the numerator is not (``ds + other == 0`` with ``ds != other``); the
+  zero-denominator guard now sets both the ``0/0`` and ``x/0`` cases to 0.
 - **Statistics pixel locators work on multi-band rasters.**
   `get_maximum_pixel`, `get_minimum_pixel`, `get_mean_pixel`, and
   `get_percentile_pixel` previously crashed with `ValueError` on any raster
