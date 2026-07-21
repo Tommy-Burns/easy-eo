@@ -60,6 +60,14 @@ are called out under a **Breaking** heading.
   measurements can no longer be mistaken for one. Valid pixels are unchanged
   (returned in the band's dtype). A pixel counts as nodata when it equals the
   raster's declared nodata value or is already NaN.
+- **Normalization ops now output float32 and exclude nodata.**
+  `normalize_min_max`, `normalize_percentile`, and `standardize` previously
+  wrote the result back in the input dtype — truncating an integer raster's
+  normalized values to `0`/`1` — and computed their statistics (min/max,
+  percentiles, mean/std) over every pixel including nodata sentinels. They now
+  output **float32**, compute statistics over valid pixels only, and mark
+  nodata pixels as NaN (`nodata=nan`); a raster with no declared nodata is
+  unchanged apart from the float32 output.
 
 ### Added
 
@@ -108,6 +116,11 @@ are called out under a **Breaking** heading.
 - `normalized_difference` no longer leaves `inf` where the denominator is zero
   but the numerator is not (``ds + other == 0`` with ``ds != other``); the
   zero-denominator guard now sets both the ``0/0`` and ``x/0`` cases to 0.
+- `reproject_raster` now passes the raster's nodata value to the warp
+  (`src_nodata`/`dst_nodata`). Previously source nodata pixels were warped as
+  ordinary values and border pixels exposed by the reprojection were filled
+  with 0; they are now filled with the nodata value (or 0 only when the raster
+  declares no nodata).
 - **Statistics pixel locators work on multi-band rasters.**
   `get_maximum_pixel`, `get_minimum_pixel`, `get_mean_pixel`, and
   `get_percentile_pixel` previously crashed with `ValueError` on any raster

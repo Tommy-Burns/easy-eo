@@ -4,7 +4,7 @@ import pyproj
 import rasterio as rio
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
-from eeo.common import is_rasterio_backed, normalize_resampling_method
+from eeo.common import get_nodata, is_rasterio_backed, normalize_resampling_method
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import BackendError, ValidationError
@@ -48,7 +48,10 @@ def reproject_raster(
     -----
     Warps band-by-band with ``rasterio.warp.reproject`` through rasterio band
     handles, so the full source array is never materialized at once; the
-    warped output is held in an in-memory dataset.
+    warped output is held in an in-memory dataset. Source nodata pixels are
+    honoured and border pixels exposed by the warp are filled with the nodata
+    value; if the raster declares no nodata, those border pixels are filled
+    with 0.
 
     Examples
     --------
@@ -97,6 +100,9 @@ def reproject_raster(
     memfile = rio.io.MemoryFile()
     dataset = memfile.open(**meta)
 
+    # Pass the nodata value both ways so source nodata is not warped into
+    # valid data and border pixels exposed by the warp are filled with it.
+    nodata = get_nodata(ds)
     for i in range(1, ds.get_count() + 1):
         reproject(
             source=rio.band(ds.ds, i),
@@ -105,6 +111,8 @@ def reproject_raster(
             src_crs=ds.get_crs(),
             dst_transform=transform,
             dst_crs=crs,
+            src_nodata=nodata,
+            dst_nodata=nodata,
             resampling=resampling_method,
         )
     return EEORasterDataset.from_rasterio(dataset)

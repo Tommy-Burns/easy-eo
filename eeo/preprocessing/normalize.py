@@ -3,15 +3,26 @@
 import numpy as np
 import rasterio as rio
 
+from eeo.common import get_nodata, mask_nodata
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+
+
+def _write_normalized(ds: EEORasterDataset, out: np.ndarray, out_nodata) -> EEORasterDataset:
+    """Write a float32 normalization result sharing ``ds``'s georeferencing."""
+    meta = ds.get_metadata()
+    meta.update(dtype="float32", nodata=out_nodata)
+    memfile = rio.io.MemoryFile()
+    out_ds = memfile.open(**meta)
+    out_ds.write(out)
+    return EEORasterDataset.from_rasterio(out_ds)
 
 
 @eeo_raster_op
 def standardize(ds: EEORasterDataset) -> EEORasterDataset:
     """Standardize a raster to zero mean and unit variance (z-score).
 
-    Computes ``(x - mean) / std`` over all pixels.
+    Computes ``(x - mean) / std`` over the valid pixels.
 
     Parameters
     ----------
@@ -21,29 +32,30 @@ def standardize(ds: EEORasterDataset) -> EEORasterDataset:
     Returns
     -------
     EEORasterDataset
-        New dataset in the same dtype as ``ds``; results are truncated for
-        integer inputs, so use a floating dtype to keep the standardized
-        values. The nodata value is carried over unchanged.
+        New dataset in float32. The mean and standard deviation are computed
+        over valid pixels only (nodata excluded), and nodata pixels are NaN in
+        the output (``nodata=nan``); a raster with no declared nodata produces
+        output with no nodata.
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise. The
-    mean and standard deviation are computed over every pixel, including
-    nodata: nodata pixels are not masked and skew the statistics.
+    Reads the full array into memory and makes one statistics pass before
+    writing, rather than streaming block-wise.
 
     Examples
     --------
     >>> z = ds.standardize()
     """
-    data = ds.read()
-    mean_value = np.mean(data)
-    std_value = np.std(data)
-    standardized_data = (data - mean_value) / std_value
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(standardized_data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    ds_nodata = get_nodata(ds)
+    masked = mask_nodata(ds, ds.read())
+
+    mean_value = np.nanmean(masked)
+    std_value = np.nanstd(masked)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        standardized = (masked - mean_value) / std_value
+
+    out_nodata = float("nan") if ds_nodata is not None else None
+    return _write_normalized(ds, standardized.astype(np.float32), out_nodata)
 
 
 @eeo_raster_op
@@ -52,7 +64,7 @@ def normalize_min_max(
 ) -> EEORasterDataset:
     """Linearly rescale a raster to a new value range.
 
-    Maps the raster's full data range onto ``[new_min, new_max]``.
+    Maps the raster's valid data range onto ``[new_min, new_max]``.
 
     Parameters
     ----------
@@ -66,31 +78,31 @@ def normalize_min_max(
     Returns
     -------
     EEORasterDataset
-        New dataset scaled to ``[new_min, new_max]``, in the same dtype as
-        ``ds``; results are truncated for integer inputs, so use a floating
-        dtype to keep the scaling. The nodata value is carried over unchanged.
+        New dataset in float32 scaled to ``[new_min, new_max]``. The data
+        minimum and maximum are computed over valid pixels only (nodata
+        excluded), and nodata pixels are NaN in the output (``nodata=nan``); a
+        raster with no declared nodata produces output with no nodata.
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise. The
-    data minimum and maximum are computed over every pixel, including nodata:
-    nodata pixels are not masked and an extreme sentinel (e.g. -9999) skews
-    the rescaling.
+    Reads the full array into memory and makes one statistics pass before
+    writing, rather than streaming block-wise.
 
     Examples
     --------
     >>> scaled = ds.normalize_min_max()
     >>> centred = ds.normalize_min_max(new_min=-1, new_max=1)
     """
-    data = ds.read()
-    old_min, old_max = np.min(data), np.max(data)
-    normalized_data = (data - old_min) / (old_max - old_min)
-    normalized_data = normalized_data * (new_max - new_min) + new_min
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(normalized_data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    ds_nodata = get_nodata(ds)
+    masked = mask_nodata(ds, ds.read())
+
+    old_min, old_max = np.nanmin(masked), np.nanmax(masked)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        normalized = (masked - old_min) / (old_max - old_min)
+    normalized = normalized * (new_max - new_min) + new_min
+
+    out_nodata = float("nan") if ds_nodata is not None else None
+    return _write_normalized(ds, normalized.astype(np.float32), out_nodata)
 
 
 @eeo_raster_op
@@ -117,9 +129,10 @@ def normalize_percentile(
     Returns
     -------
     EEORasterDataset
-        New dataset with values in [0, 1], in the same dtype as the input.
-        Fractional results are truncated for integer inputs (e.g.
-        uint8/uint16), so use a floating dtype to keep the [0, 1] scaling.
+        New dataset in float32 with values in [0, 1]. Percentiles are computed
+        over valid pixels only (nodata excluded), and nodata pixels are NaN in
+        the output (``nodata=nan``); a raster with no declared nodata produces
+        output with no nodata.
 
     Raises
     ------
@@ -128,21 +141,21 @@ def normalize_percentile(
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise.
-    Percentiles are computed with ``numpy.nanpercentile``, which ignores NaN
-    but not the dataset's ``nodata`` sentinel, so nodata pixels currently
-    take part in the percentile computation.
+    Reads the full array into memory and makes one statistics pass before
+    writing, rather than streaming block-wise. Percentiles are computed with
+    ``numpy.nanpercentile`` over the nodata-masked array.
 
     Examples
     --------
     >>> ds = load_array(np.random.rand(64, 64), crs=4326)
     >>> out = ds.normalize_percentile(lower_percentile=5, upper_percentile=95)
     """
-    data = ds.read()
-    array_min, array_max = np.nanpercentile(data, (lower_percentile, upper_percentile))
-    normalized_data = np.clip((data - array_min) / (array_max - array_min), 0, 1)
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(normalized_data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    ds_nodata = get_nodata(ds)
+    masked = mask_nodata(ds, ds.read())
+
+    array_min, array_max = np.nanpercentile(masked, (lower_percentile, upper_percentile))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        normalized = np.clip((masked - array_min) / (array_max - array_min), 0, 1)
+
+    out_nodata = float("nan") if ds_nodata is not None else None
+    return _write_normalized(ds, normalized.astype(np.float32), out_nodata)
