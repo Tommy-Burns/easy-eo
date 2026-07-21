@@ -155,10 +155,15 @@ def large_rgb_raster():
     """3-band 600x600 float32 raster, rasterio-backed.
 
     Large relative to the tiny ``figsize=(1, 1)`` display budget used in the
-    decimation tests, so every band read must come back reduced.
+    decimation tests, so every band read must come back reduced. The bands
+    must not be constant: rasterio >= 1.5 normalizes float bands in
+    ``show()`` by their value range, and a zero range divides 0/0 and warns.
     """
+    base = np.linspace(0.0, 1.0, LARGE_SIDE * LARGE_SIDE, dtype=np.float32).reshape(
+        LARGE_SIDE, LARGE_SIDE
+    )
     ds = load_array(
-        np.zeros((3, LARGE_SIDE, LARGE_SIDE), dtype=np.float32),
+        np.stack([base, 0.5 * base, 0.25 * base]),
         transform=Affine.translation(0, LARGE_SIDE) * Affine.scale(1, -1),
         crs=CRS.from_epsg(32633),
     ).to_rasterio()
