@@ -51,6 +51,14 @@ are called out under a **Breaking** heading.
 
 ### Changed
 
+- **Plot functions read at display resolution.** `plot_raster`,
+  `plot_band_array`, `plot_raster_with_histogram`, and `plot_composite` now
+  read rasterio-backed rasters decimated to the figure's display budget
+  (via `out_shape`, served from GDAL overviews when present) instead of at
+  full resolution, making plotting of large scenes fast and memory-safe.
+  Small rasters and NumPy-backed datasets are still read in full;
+  `plot_raster_with_histogram`'s histogram is computed from the decimated
+  pixels for large rasters. `plot_histogram` is unchanged (exact counts).
 - **Loosened runtime dependency bounds** to library-appropriate ranges:
   `rasterio>=1.4,<2`, `geopandas>=1.1,<2`, `numpy>=1.26,<3`, `matplotlib>=3.8`
   (previously over-tight caps such as a single matplotlib minor).
