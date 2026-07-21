@@ -79,40 +79,72 @@ Correctness and clarity are prioritized.
 
 ## Development Setup
 
-Set up a local environment once, then use it for all checks below.
+We use [**uv**](https://docs.astral.sh/uv/) to manage the development
+environment. A committed `uv.lock` pins the exact versions used by every
+contributor and by CI, so everyone works against the same dependency set.
+This is the recommended path; a plain-pip alternative follows.
 
-1. **Fork and clone** the repository, then enter it:
+### Recommended: uv
+
+1. **Install uv** (see the [official instructions](https://docs.astral.sh/uv/getting-started/installation/));
+   for example:
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. **Fork and clone** the repository, then enter it:
    ```bash
    git clone https://github.com/<your-username>/easy-eo.git
    cd easy-eo
    ```
 
-2. **Create and activate an isolated environment** (conda or venv):
+3. **Create the locked environment** with the dev dependencies. This builds a
+   `.venv/` from `uv.lock` (runtime deps plus `pytest`, `pytest-cov`, `ruff`,
+   `mypy`, and `pre-commit`):
    ```bash
-   # conda
-   conda create -n easy-eo-env python=3.12
-   conda activate easy-eo-env
-
-   # ...or a virtualenv
-   python -m venv .venv
-   source .venv/bin/activate   # Windows: .venv\Scripts\activate
-   ```
-
-3. **Install Easy-EO with the dev extras.** This pulls in the runtime
-   dependencies plus `pytest`, `pytest-cov`, `ruff`, `mypy`, and
-   `pre-commit`:
-   ```bash
-   pip install -e ".[dev]"
+   uv sync --extra dev
    ```
 
 4. **Install the pre-commit git hook** (one-time, per clone):
    ```bash
-   pre-commit install
+   uv run pre-commit install
    ```
 
-> The `mypy` and `ruff` checks (and the `mypy` pre-commit hook) use the tools
-> installed in this environment, so keep it **activated** whenever you run
-> them or commit.
+Prefix commands with `uv run` to execute them inside the locked environment
+(e.g. `uv run pytest`, `uv run mypy`), or activate it once with
+`source .venv/bin/activate` (`\.venv\Scripts\activate` on Windows) and run the
+tools directly.
+
+#### Updating dependencies
+
+Edit the dependency ranges in `pyproject.toml`, then refresh the lockfile and
+commit it:
+
+```bash
+uv lock            # re-resolve and update uv.lock
+uv sync --extra dev
+```
+
+Run `uv lock --check` to verify the lockfile is in sync with `pyproject.toml`
+without changing it (CI installs with `uv sync --frozen`, which fails if they
+have drifted). Routine version bumps normally arrive via reviewed
+Dependabot/Renovate PRs rather than ad hoc.
+
+### Alternative: pip
+
+If you prefer not to use uv, install into a conda env or virtualenv. Note this
+resolves fresh versions rather than the locked set:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+pre-commit install
+```
+
+> Whichever path you choose, the `mypy`, `ruff`, and `pre-commit` tools run
+> from this environment, so keep it **activated** (or use `uv run`) whenever
+> you run the checks or commit.
 
 ---
 
@@ -121,6 +153,9 @@ Set up a local environment once, then use it for all checks below.
 Every pull request must pass linting, type checking, and the test suite; CI
 runs all three on the full support matrix. Run them locally before opening a
 PR.
+
+The commands below assume an **activated** environment. With uv, either
+activate `.venv` or prefix each command with `uv run` (e.g. `uv run pytest`).
 
 ### Formatting & linting (ruff)
 
