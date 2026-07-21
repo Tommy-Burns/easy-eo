@@ -1,6 +1,4 @@
-"""
-Decorators for easy-eo
-"""
+"""Decorators for Easy-EO."""
 
 from __future__ import annotations
 
@@ -43,7 +41,6 @@ def eeo_raster_op(func=None, *, preserve_none=False):
     (e.g. ``mosaic`` returns ``None`` when it writes to ``save_path``); the
     bound method then returns that ``None`` unchanged instead of ``self``.
     """
-
     from .core import EEORasterDataset
 
     def decorate(func: Callable[P, R]) -> Callable[P, R]:
@@ -76,9 +73,7 @@ def eeo_raster_op(func=None, *, preserve_none=False):
 
 
 def eeo_raster_viz(func: Callable[..., R]) -> Callable[..., R]:
-    """
-    Decorator that binds a visualization function to EEORasterDataset
-    as a terminal (non-chainable) method.
+    """Bind a visualization function to EEORasterDataset as a terminal method.
 
     Visualization methods:
         - operate on the dataset

@@ -1,6 +1,7 @@
-"""
-Easy-EO
-A lightweight Earth Observation utilities library for chainable raster operations
+"""Easy-EO: chainable raster processing for Earth Observation.
+
+A lightweight library of chainable raster operations, algebra, and
+visualization built on rasterio, NumPy, GeoPandas, and matplotlib.
 """
 
 from ._show_versions import show_versions

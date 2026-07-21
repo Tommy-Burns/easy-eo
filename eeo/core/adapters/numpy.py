@@ -1,3 +1,5 @@
+"""NumPy-backed raster adapter."""
+
 import numpy as np
 import rasterio as rio
 from rasterio.crs import CRS
@@ -8,7 +10,7 @@ from eeo.core.adapters.rasterio import RasterioAdapter
 
 
 class NumpyRasterioAdapter(BaseRasterAdapter):
-    """Numpy backend adapter for EEORasterDataset"""
+    """NumPy-backed raster adapter for EEORasterDataset."""
 
     def __init__(
         self,

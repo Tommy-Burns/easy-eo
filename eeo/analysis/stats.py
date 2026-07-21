@@ -1,3 +1,5 @@
+"""Per-pixel statistics and coordinate sampling."""
+
 import numpy as np
 import rasterio as rio
 

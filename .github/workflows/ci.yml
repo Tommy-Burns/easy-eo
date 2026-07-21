@@ -39,6 +39,15 @@ jobs:
       - name: mypy
         run: uv run mypy
 
+      # Section/signature consistency on the public operation API, per
+      # [tool.numpydoc_validation]. Run ephemerally so numpydoc's sphinx
+      # dependency stays out of the locked dev environment.
+      - name: Validate docstrings (numpydoc)
+        run: >
+          uvx --from numpydoc numpydoc lint
+          eeo/ops/*.py eeo/analysis/*.py eeo/preprocessing/*.py eeo/viz/*.py
+          eeo/core/loader.py eeo/_show_versions.py
+
       - name: Core stub freshness
         run: uv run python scripts/generate_core_stub.py --check
 

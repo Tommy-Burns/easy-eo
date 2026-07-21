@@ -34,6 +34,15 @@ repos:
         args: ["--fix"]
       - id: ruff-format
 
+  # numpydoc section/signature validation (config in [tool.numpydoc_validation]).
+  # Scoped to the public operation API; internal helpers use concise docstrings
+  # that ruff's D-rules already cover.
+  - repo: https://github.com/numpy/numpydoc
+    rev: v1.10.0
+    hooks:
+      - id: numpydoc-validation
+        files: ^(eeo/(ops|analysis|preprocessing|viz)/|eeo/core/loader\.py|eeo/_show_versions\.py)
+
   # mypy runs against the whole `eeo` package (per its pyproject config), not
   # just the changed files, so it can resolve intra-package imports. It runs
   # as a local/system hook using the mypy from the dev environment, which has

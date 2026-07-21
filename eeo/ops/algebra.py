@@ -1,3 +1,5 @@
+"""Pixel-wise raster algebra operations."""
+
 import numpy as np
 import rasterio as rio
 

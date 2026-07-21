@@ -1,3 +1,5 @@
+"""Resampling to a new size, scale factor, or resolution."""
+
 import rasterio as rio
 from rasterio.enums import Resampling
 from rasterio.transform import Affine
