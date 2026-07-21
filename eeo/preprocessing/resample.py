@@ -7,6 +7,7 @@ from rasterio.transform import Affine
 from eeo.common import normalize_resampling_method
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+from eeo.core.exceptions import BackendError, ValidationError
 from eeo.core.types import ResamplingMethod
 
 
@@ -61,10 +62,10 @@ def resample(
 
     Raises
     ------
-    ValueError
+    ValidationError
         If zero or more than one of ``size``, ``scale_factor``, and
         ``resolution`` is given.
-    RuntimeError
+    BackendError
         If resampling fails for any other reason (wraps the underlying
         error).
 
@@ -87,7 +88,14 @@ def resample(
     """
     params = [size, scale_factor, resolution]
     if sum(p is not None for p in params) != 1:
-        raise ValueError("Provide exactly one of: size=, scale_factor=, resolution=")
+        raise ValidationError(
+            "provide exactly one of size=, scale_factor=, or resolution=; "
+            f"got {sum(p is not None for p in params)}"
+        )
+
+    # Validate the resampling method up front so a bad method surfaces as a
+    # ValidationError rather than being masked by the BackendError wrapper below.
+    resampling_enum = normalize_resampling_method(resampling_method)
 
     # Resampling needs rasterio's decimated reads; promote non-rasterio
     # backends (no-op if the backend is already rasterio)
@@ -112,8 +120,6 @@ def resample(
         new_width = int((bounds.right - bounds.left) / abs(xres))
         new_height = int((bounds.top - bounds.bottom) / abs(yres))
     try:
-        # Resampling using bilinear interpolation
-        resampling_enum = normalize_resampling_method(resampling_method)
         data = ds.read(
             out_shape=(ds.get_count(), new_height, new_width),
             resampling=resampling_enum,
@@ -145,4 +151,4 @@ def resample(
 
         return EEORasterDataset.from_rasterio(dataset)
     except Exception as e:
-        raise RuntimeError("Could not scale raster data") from e
+        raise BackendError("resampling failed in the rasterio backend") from e

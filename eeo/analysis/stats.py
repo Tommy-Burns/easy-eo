@@ -6,6 +6,7 @@ import rasterio as rio
 from eeo.common import mask_nodata
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+from eeo.core.exceptions import ValidationError
 
 Coordinate = tuple[float, float] | list[float]
 
@@ -35,7 +36,7 @@ def extract_value_at_coordinate(
 
     Raises
     ------
-    ValueError
+    ValidationError
         If ``coordinates`` does not contain exactly two values.
 
     Notes
@@ -48,7 +49,9 @@ def extract_value_at_coordinate(
     >>> value = ds.extract_value_at_coordinate((500000.0, 4200000.0))
     """
     if len(coordinates) != 2:
-        raise ValueError(f"Expected 2 coordinates, got {len(coordinates)}")
+        raise ValidationError(
+            f"coordinates must contain exactly 2 values (x, y); got {len(coordinates)}"
+        )
 
     backend = ds._adapter.backend
     if not isinstance(backend, rio.DatasetReader):

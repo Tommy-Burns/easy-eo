@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from eeo.core.exceptions import ValidationError
 from eeo.preprocessing import (
     normalize_min_max,
     normalize_percentile,
@@ -79,7 +80,7 @@ def test_resample_with_scale_factor(single_band_float32):
 
 
 def test_resample_invalid_params(single_band_float32):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         resample(single_band_float32, size=(2, 2), scale_factor=2.0)
 
 

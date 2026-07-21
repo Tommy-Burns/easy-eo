@@ -5,6 +5,7 @@ from affine import Affine
 from rasterio.crs import CRS
 
 from eeo import load_raster
+from eeo.core.exceptions import CRSMismatchError
 from eeo.ops.merge import mosaic
 
 
@@ -70,9 +71,9 @@ def test_mosaic_auto_reproject_across_crs(single_band_float32):
 
 
 def test_mosaic_crs_mismatch_without_auto_reproject_raises(single_band_float32):
-    """A CRS mismatch still raises ValueError when auto_reproject is off."""
+    """A CRS mismatch raises CRSMismatchError when auto_reproject is off."""
     other = single_band_float32.reproject_raster(target_crs=4326)
-    with pytest.raises(ValueError, match="same CRS"):
+    with pytest.raises(CRSMismatchError, match="share the CRS"):
         single_band_float32.mosaic(other)
 
 

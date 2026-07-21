@@ -6,6 +6,8 @@ import numpy as np
 import rasterio as rio
 from rasterio.io import DatasetReader, MemoryFile
 
+from eeo.core.exceptions import BackendError
+
 from .base import BaseRasterAdapter
 
 
@@ -29,7 +31,7 @@ class RasterioAdapter(BaseRasterAdapter):
         try:
             dataset = rio.open(path)
         except Exception as e:
-            raise RuntimeError(f"Failed to open raster: {path}") from e
+            raise BackendError(f"failed to open raster: {path}") from e
         return cls(dataset)
 
     @classmethod
@@ -99,7 +101,10 @@ class RasterioAdapter(BaseRasterAdapter):
 
     def read_band(self, idx: int) -> np.ndarray:
         if idx < 1 or idx > self._ds.count:
-            raise IndexError(f"Band index {idx} out of range")
+            raise IndexError(
+                f"band index {idx} out of range; dataset has {self._ds.count} "
+                f"band(s) (valid 1..{self._ds.count})"
+            )
         return self._ds.read(idx)
 
     # ========================

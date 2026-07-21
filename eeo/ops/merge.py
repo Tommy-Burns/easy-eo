@@ -9,6 +9,12 @@ from rasterio.merge import merge
 from eeo.common import is_rasterio_backed, normalize_resampling_method
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+from eeo.core.exceptions import (
+    AlignmentError,
+    BackendError,
+    CRSMismatchError,
+    ValidationError,
+)
 
 
 @eeo_raster_op(preserve_none=True)
@@ -38,7 +44,7 @@ def mosaic(
     auto_reproject : bool, default False
         If True, reproject any raster in ``others`` whose CRS differs from
         ``ds`` before mosaicking. If False, a CRS mismatch raises
-        ``ValueError``.
+        ``CRSMismatchError``.
     **kwargs
         Additional keyword arguments forwarded to ``rasterio.merge.merge``.
 
@@ -52,11 +58,12 @@ def mosaic(
 
     Raises
     ------
-    TypeError
+    BackendError
         If ``ds`` is not backed by rasterio.
-    ValueError
-        If ``others`` is empty, or a CRS mismatch is found and
-        ``auto_reproject=False``.
+    ValidationError
+        If ``others`` is empty.
+    CRSMismatchError
+        If a CRS mismatch is found and ``auto_reproject=False``.
 
     Notes
     -----
@@ -70,7 +77,10 @@ def mosaic(
     """
     # Ensure mosaic for only rasterio-backend datasets
     if not is_rasterio_backed(ds):
-        raise TypeError("Mosaicking is only allowed on rasterio backend rasters")
+        raise BackendError(
+            "mosaic requires a rasterio-backed dataset; this dataset uses the "
+            "NumPy backend. Call .to_rasterio() first."
+        )
 
     # normalize resampling
     resampling_method = normalize_resampling_method(resampling_method)
@@ -79,7 +89,7 @@ def mosaic(
     others = [others] if isinstance(others, EEORasterDataset) else list(others)
 
     if not others:
-        raise ValueError("At least one raster must be provided for mosaicking")
+        raise ValidationError("provide at least one raster to mosaic with; got an empty 'others'")
 
     # CRS validation
     src_datasets: list[EEORasterDataset] = [ds]
@@ -91,9 +101,10 @@ def mosaic(
                 # keyword-only target_crs as int/str/pyproj.CRS, so WKT is passed here rather.
                 obj = obj.reproject_raster(target_crs=target_crs.to_wkt())
             else:
-                raise ValueError(
-                    "All rasters must have the same CRS for mosaicking. "
-                    "Set auto_reproject=True to allow reprojection."
+                raise CRSMismatchError(
+                    "all rasters must share the CRS for mosaicking; "
+                    f"got {obj.get_crs()} vs {target_crs}. "
+                    "Set auto_reproject=True to reproject automatically."
                 )
 
         src_datasets.append(obj)
@@ -155,11 +166,14 @@ def stack(
 
     Raises
     ------
-    TypeError
+    BackendError
         If ``ds`` is not backed by rasterio.
-    ValueError
-        If ``others`` is empty, or any input's CRS, transform, or shape
-        differs from ``ds``.
+    ValidationError
+        If ``others`` is empty.
+    CRSMismatchError
+        If any input's CRS differs from ``ds``.
+    AlignmentError
+        If any input's transform or shape differs from ``ds``.
 
     Notes
     -----
@@ -173,22 +187,28 @@ def stack(
     """
     # Ensure stack for only rasterio-backend datasets
     if not is_rasterio_backed(ds):
-        raise TypeError("Stacking is only allowed on rasterio backend rasters")
+        raise BackendError(
+            "stack requires a rasterio-backed dataset; this dataset uses the "
+            "NumPy backend. Call .to_rasterio() first."
+        )
 
     # normalize inputs
     others = [others] if isinstance(others, EEORasterDataset) else list(others)
 
     if not others:
-        raise ValueError("At least one raster must be provided for stacking")
+        raise ValidationError("provide at least one raster to stack; got an empty 'others'")
 
     # alignment checks
     for item in others:
-        if (
-            item.get_crs() != ds.get_crs()
-            or item.get_transform() != ds.get_transform()
-            or item.get_shape() != ds.get_shape()
-        ):
-            raise ValueError("All rasters must have identical CRS, transform, and shape")
+        if item.get_crs() != ds.get_crs():
+            raise CRSMismatchError(
+                f"all rasters must share the CRS to stack; got {item.get_crs()} vs {ds.get_crs()}"
+            )
+        if item.get_transform() != ds.get_transform() or item.get_shape() != ds.get_shape():
+            raise AlignmentError(
+                "all rasters must share the transform and shape to stack; "
+                f"got shape {item.get_shape()} vs {ds.get_shape()}"
+            )
 
     # read data
     arrays = [ds.read()]

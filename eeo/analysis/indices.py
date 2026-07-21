@@ -11,6 +11,7 @@ import rasterio as rio
 from eeo.common import align_raster_to_target
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+from eeo.core.exceptions import AlignmentError
 
 
 @eeo_raster_op
@@ -37,7 +38,7 @@ def normalized_difference(
         Second operand (e.g. Red for NDVI).
     auto_align : bool, default True
         If True, resample ``other`` onto ``ds``'s grid when their shape or
-        transform differ. If False, a mismatch raises ``ValueError``.
+        transform differ. If False, a mismatch raises ``AlignmentError``.
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
@@ -55,7 +56,7 @@ def normalized_difference(
 
     Raises
     ------
-    ValueError
+    AlignmentError
         If the two rasters are on different grids and ``auto_align`` is False.
 
     Notes
@@ -77,7 +78,11 @@ def normalized_difference(
         if auto_align:
             other = align_raster_to_target(other, ds, method=method)
         else:
-            raise ValueError("Rasters must have the same shape and alignment")
+            raise AlignmentError(
+                "rasters must share the same grid for this operation; "
+                f"got shape {other.get_shape()} vs {ds.get_shape()}. "
+                "Pass auto_align=True to resample the other raster onto this grid."
+            )
 
     a = ds.read().astype(rio.float32)
     b = other.read().astype(rio.float32)

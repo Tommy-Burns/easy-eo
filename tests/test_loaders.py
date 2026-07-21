@@ -6,6 +6,7 @@ from rasterio.crs import CRS
 
 from eeo import load_array, load_raster
 from eeo.core.core import EEORasterDataset
+from eeo.core.exceptions import BackendError, ValidationError
 
 
 # File does not exist
@@ -21,7 +22,7 @@ def test_load_raster_invalid_file(tmp_path):
     bad_file = tmp_path / "not_a_raster.txt"
     bad_file.write_text("this is not a raster")
 
-    with pytest.raises(RuntimeError, match="could not be opened"):
+    with pytest.raises(BackendError, match="could not be opened"):
         load_raster(str(bad_file))
 
 
@@ -56,7 +57,7 @@ def test_load_raster_success(tmp_path):
 
 # Load array non-empty input
 def test_load_array_rejects_non_numpy():
-    with pytest.raises(TypeError):
+    with pytest.raises(ValidationError):
         load_array([[1, 2], [3, 4]])
 
 
@@ -65,7 +66,7 @@ def test_load_array_rejects_non_numpy():
 def test_invalid_array_dimensions(shape):
     array = np.zeros(shape)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         load_array(array)
 
 
