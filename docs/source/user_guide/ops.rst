@@ -14,6 +14,11 @@ objects and return new datasets unless otherwise noted. Most functions are
    return either an ``EEORasterDataset`` or a NumPy array and **do not write to disk**
    unless explicitly requested.
 
+.. seealso::
+
+   :doc:`nodata_and_dtype` for how these operations treat nodata pixels and
+   which data type each one returns.
+
 -----
 
 Normalized Difference

@@ -136,21 +136,81 @@ If an operation changes any of the above, it must:
 
 ---
 
-## Nodata & Dtype Propagation
+## Nodata & Dtype Contract
 
-Every operation must have defined, documented, and tested behavior for:
+This is the library-wide contract for how operations treat nodata pixels and
+what dtype they produce. Every operation must state its nodata and dtype
+behavior in one sentence in its `Returns`/`Notes`, and a test must back that
+statement. If you cannot state a function's nodata/dtype behavior in one
+sentence, the function is not finished.
 
-- **Nodata:** masked before computation, restored (or set) in the output, and
-  the output's nodata value documented. Nodata pixels must never leak into
-  statistics or arithmetic results.
-- **Dtype:** state the output dtype in the docstring. Operations producing
-  fractional results (indices, normalization, division) return float32 by
-  default unless documented otherwise. Never silently truncate to integer
-  dtypes.
-- **NaN vs nodata:** be explicit about which the output uses, and why.
+The user-facing summary of this contract lives at
+`docs/source/user_guide/nodata_and_dtype.rst`; keep the two in sync.
 
-If you cannot state a function's nodata/dtype behavior in one sentence, the
-function is not finished.
+### Nodata policy
+
+1. **Mask before compute.** Pixel-wise operations (algebra, indices,
+   normalization, standardization) and every statistic (min / max / mean /
+   percentile) must treat a dataset's nodata pixels as *absent*: they are
+   excluded from the computation and from any statistic. A nodata sentinel
+   must never leak into an arithmetic result or a statistic — a `-9999` fill
+   must not drag down a mean or shift a percentile stretch.
+
+2. **Nodata is contagious.** For an operation combining two or more operands,
+   a pixel that is nodata in *any* operand is nodata in the output. Mask each
+   operand before computing, then write the combined invalid mask back as
+   nodata.
+
+3. **Restore in output; record it in metadata.** Output nodata pixels are set
+   back to the output's nodata value, and that value is recorded in the
+   result's `nodata` metadata. Metadata-only operations (clip, resample,
+   reproject, mosaic, stack) carry the nodata value through unchanged and
+   never blend nodata — resample and reproject default to nearest-neighbour
+   for exactly this reason.
+
+4. **NaN vs sentinel — representation follows the output dtype.**
+   - **Floating-point outputs** use **NaN** as the in-array nodata marker and
+     set `nodata = nan` in metadata. NaN is NumPy's native missing-value
+     marker and composes with `numpy.nan*` reductions; this is the
+     representation for every fractional-result op.
+   - **Integer outputs** cannot hold NaN, so they keep the input's **integer
+     nodata sentinel** in both the array and the metadata. If an integer
+     input declares no nodata value, the operation cannot introduce one and
+     documents that every pixel is treated as valid.
+
+5. **No nodata declared → nothing to mask.** If a dataset's `nodata` is
+   `None`, every pixel is valid: the operation computes over all pixels and
+   produces no nodata. This is not an error.
+
+6. **Masking stays backend-agnostic and lazy-friendly.** Build masks with
+   dispatchable NumPy public-API calls (`numpy.where`, `numpy.isnan`,
+   elementwise `!=`) — never boolean-index item assignment, `np.asarray`, or
+   an eager-ndarray assumption. This keeps the planned lazy adapter a drop-in
+   (see Performance & Memory).
+
+### Dtype policy
+
+1. **Fractional-result ops output float32.** Operations that inherently
+   produce fractional values — division, `normalized_difference` and every
+   spectral index, `normalize_min_max`, `normalize_percentile`,
+   `standardize`, `sqrt`, `log` — output **float32** regardless of input
+   dtype, and never silently truncate a fractional result to an integer
+   dtype.
+
+2. **Exact arithmetic follows NumPy promotion, floats narrowed to float32.**
+   For `add`, `subtract`, `multiply`, `power`, and `absolute`, the output
+   dtype is NumPy's type promotion of the operands, with floating results
+   emitted as float32 rather than float64. Integer-only arithmetic
+   (int raster + int) stays integer and is exact; an integer raster combined
+   with a float operand promotes to float32 rather than truncating.
+
+3. **float32 is the library's default float.** Prefer float32 for raster
+   payloads unless a computation genuinely needs float64 precision; rasters
+   are large and float64 doubles memory for little analytical gain in EO
+   work.
+
+4. **Document any dtype change.** Any operation that changes dtype states so
+   explicitly in its `Returns` section, naming the output dtype.
 
 ---
 
