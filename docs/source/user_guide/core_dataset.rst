@@ -198,6 +198,39 @@ This allows advanced users perform specific analyses which are not yet implement
 
 -----
 
+Provenance metadata
+-------------------
+
+Each dataset carries two optional provenance fields alongside its pixels:
+
+- ``timestamp`` — an acquisition time (a :class:`datetime.datetime`)
+- ``attrs`` — a free-form dict of tags (e.g. ``{"sensor": "Sentinel-2"}``)
+
+Set them at load time or directly on the dataset, and they are **preserved
+through every chainable operation** — each operation copies them onto its
+result, so metadata set once follows the data through a whole chain:
+
+.. code-block:: python
+
+   from datetime import datetime
+   from eeo import load_raster
+
+   ds = load_raster(
+       "scene.tif",
+       timestamp=datetime(2023, 6, 1, 10, 30),
+       attrs={"sensor": "Sentinel-2"},
+   )
+
+   ndvi = ds.normalized_difference(red).normalize_min_max()
+   ndvi.timestamp        # datetime(2023, 6, 1, 10, 30)
+   ndvi.attrs["sensor"]  # "Sentinel-2"
+
+The ``attrs`` dict is copied onto each result, so tagging a derived dataset
+never mutates the source. These fields are the foundation for the planned
+time-series API.
+
+-----
+
 Summary
 -------
 
@@ -205,4 +238,6 @@ Summary
 - Processing functions return datasets to enable chaining
 - Visualization and saving are terminal operations
 - Raster data remains in memory until explicitly persisted
+- Datasets carry an optional ``timestamp`` and ``attrs`` dict, preserved
+  through operations
 - Low-level access remains available for advanced users

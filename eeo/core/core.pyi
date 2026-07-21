@@ -5,6 +5,7 @@
 # decorators. Regenerate after adding or changing a bound op or a core.py method:
 #     python scripts/generate_core_stub.py
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 
 import geopandas as gpd
 import numpy as np
@@ -22,8 +23,17 @@ from eeo.core.types import ResamplingMethod
 class EEORasterDataset:
     _adapter: BaseRasterAdapter
     path: str | None
+    timestamp: datetime | None
+    attrs: dict
 
-    def __init__(self, adapter: BaseRasterAdapter, path: str | None = ...): ...
+    def __init__(
+        self,
+        adapter: BaseRasterAdapter,
+        path: str | None = ...,
+        *,
+        timestamp: datetime | None = ...,
+        attrs: dict | None = ...,
+    ): ...
     @classmethod
     def from_path(cls, path: str) -> EEORasterDataset: ...
     @classmethod
@@ -36,6 +46,9 @@ class EEORasterDataset:
         crs: CRS | str | int,
         driver: str = ...,
         nodata=...,
+        *,
+        timestamp: datetime | None = ...,
+        attrs: dict | None = ...,
     ) -> EEORasterDataset: ...
     def to_rasterio(self) -> EEORasterDataset: ...
     def to_array(self) -> np.ndarray: ...

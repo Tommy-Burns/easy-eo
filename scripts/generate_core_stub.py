@@ -60,6 +60,7 @@ HEADER = """\
 # decorators. Regenerate after adding or changing a bound op or a core.py method:
 #     python scripts/generate_core_stub.py
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 
 import geopandas as gpd
 import numpy as np
@@ -118,9 +119,11 @@ def _instance_attrs(class_def: ast.ClassDef) -> list[ast.AnnAssign]:
 
     A ``.pyi`` replaces the ``.py`` for type checkers, and stub bodies are ``...``
     -- so ``self._adapter = adapter`` in ``__init__`` no longer exposes the
-    attribute. Re-declare each ``self.x = param`` (where ``param`` is annotated)
-    as a class-level ``x: <annotation>`` so code like ``ds._adapter`` still
-    type-checks.
+    attribute. Re-declare each instance attribute as a class-level
+    ``x: <annotation>`` so code like ``ds._adapter`` still type-checks. Two
+    assignment forms are recognised: ``self.x = param`` (annotation taken from
+    the annotated parameter ``param``, positional or keyword-only) and
+    ``self.x: T = ...`` (annotation taken from the annotated assignment).
     """
     init = next(
         (n for n in class_def.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"),
@@ -129,20 +132,33 @@ def _instance_attrs(class_def: ast.ClassDef) -> list[ast.AnnAssign]:
     if init is None:
         return []
 
-    param_annotations = {a.arg: a.annotation for a in init.args.args if a.annotation is not None}
+    param_annotations = {
+        a.arg: a.annotation
+        for a in (*init.args.posonlyargs, *init.args.args, *init.args.kwonlyargs)
+        if a.annotation is not None
+    }
     attrs: list[ast.AnnAssign] = []
     seen: set[str] = set()
     for stmt in init.body:
-        if not (isinstance(stmt, ast.Assign) and len(stmt.targets) == 1):
+        # ``self.x: T = ...`` carries its own annotation.
+        if isinstance(stmt, ast.AnnAssign):
+            target = stmt.target
+            annotation = stmt.annotation
+        # ``self.x = param`` borrows the annotation of parameter ``param``.
+        elif isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+            target = stmt.targets[0]
+            if isinstance(stmt.value, ast.Name) and stmt.value.id in param_annotations:
+                annotation = param_annotations[stmt.value.id]
+            else:
+                continue
+        else:
             continue
-        target = stmt.targets[0]
+
         if not (
             isinstance(target, ast.Attribute)
             and isinstance(target.value, ast.Name)
             and target.value.id == "self"
         ):
-            continue
-        if not (isinstance(stmt.value, ast.Name) and stmt.value.id in param_annotations):
             continue
         if target.attr in seen:
             continue
@@ -150,7 +166,7 @@ def _instance_attrs(class_def: ast.ClassDef) -> list[ast.AnnAssign]:
         attrs.append(
             ast.AnnAssign(
                 target=ast.Name(id=target.attr, ctx=ast.Store()),
-                annotation=copy.deepcopy(param_annotations[stmt.value.id]),
+                annotation=copy.deepcopy(annotation),
                 value=None,
                 simple=1,
             )

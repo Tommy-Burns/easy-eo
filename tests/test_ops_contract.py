@@ -90,6 +90,31 @@ def test_float_ops_stay_float32(single_band_float32):
         assert result.read().dtype == np.float32
 
 
+# Every fractional-result op across the library must output float32 (never
+# float64, never truncated to the integer input dtype).
+FRACTIONAL_OPS = {
+    "divide": lambda ds: ds.divide(2),
+    "sqrt": lambda ds: ds.sqrt(),
+    "log": lambda ds: ds.log(),
+    "normalized_difference": lambda ds: ds.normalized_difference(ds),
+    "normalize_min_max": lambda ds: ds.normalize_min_max(),
+    "normalize_percentile": lambda ds: ds.normalize_percentile(),
+    "standardize": lambda ds: ds.standardize(),
+}
+
+
+@pytest.mark.parametrize("name", list(FRACTIONAL_OPS))
+def test_fractional_ops_output_float32_on_integer_input(multiband_uint16, name):
+    result = FRACTIONAL_OPS[name](multiband_uint16)
+    assert result.read().dtype == np.float32
+
+
+@pytest.mark.parametrize("name", list(FRACTIONAL_OPS))
+def test_fractional_ops_output_float32_on_float_input(single_band_float32, name):
+    result = FRACTIONAL_OPS[name](single_band_float32)
+    assert result.read().dtype == np.float32
+
+
 # ---------------------------------------------------------------------
 # Nodata policy
 # ---------------------------------------------------------------------

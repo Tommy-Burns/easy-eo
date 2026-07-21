@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime
 
 import numpy as np
 import rasterio as rio
@@ -32,9 +33,22 @@ class EEORasterDataset:
     ``@eeo_raster_op`` / ``@eeo_raster_viz`` decorators. Construct one with
     :func:`eeo.load_raster`, :func:`eeo.load_array`, or the ``from_*``
     classmethods rather than calling ``__init__`` directly.
+
+    Alongside the pixel data, a dataset carries two optional provenance fields
+    that survive every operation: ``timestamp`` (an acquisition time) and
+    ``attrs`` (a free-form tags dict). Chainable operations copy them onto
+    their result, so metadata set once at load time follows the data through a
+    whole processing chain.
     """
 
-    def __init__(self, adapter: BaseRasterAdapter, path: str | None = None):
+    def __init__(
+        self,
+        adapter: BaseRasterAdapter,
+        path: str | None = None,
+        *,
+        timestamp: datetime | None = None,
+        attrs: dict | None = None,
+    ):
         """Wrap a backend adapter.
 
         Parameters
@@ -45,9 +59,18 @@ class EEORasterDataset:
             over calling this directly.
         path : str or None, default None
             Source path, when the dataset came from a file.
+        timestamp : datetime.datetime or None, default None
+            Optional acquisition time carried with the dataset and preserved
+            through operations.
+        attrs : dict or None, default None
+            Optional free-form tags dict carried with the dataset and
+            preserved through operations. Copied on assignment so datasets do
+            not share a mutable dict.
         """
         self._adapter = adapter
         self.path = path
+        self.timestamp = timestamp
+        self.attrs: dict = {} if attrs is None else dict(attrs)
 
     # ========================
     # Constructors
@@ -93,6 +116,9 @@ class EEORasterDataset:
         crs: CRS | str | int,
         driver: str = "GTiff",
         nodata=None,
+        *,
+        timestamp: datetime | None = None,
+        attrs: dict | None = None,
     ) -> EEORasterDataset:
         """Build a NumPy-backed dataset from an array and georeferencing.
 
@@ -108,6 +134,10 @@ class EEORasterDataset:
             Driver recorded for when the dataset is later written or promoted.
         nodata : float or int or None, default None
             Value marking nodata pixels.
+        timestamp : datetime.datetime or None, default None
+            Optional acquisition time carried with the dataset.
+        attrs : dict or None, default None
+            Optional free-form tags dict carried with the dataset.
 
         Returns
         -------
@@ -121,7 +151,7 @@ class EEORasterDataset:
             nodata=nodata,
             driver=driver,
         )
-        return cls(adapter=adapter)
+        return cls(adapter=adapter, timestamp=timestamp, attrs=attrs)
 
     # ========================
     # Conversion between adapters
@@ -162,7 +192,7 @@ class EEORasterDataset:
             crs=crs,
             nodata=nodata,
         )
-        return EEORasterDataset(adapter=adapter)
+        return EEORasterDataset(adapter=adapter, timestamp=self.timestamp, attrs=self.attrs)
 
     def to_array(self) -> np.ndarray:
         """Read the raster into a NumPy array.

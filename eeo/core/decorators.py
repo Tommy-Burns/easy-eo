@@ -54,10 +54,18 @@ def eeo_raster_op(func=None, *, preserve_none=False):
         @wraps(func)
         def method(self: EEORasterDataset, *args: object, **kwargs: object) -> R | EEORasterDataset:
             result = op(self, *args, **kwargs)
-            if preserve_none:
-                return result
-            # allow functions to be chained
-            return self if result is None else result
+            if result is None:
+                # A meaningful None (preserve_none) passes through; otherwise
+                # return self so a no-op still chains.
+                return result if preserve_none else self
+            # Carry provenance (timestamp + attrs) onto a freshly produced
+            # dataset unless the operation set its own.
+            if isinstance(result, EEORasterDataset) and result is not self:
+                if result.timestamp is None:
+                    result.timestamp = self.timestamp
+                if not result.attrs:
+                    result.attrs = dict(self.attrs)
+            return result
 
         # Bind to EEORasterDataset
         setattr(EEORasterDataset, func.__name__, method)

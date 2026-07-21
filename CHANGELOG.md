@@ -87,6 +87,12 @@ are called out under a **Breaking** heading.
 - **"Nodata & Dtype Contract" documentation** — a user guide page plus a
   normative section in `CODE_STYLE.md` defining how operations mask nodata
   (contagious; NaN for float, sentinel for int) and what dtype they return.
+- **Provenance metadata on `EEORasterDataset`.** Datasets now carry an
+  optional `timestamp` (acquisition time) and a free-form `attrs` tags dict,
+  settable via `load_raster`/`load_array` or directly on the dataset. Both are
+  preserved through every chainable operation (each operation copies them onto
+  its result; `attrs` is copied, not shared), laying the groundwork for the
+  planned time-series API.
 
 ### Changed
 
