@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 
 import numpy as np
 from rasterio.crs import CRS
@@ -12,7 +13,12 @@ from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import BackendError, ValidationError
 
 
-def load_raster(path: str) -> EEORasterDataset:
+def load_raster(
+    path: str,
+    *,
+    timestamp: datetime | None = None,
+    attrs: dict | None = None,
+) -> EEORasterDataset:
     """Open a raster file as an EEORasterDataset.
 
     The file is opened but pixel data is not read until an operation needs
@@ -22,6 +28,12 @@ def load_raster(path: str) -> EEORasterDataset:
     ----------
     path : str
         Path to a GDAL-readable raster file.
+    timestamp : datetime.datetime or None, default None
+        Optional acquisition time carried with the dataset and preserved
+        through operations.
+    attrs : dict or None, default None
+        Optional free-form tags dict carried with the dataset and preserved
+        through operations.
 
     Returns
     -------
@@ -42,9 +54,14 @@ def load_raster(path: str) -> EEORasterDataset:
     if not os.path.isfile(path):
         raise FileNotFoundError(f'the file "{path}" does not exist')
     try:
-        return EEORasterDataset.from_path(path)
+        ds = EEORasterDataset.from_path(path)
     except Exception as e:
         raise BackendError(f'file "{path}" could not be opened as a rasterio dataset') from e
+
+    ds.timestamp = timestamp
+    if attrs is not None:
+        ds.attrs = dict(attrs)
+    return ds
 
 
 def load_array(
@@ -53,6 +70,8 @@ def load_array(
     transform: Affine | None = None,
     crs: CRS | int | str | None = None,
     nodata: float | int | None = None,
+    timestamp: datetime | None = None,
+    attrs: dict | None = None,
 ) -> EEORasterDataset:
     """Wrap an in-memory NumPy array as an EEORasterDataset.
 
@@ -69,6 +88,12 @@ def load_array(
         None, the dataset is unreferenced.
     nodata : float or int or None, default None
         Value marking nodata pixels, stored in the metadata.
+    timestamp : datetime.datetime or None, default None
+        Optional acquisition time carried with the dataset and preserved
+        through operations.
+    attrs : dict or None, default None
+        Optional free-form tags dict carried with the dataset and preserved
+        through operations.
 
     Returns
     -------
@@ -96,4 +121,11 @@ def load_array(
             f"got {array.ndim}D with shape {array.shape}"
         )
 
-    return EEORasterDataset.from_array(array=array, transform=transform, crs=crs, nodata=nodata)
+    return EEORasterDataset.from_array(
+        array=array,
+        transform=transform,
+        crs=crs,
+        nodata=nodata,
+        timestamp=timestamp,
+        attrs=attrs,
+    )

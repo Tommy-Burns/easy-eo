@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime
 
 import numpy as np
 import rasterio as rio
@@ -10,7 +11,13 @@ from rasterio import CRS
 from rasterio.coords import BoundingBox
 from rasterio.transform import Affine
 
+from eeo.common import is_rasterio_backed, mask_nodata
 from eeo.core.adapters import BaseRasterAdapter, NumpyRasterioAdapter, RasterioAdapter
+from eeo.core.exceptions import ValidationError
+
+# Approximate (decimated) statistics never read more than this many pixels per
+# side; a larger raster is decimated to fit, served from overviews when present.
+_STATS_DECIMATION_CAP = 1024
 
 
 # IO helper
@@ -23,6 +30,148 @@ def _save_raster(dataset: rio.DatasetReader, path: str, driver: str = "GTiff") -
         dst.write(dataset.read())
 
 
+def _resolve_stats_mode(stats: bool | str) -> str | None:
+    """Map the ``describe`` stats argument to a mode, or None for no stats."""
+    if stats is False:
+        return None
+    if stats is True or stats == "approx":
+        return "approx"
+    if stats == "exact":
+        return "exact"
+    raise ValidationError(f"stats must be False, True, 'approx', or 'exact'; got {stats!r}")
+
+
+def _format_crs(crs) -> str:
+    """Render a CRS as ``EPSG:<code> — <name>`` when possible."""
+    if crs is None:
+        return "none"
+    epsg = crs.to_epsg()
+    try:
+        import pyproj
+
+        name = pyproj.CRS.from_user_input(crs).name
+    except Exception:
+        name = None
+    if epsg and name:
+        return f"EPSG:{epsg} — {name}"
+    if epsg:
+        return f"EPSG:{epsg}"
+    return name or str(crs)
+
+
+def _num(value: float) -> str:
+    """Format a coordinate/resolution without scientific notation or trailing zeros."""
+    if isinstance(value, float):
+        return f"{value:.6f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def _decimated_stats_shape(
+    shape: tuple[int, int], cap: int = _STATS_DECIMATION_CAP
+) -> tuple[int, int] | None:
+    """Return a decimated ``(height, width)`` capped at ``cap`` per side.
+
+    Returns None when the raster already fits within the cap and should be read
+    at full resolution.
+    """
+    height, width = shape
+    scale = min(cap / height, cap / width, 1.0)
+    if scale >= 1.0:
+        return None
+    return max(1, round(height * scale)), max(1, round(width * scale))
+
+
+def _band_stats_line(ds: EEORasterDataset, band_idx: int, array, approximate: bool) -> str:
+    """Build one nodata-aware per-band statistics line for ``describe``."""
+    label = f"band {band_idx}"
+    masked = mask_nodata(ds, array)
+    if np.issubdtype(masked.dtype, np.floating):
+        valid = ~np.isnan(masked)
+    else:  # no nodata declared -> every pixel is valid
+        valid = np.ones(masked.shape, dtype=bool)
+
+    n_valid = int(valid.sum())
+    if n_valid == 0:
+        return f"  {label:<11} : all nodata"
+
+    with np.errstate(all="ignore"):
+        vmin, vmax = float(np.nanmin(masked)), float(np.nanmax(masked))
+        vmean, vstd = float(np.nanmean(masked)), float(np.nanstd(masked))
+    pct = 100.0 * n_valid / masked.size
+
+    m = "~" if approximate else ""
+
+    def f(value: float) -> str:
+        return f"{value:.6g}"
+
+    line = (
+        f"  {label:<11} : min{m} {f(vmin)}   max{m} {f(vmax)}   "
+        f"mean{m} {f(vmean)}   std{m} {f(vstd)}   valid{m} {pct:.1f}%"
+    )
+    if not approximate:
+        line += f" ({masked.size - n_valid:,} nodata)"
+    return line
+
+
+def _stats_lines(ds: EEORasterDataset, mode: str) -> list[str]:
+    """Build the statistics block of ``describe`` (may read pixel data)."""
+    out_shape = None
+    if mode == "approx" and is_rasterio_backed(ds):
+        out_shape = _decimated_stats_shape(ds.get_shape(), _STATS_DECIMATION_CAP)
+    approximate = out_shape is not None
+
+    if approximate:
+        height, width = out_shape
+        header = f"approximate — decimated read at {height} × {width} (set stats='exact' for exact)"
+    else:
+        header = "exact — full read"
+
+    lines = ["", f"  {'statistics':<11} : {header}"]
+    for band_idx in range(1, ds.get_count() + 1):
+        array = ds.read(band_idx, out_shape=out_shape) if approximate else ds.get_band(band_idx)
+        lines.append(_band_stats_line(ds, band_idx, array, approximate))
+    return lines
+
+
+def _describe_text(ds: EEORasterDataset, stats: bool | str) -> str:
+    """Build the human-readable description printed by ``describe``."""
+    mode = _resolve_stats_mode(stats)
+    meta = ds.get_metadata()
+
+    def row(label: str, value: object) -> str:
+        return f"  {label:<11} : {value}"
+
+    height, width = ds.get_shape()
+    transform = ds.get_transform()
+    # Positional unpack: the rasterio adapter returns a BoundingBox namedtuple,
+    # the NumPy adapter a plain (left, bottom, right, top) tuple.
+    left, bottom, right, top = ds.get_bounds()
+    nodata = meta.get("nodata")
+    attrs = ", ".join(f"{k}={v}" for k, v in ds.attrs.items()) if ds.attrs else "none"
+
+    lines = [
+        "EEORasterDataset",
+        row("source", ds.path or "<in-memory>"),
+        row("driver", meta.get("driver", "unknown")),
+        row("bands", ds.get_count()),
+        row("size", f"{height} × {width}  (height × width)"),
+        row("dtype", meta.get("dtype", "unknown")),
+        row("crs", _format_crs(ds.get_crs())),
+        row("pixel size", f"{_num(abs(transform.a))} × {_num(abs(transform.e))}  (CRS units)"),
+        row(
+            "extent",
+            f"{_num(left)}, {_num(bottom)}, {_num(right)}, {_num(top)}  (minx, miny, maxx, maxy)",
+        ),
+        row("nodata", "none" if nodata is None else nodata),
+        row("timestamp", ds.timestamp.isoformat() if ds.timestamp is not None else "none"),
+        row("attrs", attrs),
+    ]
+
+    if mode is not None:
+        lines.extend(_stats_lines(ds, mode))
+    return "\n".join(lines)
+
+
 # Core class
 class EEORasterDataset:
     """A chainable raster dataset backed by a swappable adapter.
@@ -32,9 +181,22 @@ class EEORasterDataset:
     ``@eeo_raster_op`` / ``@eeo_raster_viz`` decorators. Construct one with
     :func:`eeo.load_raster`, :func:`eeo.load_array`, or the ``from_*``
     classmethods rather than calling ``__init__`` directly.
+
+    Alongside the pixel data, a dataset carries two optional provenance fields
+    that survive every operation: ``timestamp`` (an acquisition time) and
+    ``attrs`` (a free-form tags dict). Chainable operations copy them onto
+    their result, so metadata set once at load time follows the data through a
+    whole processing chain.
     """
 
-    def __init__(self, adapter: BaseRasterAdapter, path: str | None = None):
+    def __init__(
+        self,
+        adapter: BaseRasterAdapter,
+        path: str | None = None,
+        *,
+        timestamp: datetime | None = None,
+        attrs: dict | None = None,
+    ):
         """Wrap a backend adapter.
 
         Parameters
@@ -45,9 +207,31 @@ class EEORasterDataset:
             over calling this directly.
         path : str or None, default None
             Source path, when the dataset came from a file.
+        timestamp : datetime.datetime or None, default None
+            Optional acquisition time carried with the dataset and preserved
+            through operations.
+        attrs : dict or None, default None
+            Optional free-form tags dict carried with the dataset and
+            preserved through operations. Copied on assignment so datasets do
+            not share a mutable dict.
         """
         self._adapter = adapter
         self.path = path
+        self.timestamp = timestamp
+        self.attrs: dict = {} if attrs is None else dict(attrs)
+
+    def __repr__(self) -> str:
+        """Return a concise one-line summary for REPLs and logs."""
+        try:
+            count = self.get_count()
+            height, width = self.get_shape()
+            dtype = self.get_metadata().get("dtype", "?")
+            crs = self.get_crs()
+            epsg = crs.to_epsg() if crs is not None else None
+            crs_str = f"EPSG:{epsg}" if epsg else "no CRS"
+            return f"<EEORasterDataset {count}×{height}×{width} {dtype} {crs_str}>"
+        except Exception:
+            return "<EEORasterDataset (unavailable)>"
 
     # ========================
     # Constructors
@@ -93,6 +277,9 @@ class EEORasterDataset:
         crs: CRS | str | int,
         driver: str = "GTiff",
         nodata=None,
+        *,
+        timestamp: datetime | None = None,
+        attrs: dict | None = None,
     ) -> EEORasterDataset:
         """Build a NumPy-backed dataset from an array and georeferencing.
 
@@ -108,6 +295,10 @@ class EEORasterDataset:
             Driver recorded for when the dataset is later written or promoted.
         nodata : float or int or None, default None
             Value marking nodata pixels.
+        timestamp : datetime.datetime or None, default None
+            Optional acquisition time carried with the dataset.
+        attrs : dict or None, default None
+            Optional free-form tags dict carried with the dataset.
 
         Returns
         -------
@@ -121,7 +312,7 @@ class EEORasterDataset:
             nodata=nodata,
             driver=driver,
         )
-        return cls(adapter=adapter)
+        return cls(adapter=adapter, timestamp=timestamp, attrs=attrs)
 
     # ========================
     # Conversion between adapters
@@ -162,7 +353,7 @@ class EEORasterDataset:
             crs=crs,
             nodata=nodata,
         )
-        return EEORasterDataset(adapter=adapter)
+        return EEORasterDataset(adapter=adapter, timestamp=self.timestamp, attrs=self.attrs)
 
     def to_array(self) -> np.ndarray:
         """Read the raster into a NumPy array.
@@ -247,6 +438,55 @@ class EEORasterDataset:
             width, and height.
         """
         return self._adapter.get_metadata()
+
+    def describe(self, *, stats: bool | str = False) -> None:
+        """Print a human-readable description of the raster.
+
+        Always shows structural metadata (source, driver, band count, size,
+        dtype, CRS, pixel size, extent, nodata, and the ``timestamp`` /
+        ``attrs`` provenance fields) without reading any pixels. Optionally
+        appends per-band statistics.
+
+        Parameters
+        ----------
+        stats : bool or str, default False
+            Controls the optional statistics block:
+
+            - ``False`` — structural metadata only; no pixel data is read.
+            - ``"approx"`` (or ``True``) — per-band statistics from a decimated
+              read (served from overviews when present), fast and memory-safe
+              on large scenes. Values are marked with ``~`` and are
+              approximate: a decimated read can miss the true extremes.
+            - ``"exact"`` — per-band statistics from a full read; exact but
+              reads every pixel.
+
+            A raster small enough to sit under the decimation cap, and every
+            NumPy-backed dataset, is read in full even for ``"approx"`` and the
+            block is then labelled exact.
+
+        Returns
+        -------
+        None
+            The description is printed to standard output.
+
+        Raises
+        ------
+        ValidationError
+            If ``stats`` is not one of ``False``, ``True``, ``"approx"``, or
+            ``"exact"``.
+
+        Notes
+        -----
+        Statistics exclude nodata pixels. ``stats="exact"`` reads the whole
+        raster; ``stats="approx"`` reads a decimated array capped at
+        ``1024`` pixels per side.
+
+        Examples
+        --------
+        >>> ds.describe()
+        >>> ds.describe(stats="approx")
+        """
+        print(_describe_text(self, stats))
 
     def get_width(self) -> int:
         """Return the raster width in pixels.

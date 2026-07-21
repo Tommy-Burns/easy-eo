@@ -3,10 +3,48 @@
 import numpy as np
 import rasterio as rio
 
-from eeo.common import align_raster_to_target
+from eeo.common import align_raster_to_target, apply_nodata_contract, get_nodata
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import AlignmentError
+
+_ALIGN_MISMATCH = (
+    "rasters must share the same grid for arithmetic; "
+    "got shape {other} vs {ds}. "
+    "Pass auto_align=True to resample the other raster onto this grid."
+)
+
+
+def _write_result(ds: EEORasterDataset, data, nodata) -> EEORasterDataset:
+    """Write ``data`` into a new in-memory raster sharing ``ds``'s georeferencing.
+
+    The output dtype and nodata value are taken from ``data`` and ``nodata``
+    so the result records the dtype and nodata the operation actually produced.
+    """
+    meta = ds.get_metadata()
+    meta.update(dtype=data.dtype, nodata=nodata)
+    memfile = rio.io.MemoryFile()
+    out_ds = memfile.open(**meta)
+    out_ds.write(data)
+    return EEORasterDataset.from_rasterio(out_ds)
+
+
+def _resolve_operand(ds, other, *, auto_align, method):
+    """Return ``(other_array, other_nodata)`` for a raster or scalar operand.
+
+    Aligns a raster operand onto ``ds``'s grid when needed; a scalar operand
+    is returned unchanged with a None nodata (scalars carry no nodata).
+    """
+    if isinstance(other, EEORasterDataset):
+        if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
+            if auto_align:
+                other = align_raster_to_target(other, ds, method=method)
+            else:
+                raise AlignmentError(
+                    _ALIGN_MISMATCH.format(other=other.get_shape(), ds=ds.get_shape())
+                )
+        return other.read(), get_nodata(other)
+    return other, None
 
 
 # ARITHMETIC AND ALGEBRA
@@ -41,10 +79,12 @@ def add(
     Returns
     -------
     EEORasterDataset
-        New dataset in the same dtype as ``ds``. Integer inputs are not
-        promoted, so fractional results are truncated; cast to a floating
-        dtype first if that matters. The nodata value is carried over
-        unchanged.
+        New dataset whose dtype follows NumPy type promotion of the operands,
+        with floating results emitted as float32 (so ``uint16 + 0.5`` becomes
+        float32 rather than truncating, while integer-only arithmetic stays
+        integer). A pixel that is nodata in either operand is nodata in the
+        output — NaN for floating outputs, the input's integer sentinel for
+        integer outputs.
 
     Raises
     ------
@@ -55,34 +95,25 @@ def add(
     Notes
     -----
     Reads the full array(s) into memory rather than streaming block-wise.
-    Nodata pixels are not masked: they take part in the arithmetic and are
-    corrupted in the output, although the nodata value in the metadata is
-    preserved.
 
     Examples
     --------
     >>> ds = load_array(np.random.rand(64, 64), crs=4326)
     >>> brighter = ds.add(0.1)
     """
-    if isinstance(other, EEORasterDataset):
-        if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
-            if auto_align:
-                other = align_raster_to_target(other, ds, method=method)
-            else:
-                raise AlignmentError(
-                    "rasters must share the same grid for arithmetic; "
-                    f"got shape {other.get_shape()} vs {ds.get_shape()}. "
-                    "Pass auto_align=True to resample the other raster onto this grid."
-                )
-        data = ds.read() + other.read()
-    else:
-        data = ds.read() + other
+    ds_nodata = get_nodata(ds)
+    other_data, other_nodata = _resolve_operand(ds, other, auto_align=auto_align, method=method)
+    src = ds.read()
+    result = src + other_data
 
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    operands = [(src, ds_nodata)]
+    if isinstance(other, EEORasterDataset):
+        operands.append((other_data, other_nodata))
+
+    data, out_nodata = apply_nodata_contract(
+        result, operands, fractional=False, ds_nodata=ds_nodata
+    )
+    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -116,10 +147,12 @@ def subtract(
     Returns
     -------
     EEORasterDataset
-        New dataset in the same dtype as ``ds``. Integer inputs are not
-        promoted, so fractional or negative results may wrap or truncate;
-        cast to a floating dtype first if that matters. The nodata value is
-        carried over unchanged.
+        New dataset whose dtype follows NumPy type promotion of the operands,
+        with floating results emitted as float32. Integer-only arithmetic
+        stays integer (an unsigned difference can still wrap; cast to a signed
+        or floating dtype first if negatives matter). A pixel that is nodata in
+        either operand is nodata in the output — NaN for floating outputs, the
+        input's integer sentinel for integer outputs.
 
     Raises
     ------
@@ -130,32 +163,24 @@ def subtract(
     Notes
     -----
     Reads the full array(s) into memory rather than streaming block-wise.
-    Nodata pixels are not masked: they take part in the arithmetic and are
-    corrupted in the output, although the nodata value in the metadata is
-    preserved.
 
     Examples
     --------
     >>> change = ds_after.subtract(ds_before)
     """
+    ds_nodata = get_nodata(ds)
+    other_data, other_nodata = _resolve_operand(ds, other, auto_align=auto_align, method=method)
+    src = ds.read()
+    result = src - other_data
+
+    operands = [(src, ds_nodata)]
     if isinstance(other, EEORasterDataset):
-        if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
-            if auto_align:
-                other = align_raster_to_target(other, ds, method=method)
-            else:
-                raise AlignmentError(
-                    "rasters must share the same grid for arithmetic; "
-                    f"got shape {other.get_shape()} vs {ds.get_shape()}. "
-                    "Pass auto_align=True to resample the other raster onto this grid."
-                )
-        data = ds.read() - other.read()
-    else:
-        data = ds.read() - other
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
-    return EEORasterDataset.from_rasterio(out_ds)
+        operands.append((other_data, other_nodata))
+
+    data, out_nodata = apply_nodata_contract(
+        result, operands, fractional=False, ds_nodata=ds_nodata
+    )
+    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -189,10 +214,12 @@ def multiply(
     Returns
     -------
     EEORasterDataset
-        New dataset in the same dtype as ``ds``. Integer inputs are not
-        promoted, so fractional results are truncated; cast to a floating
-        dtype first if that matters. The nodata value is carried over
-        unchanged.
+        New dataset whose dtype follows NumPy type promotion of the operands,
+        with floating results emitted as float32 (so ``uint16 * 0.5`` becomes
+        float32 rather than truncating, while integer-only arithmetic stays
+        integer). A pixel that is nodata in either operand is nodata in the
+        output — NaN for floating outputs, the input's integer sentinel for
+        integer outputs.
 
     Raises
     ------
@@ -203,33 +230,24 @@ def multiply(
     Notes
     -----
     Reads the full array(s) into memory rather than streaming block-wise.
-    Nodata pixels are not masked: they take part in the arithmetic and are
-    corrupted in the output, although the nodata value in the metadata is
-    preserved.
 
     Examples
     --------
     >>> scaled = ds.multiply(100)
     """
-    if isinstance(other, EEORasterDataset):
-        if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
-            if auto_align:
-                other = align_raster_to_target(other, ds, method=method)
-            else:
-                raise AlignmentError(
-                    "rasters must share the same grid for arithmetic; "
-                    f"got shape {other.get_shape()} vs {ds.get_shape()}. "
-                    "Pass auto_align=True to resample the other raster onto this grid."
-                )
+    ds_nodata = get_nodata(ds)
+    other_data, other_nodata = _resolve_operand(ds, other, auto_align=auto_align, method=method)
+    src = ds.read()
+    result = src * other_data
 
-        data = ds.read() * other.read()
-    else:
-        data = ds.read() * other
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    operands = [(src, ds_nodata)]
+    if isinstance(other, EEORasterDataset):
+        operands.append((other_data, other_nodata))
+
+    data, out_nodata = apply_nodata_contract(
+        result, operands, fractional=False, ds_nodata=ds_nodata
+    )
+    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -268,10 +286,9 @@ def divide(
     Returns
     -------
     EEORasterDataset
-        New dataset. The quotient is computed in float32 but written back in
-        the same dtype as ``ds``, so integer inputs truncate the result;
-        divide a floating-dtype raster to keep fractional values. The nodata
-        value is carried over unchanged.
+        New dataset in float32 (division is a fractional-result op, so the
+        quotient is never truncated to an integer dtype). A pixel that is
+        nodata in either operand is nodata (NaN) in the output.
 
     Raises
     ------
@@ -282,56 +299,35 @@ def divide(
     Notes
     -----
     Reads the full array(s) into memory rather than streaming block-wise.
-    Nodata pixels are not masked: they take part in the division and are
-    corrupted in the output, although the nodata value in the metadata is
-    preserved.
 
     Examples
     --------
     >>> ratio = ds_nir.divide(ds_red)
     >>> halved = ds.divide(2)
     """
-    src_data = ds.read()
-
-    # Resolve other operand
-    if isinstance(other, EEORasterDataset):
-        if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
-            if auto_align:
-                other = align_raster_to_target(other, ds, method=method)
-            else:
-                raise AlignmentError(
-                    "rasters must share the same grid for arithmetic; "
-                    f"got shape {other.get_shape()} vs {ds.get_shape()}. "
-                    "Pass auto_align=True to resample the other raster onto this grid."
-                )
-        other_data: np.ndarray | float | int = other.read()
-    else:
-        other_data = other
+    ds_nodata = get_nodata(ds)
+    src = ds.read()
+    other_data, other_nodata = _resolve_operand(ds, other, auto_align=auto_align, method=method)
 
     # ---- SAFE DIVIDE ----
-    data: np.ndarray
     if safe:
         if np.isscalar(other_data):
-            if other_data == 0:
-                data = np.zeros_like(src_data, dtype=np.float32)
-            else:
-                data = src_data / other_data
+            result = np.zeros_like(src, dtype=np.float32) if other_data == 0 else src / other_data
         else:
             # np.where instead of the in-place out=/where= ufunc form so the
             # expression stays dispatchable to lazy array backends.
             with np.errstate(divide="ignore", invalid="ignore"):
-                quotient = np.divide(src_data, other_data)
-            data = np.where(other_data != 0, quotient, np.float32(0)).astype(np.float32)
+                quotient = np.divide(src, other_data)
+            result = np.where(other_data != 0, quotient, np.float32(0))
     else:
-        data = src_data / other_data
+        result = src / other_data
 
-    # Write output
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
+    operands = [(src, ds_nodata)]
+    if isinstance(other, EEORasterDataset):
+        operands.append((other_data, other_nodata))
 
-    return EEORasterDataset.from_rasterio(out_ds)
+    data, out_nodata = apply_nodata_contract(result, operands, fractional=True, ds_nodata=ds_nodata)
+    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -348,27 +344,31 @@ def power(ds: EEORasterDataset, exponent: int | float) -> EEORasterDataset:
     Returns
     -------
     EEORasterDataset
-        New dataset in the same dtype as ``ds`` (fractional results are
-        truncated for integer inputs). The nodata value is carried over
-        unchanged.
+        New dataset whose dtype follows NumPy type promotion of the base and
+        exponent, with floating results emitted as float32 (so an integer
+        raster raised to a fractional exponent becomes float32 rather than
+        truncating). Nodata pixels are nodata in the output — NaN for floating
+        outputs, the input's integer sentinel for integer outputs.
 
     Notes
     -----
     Follows NumPy's ``**`` semantics; a negative pixel raised to a
-    non-integer exponent yields ``nan``. Reads the full array into memory
-    rather than streaming block-wise. Nodata pixels are not masked and are
-    corrupted in the output.
+    non-integer exponent yields ``nan`` where it is not masked as nodata.
+    Reads the full array into memory rather than streaming block-wise.
 
     Examples
     --------
     >>> squared = ds.power(2)
     """
-    data = ds.read() ** exponent
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    ds_nodata = get_nodata(ds)
+    src = ds.read()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        result = src**exponent
+
+    data, out_nodata = apply_nodata_contract(
+        result, [(src, ds_nodata)], fractional=False, ds_nodata=ds_nodata
+    )
+    return _write_result(ds, data, out_nodata)
 
 
 # TRANSFORMATIONS
@@ -387,26 +387,26 @@ def sqrt(ds: EEORasterDataset) -> EEORasterDataset:
     Returns
     -------
     EEORasterDataset
-        New dataset in the same dtype as ``ds``; the root is truncated for
-        integer inputs, so use a floating dtype to keep fractional values.
-        The nodata value is carried over unchanged.
+        New dataset in float32 (a fractional-result op, so the root is never
+        truncated to an integer dtype). Nodata pixels are nodata (NaN) in the
+        output.
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise. Nodata
-    pixels are not masked; a negative nodata sentinel is clamped to 0 and thus
-    corrupted in the output.
+    Reads the full array into memory rather than streaming block-wise.
 
     Examples
     --------
     >>> rooted = ds.sqrt()
     """
-    data = np.sqrt(np.maximum(ds.read(), 0))
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    ds_nodata = get_nodata(ds)
+    src = ds.read()
+    result = np.sqrt(np.maximum(src, 0))
+
+    data, out_nodata = apply_nodata_contract(
+        result, [(src, ds_nodata)], fractional=True, ds_nodata=ds_nodata
+    )
+    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -426,27 +426,27 @@ def log(ds: EEORasterDataset, base: int | float = np.e) -> EEORasterDataset:
     Returns
     -------
     EEORasterDataset
-        New dataset in the same dtype as ``ds``; the result is truncated for
-        integer inputs, so use a floating dtype to keep fractional values.
-        The nodata value is carried over unchanged.
+        New dataset in float32 (a fractional-result op, so the result is never
+        truncated to an integer dtype). Nodata pixels are nodata (NaN) in the
+        output.
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise. Nodata
-    pixels are not masked; because inputs are clamped to ``1e-10``, a nodata
-    sentinel is corrupted in the output.
+    Reads the full array into memory rather than streaming block-wise.
 
     Examples
     --------
     >>> natural = ds.log()
     >>> base10 = ds.log(base=10)
     """
-    data = np.log(np.maximum(ds.read(), 1e-10)) / np.log(base)
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    ds_nodata = get_nodata(ds)
+    src = ds.read()
+    result = np.log(np.maximum(src, 1e-10)) / np.log(base)
+
+    data, out_nodata = apply_nodata_contract(
+        result, [(src, ds_nodata)], fractional=True, ds_nodata=ds_nodata
+    )
+    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -461,22 +461,25 @@ def absolute(ds: EEORasterDataset) -> EEORasterDataset:
     Returns
     -------
     EEORasterDataset
-        New dataset in the same dtype as ``ds``. The nodata value is carried
-        over unchanged.
+        New dataset in the same dtype NumPy's ``abs`` produces (float64
+        narrowed to float32). Nodata pixels are nodata in the output — NaN for
+        floating outputs, the input's integer sentinel for integer outputs.
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise. Nodata
-    pixels are not masked; a negative nodata sentinel becomes its magnitude
-    and is thus corrupted in the output.
+    Reads the full array into memory rather than streaming block-wise. Because
+    nodata pixels are masked, a negative nodata sentinel is not turned into its
+    magnitude in the output.
 
     Examples
     --------
     >>> magnitude = ds.absolute()
     """
-    data = np.abs(ds.read())
-    meta = ds.get_metadata()
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    ds_nodata = get_nodata(ds)
+    src = ds.read()
+    result = np.abs(src)
+
+    data, out_nodata = apply_nodata_contract(
+        result, [(src, ds_nodata)], fractional=False, ds_nodata=ds_nodata
+    )
+    return _write_result(ds, data, out_nodata)

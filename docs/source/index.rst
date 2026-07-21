@@ -77,6 +77,7 @@ arithmetic, computing indices, and visualizing results.
    user_guide/core_dataset
    user_guide/ops
    user_guide/preprocessing
+   user_guide/nodata_and_dtype
    user_guide/visualization
    user_guide/statistical_locations
    backends

@@ -8,7 +8,7 @@ most vegetation and water indices can be expressed directly using
 import numpy as np
 import rasterio as rio
 
-from eeo.common import align_raster_to_target
+from eeo.common import align_raster_to_target, apply_nodata_contract, get_nodata
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import AlignmentError
@@ -52,7 +52,9 @@ def normalized_difference(
         Float32 result in ``[-1, 1]`` — an ``EEORasterDataset`` by default,
         or the raw ``(bands, height, width)`` array when
         ``return_as_ndarray=True``. Pixels where ``ds + other == 0`` are set
-        to 0. The nodata value is carried over from ``ds`` unchanged.
+        to 0. A pixel that is nodata in either operand is nodata (NaN) in the
+        output; the output nodata value is NaN when either input declares
+        nodata, otherwise None.
 
     Raises
     ------
@@ -62,8 +64,8 @@ def normalized_difference(
     Notes
     -----
     Reads both rasters fully into memory rather than streaming block-wise.
-    Nodata pixels are not masked before the computation; only division by
-    zero (``ds + other == 0``) is guarded, by setting those pixels to 0.
+    Nodata pixels are masked before the ratio; separately, a zero denominator
+    (``ds + other == 0``) is guarded by setting those pixels to 0.
 
     Examples
     --------
@@ -82,14 +84,28 @@ def normalized_difference(
                 "Pass auto_align=True to resample the other raster onto this grid."
             )
 
-    a = ds.read().astype(rio.float32)
-    b = other.read().astype(rio.float32)
+    ds_nodata = get_nodata(ds)
+    other_nodata = get_nodata(other)
+    a_raw = ds.read()
+    b_raw = other.read()
+    a = a_raw.astype(rio.float32)
+    b = b_raw.astype(rio.float32)
 
     # np.where instead of in-place mask assignment so the expression stays
-    # dispatchable to lazy array backends (which reject item assignment).
+    # dispatchable to lazy array backends (which reject item assignment). The
+    # denominator guard catches both 0/0 (nan) and x/0 (inf) at a+b == 0.
+    denom = a + b
     with np.errstate(divide="ignore", invalid="ignore"):
-        nd = (a - b) / (a + b)
-    nd = np.where(np.isnan(nd), np.float32(0), nd)
+        quotient = (a - b) / denom
+    nd = np.where(denom != 0, quotient, np.float32(0))
+
+    # Mask nodata last so a masked pixel is NaN regardless of its ratio.
+    nd, out_nodata = apply_nodata_contract(
+        nd,
+        [(a_raw, ds_nodata), (b_raw, other_nodata)],
+        fractional=True,
+        ds_nodata=ds_nodata,
+    )
 
     if return_as_ndarray:
         return nd
@@ -100,6 +116,7 @@ def normalized_difference(
     meta.update(
         driver="GTiff",
         dtype="float32",
+        nodata=out_nodata,
         height=nd.shape[-2],
         width=nd.shape[-1],
         count=nd.shape[0],

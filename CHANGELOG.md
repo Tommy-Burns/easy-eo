@@ -32,6 +32,42 @@ are called out under a **Breaking** heading.
     type to `reproject_raster`, an invalid `vector_file` to
     `clip_raster_with_vector`, an invalid resampling method — now raise
     `ValidationError` (a `ValueError`) instead of `TypeError`.
+- **Algebra operations now honour the nodata & dtype contract.** The
+  arithmetic and transform ops (`add`, `subtract`, `multiply`, `divide`,
+  `power`, `sqrt`, `log`, `absolute`) previously let nodata sentinels take
+  part in the computation and wrote the result back in the input's dtype,
+  silently truncating fractional results. They now:
+  - **Mask nodata before computing.** A pixel that is nodata in *any* operand
+    is nodata in the output (nodata is contagious). Floating outputs mark it
+    with `NaN` and set `nodata=nan`; integer outputs keep the input's integer
+    sentinel. A raster with `nodata=None` is unchanged (all pixels valid).
+  - **Stop truncating fractional results.** `divide`, `sqrt`, and `log` now
+    always output float32. `add`, `subtract`, `multiply`, `power`, and
+    `absolute` follow NumPy type promotion with floating results narrowed to
+    float32, so `uint16 + 0.5` yields float32 instead of truncating to
+    `uint16`; integer-only arithmetic still stays integer.
+
+  Chains that relied on the old integer truncation or on nodata sentinels
+  flowing through arithmetic will see different output dtypes and NaN-masked
+  gaps. See the "Nodata & Dtype Contract" guide for the full policy.
+- **`normalized_difference` now masks nodata.** A pixel that is nodata in
+  either input band is NaN in the output (with `nodata=nan`); previously the
+  nodata sentinel took part in the ratio and the output carried the input's
+  nodata value unchanged. Output stays float32; the zero-denominator guard
+  (`ds + other == 0` → 0) is unchanged.
+- **`extract_value_at_coordinate` returns `float('nan')` at nodata pixels**
+  instead of the raw nodata sentinel, so a fill value sitting near real
+  measurements can no longer be mistaken for one. Valid pixels are unchanged
+  (returned in the band's dtype). A pixel counts as nodata when it equals the
+  raster's declared nodata value or is already NaN.
+- **Normalization ops now output float32 and exclude nodata.**
+  `normalize_min_max`, `normalize_percentile`, and `standardize` previously
+  wrote the result back in the input dtype — truncating an integer raster's
+  normalized values to `0`/`1` — and computed their statistics (min/max,
+  percentiles, mean/std) over every pixel including nodata sentinels. They now
+  output **float32**, compute statistics over valid pixels only, and mark
+  nodata pixels as NaN (`nodata=nan`); a raster with no declared nodata is
+  unchanged apart from the float32 output.
 
 ### Added
 
@@ -48,6 +84,22 @@ are called out under a **Breaking** heading.
   type checkers, both shipped in the wheel.
 - A `dev` optional-dependencies extra (`pip install easy-eo[dev]`) bundling
   pytest, pytest-cov, ruff, mypy, and pre-commit.
+- **"Nodata & Dtype Contract" documentation** — a user guide page plus a
+  normative section in `CODE_STYLE.md` defining how operations mask nodata
+  (contagious; NaN for float, sentinel for int) and what dtype they return.
+- **Provenance metadata on `EEORasterDataset`.** Datasets now carry an
+  optional `timestamp` (acquisition time) and a free-form `attrs` tags dict,
+  settable via `load_raster`/`load_array` or directly on the dataset. Both are
+  preserved through every chainable operation (each operation copies them onto
+  its result; `attrs` is copied, not shared), laying the groundwork for the
+  planned time-series API.
+- **`EEORasterDataset.describe()` and `__repr__`.** `describe()` prints a
+  human-readable summary — structural metadata (source, driver, size, dtype,
+  CRS, pixel size, extent, nodata, timestamp, attrs) with **no pixel reads** by
+  default. `describe(stats="approx")` (or `stats=True`) adds nodata-aware
+  per-band statistics from a fast decimated read (marked `~` as approximate);
+  `describe(stats="exact")` reads every pixel for exact statistics. `repr(ds)`
+  gives a one-line summary (`<EEORasterDataset 4×1200×1200 uint16 EPSG:32633>`).
 
 ### Changed
 
@@ -74,6 +126,14 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- `normalized_difference` no longer leaves `inf` where the denominator is zero
+  but the numerator is not (``ds + other == 0`` with ``ds != other``); the
+  zero-denominator guard now sets both the ``0/0`` and ``x/0`` cases to 0.
+- `reproject_raster` now passes the raster's nodata value to the warp
+  (`src_nodata`/`dst_nodata`). Previously source nodata pixels were warped as
+  ordinary values and border pixels exposed by the reprojection were filled
+  with 0; they are now filled with the nodata value (or 0 only when the raster
+  declares no nodata).
 - **Statistics pixel locators work on multi-band rasters.**
   `get_maximum_pixel`, `get_minimum_pixel`, `get_mean_pixel`, and
   `get_percentile_pixel` previously crashed with `ValueError` on any raster
