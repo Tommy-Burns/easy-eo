@@ -55,6 +55,11 @@ are called out under a **Breaking** heading.
   nodata sentinel took part in the ratio and the output carried the input's
   nodata value unchanged. Output stays float32; the zero-denominator guard
   (`ds + other == 0` → 0) is unchanged.
+- **`extract_value_at_coordinate` returns `float('nan')` at nodata pixels**
+  instead of the raw nodata sentinel, so a fill value sitting near real
+  measurements can no longer be mistaken for one. Valid pixels are unchanged
+  (returned in the band's dtype). A pixel counts as nodata when it equals the
+  raster's declared nodata value or is already NaN.
 
 ### Added
 

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from eeo.common import mask_nodata
+from eeo.common import get_nodata, mask_nodata
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import ValidationError
@@ -30,8 +30,10 @@ def extract_value_at_coordinate(
     -------
     int or float
         The pixel value at ``coordinates`` for the selected band, in the
-        band's own dtype. The value is returned as-is with no nodata
-        handling, so sampling a nodata pixel returns the sentinel value.
+        band's own dtype. If the sampled pixel is nodata — equal to the
+        raster's declared nodata value, or already NaN — ``float('nan')`` is
+        returned instead of the raw sentinel, so a nodata fill is never
+        mistaken for a real measurement.
 
     Raises
     ------
@@ -62,7 +64,17 @@ def extract_value_at_coordinate(
     row, col = backend.index(x, y)
     row, col = int(row), int(col)
 
-    return ds.get_band(band_idx)[row, col]
+    value = ds.get_band(band_idx)[row, col]
+
+    # Report nodata as NaN rather than the raw pixel value, so a fill value that
+    # sits near real measurements is never mistaken for one.
+    nodata = get_nodata(ds)
+    if nodata is not None and value == nodata:
+        return float("nan")
+    if np.issubdtype(value.dtype, np.floating) and np.isnan(value):
+        return float("nan")
+
+    return value
 
 
 @eeo_raster_op

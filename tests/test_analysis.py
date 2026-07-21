@@ -176,12 +176,20 @@ def test_stat_value_is_python_float(raster_3x3):
     assert isinstance(raster_3x3.get_maximum_pixel()["value"], float)
 
 
-def test_extract_at_nodata_pixel_returns_sentinel(raster_with_nodata):
-    # Point accessor (not a statistic): sampling a nodata pixel returns the
-    # stored sentinel in the band's dtype, as documented. Pixel (0, 0) centre
-    # on the 10 m UTM grid, origin (500000, 4200000), is (500005, 4199995).
+def test_extract_at_nodata_pixel_returns_nan(raster_with_nodata):
+    # Sampling a nodata pixel returns NaN, not the raw sentinel, so a fill
+    # value near real measurements is never mistaken for one. Pixel (0, 0)
+    # centre on the 10 m UTM grid, origin (500000, 4200000), is
+    # (500005, 4199995).
     value = raster_with_nodata.extract_value_at_coordinate((500_005.0, 4_199_995.0))
-    assert value == -9999.0
+    assert math.isnan(value)
+
+
+def test_extract_at_valid_pixel_returns_value(raster_with_nodata):
+    # A valid pixel still returns its measurement; pixel (2, 2) holds the
+    # gradient value 14 and is well away from the nodata block.
+    value = raster_with_nodata.extract_value_at_coordinate((500_025.0, 4_199_975.0))
+    assert value == 14.0
 
 
 # normalized difference: nodata & dtype contract
