@@ -82,7 +82,7 @@ def reproject_raster(
         src_crs=ds.get_crs(),
         dst_crs=crs,
         width=ds.get_width(),
-        height=ds.get_shape()[1],
+        height=ds.get_height(),
         left=left,
         bottom=bottom,
         right=right,

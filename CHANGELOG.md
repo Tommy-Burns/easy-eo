@@ -80,6 +80,10 @@ are called out under a **Breaking** heading.
   with more than one band. All four now analyse the band selected by
   `band_idx` (default 1 — a single-band raster's only band) and raise
   `IndexError` for an out-of-range band. Single-band results are unchanged.
+- `reproject_raster` computed the destination grid with the source raster's
+  **width passed as its height**, distorting the output resolution and shape
+  for non-square rasters (square rasters were unaffected). The destination
+  grid now matches rasterio's `calculate_default_transform` result.
 - `to_rasterio()` no longer re-reads and copies datasets that are already
   rasterio-backed but were produced in memory by a previous operation
   (`DatasetWriter`-backed); it now returns the same dataset unchanged. The
