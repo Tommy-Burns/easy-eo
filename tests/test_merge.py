@@ -4,12 +4,12 @@ import rasterio as rio
 from affine import Affine
 from rasterio.crs import CRS
 
-from eeo import load_raster
+from eeo import load_array, load_raster
 from eeo.core.exceptions import CRSMismatchError
 from eeo.ops.merge import mosaic
 
 
-def _write_tile(tmp_path, name, origin_x, value, res=10.0):
+def _write_tile(tmp_path, name, origin_x, value, res=10.0, nodata=None):
     path = tmp_path / name
     array = np.full((3, 3), value, dtype=np.float32)
     transform = Affine.translation(origin_x, 30.0) * Affine.scale(res, -res)
@@ -23,6 +23,7 @@ def _write_tile(tmp_path, name, origin_x, value, res=10.0):
         dtype="float32",
         crs=CRS.from_epsg(32633),
         transform=transform,
+        nodata=nodata,
     ) as dst:
         dst.write(array, 1)
     return load_raster(str(path))
@@ -84,3 +85,32 @@ def test_stack_combines_bands(tmp_path):
     stacked = a.stack(b)
 
     assert stacked.get_count() == 2
+
+
+def test_mosaic_preserves_nodata_value_and_dtype(tmp_path):
+    """The mosaic keeps the base raster's nodata value and the inputs' dtype."""
+    left = _write_tile(tmp_path, "left.tif", origin_x=0.0, value=1.0, nodata=-9999.0)
+    right = _write_tile(tmp_path, "right.tif", origin_x=30.0, value=2.0, nodata=-9999.0)
+
+    mosaicked = left.mosaic(right)
+
+    assert mosaicked.get_metadata()["nodata"] == -9999.0
+    assert mosaicked.read().dtype == np.float32
+
+
+def test_stack_preserves_nodata_and_dtype():
+    """Stacking carries the base raster's nodata value and keeps its dtype."""
+    transform = Affine.translation(0.0, 30.0) * Affine.scale(10.0, -10.0)
+    crs = CRS.from_epsg(32633)
+    a = load_array(
+        np.arange(1, 10, dtype=np.uint16).reshape(3, 3), transform=transform, crs=crs, nodata=0
+    ).to_rasterio()
+    b = load_array(
+        np.arange(10, 19, dtype=np.uint16).reshape(3, 3), transform=transform, crs=crs, nodata=0
+    ).to_rasterio()
+
+    stacked = a.stack(b)
+
+    assert stacked.get_count() == 2
+    assert stacked.read().dtype == np.uint16
+    assert stacked.get_metadata()["nodata"] == 0

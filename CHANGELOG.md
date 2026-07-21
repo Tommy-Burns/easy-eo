@@ -32,6 +32,24 @@ are called out under a **Breaking** heading.
     type to `reproject_raster`, an invalid `vector_file` to
     `clip_raster_with_vector`, an invalid resampling method — now raise
     `ValidationError` (a `ValueError`) instead of `TypeError`.
+- **Algebra operations now honour the nodata & dtype contract.** The
+  arithmetic and transform ops (`add`, `subtract`, `multiply`, `divide`,
+  `power`, `sqrt`, `log`, `absolute`) previously let nodata sentinels take
+  part in the computation and wrote the result back in the input's dtype,
+  silently truncating fractional results. They now:
+  - **Mask nodata before computing.** A pixel that is nodata in *any* operand
+    is nodata in the output (nodata is contagious). Floating outputs mark it
+    with `NaN` and set `nodata=nan`; integer outputs keep the input's integer
+    sentinel. A raster with `nodata=None` is unchanged (all pixels valid).
+  - **Stop truncating fractional results.** `divide`, `sqrt`, and `log` now
+    always output float32. `add`, `subtract`, `multiply`, `power`, and
+    `absolute` follow NumPy type promotion with floating results narrowed to
+    float32, so `uint16 + 0.5` yields float32 instead of truncating to
+    `uint16`; integer-only arithmetic still stays integer.
+
+  Chains that relied on the old integer truncation or on nodata sentinels
+  flowing through arithmetic will see different output dtypes and NaN-masked
+  gaps. See the "Nodata & Dtype Contract" guide for the full policy.
 
 ### Added
 
@@ -48,6 +66,9 @@ are called out under a **Breaking** heading.
   type checkers, both shipped in the wheel.
 - A `dev` optional-dependencies extra (`pip install easy-eo[dev]`) bundling
   pytest, pytest-cov, ruff, mypy, and pre-commit.
+- **"Nodata & Dtype Contract" documentation** — a user guide page plus a
+  normative section in `CODE_STYLE.md` defining how operations mask nodata
+  (contagious; NaN for float, sentinel for int) and what dtype they return.
 
 ### Changed
 
