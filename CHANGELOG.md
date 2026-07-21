@@ -93,6 +93,13 @@ are called out under a **Breaking** heading.
   preserved through every chainable operation (each operation copies them onto
   its result; `attrs` is copied, not shared), laying the groundwork for the
   planned time-series API.
+- **`EEORasterDataset.describe()` and `__repr__`.** `describe()` prints a
+  human-readable summary — structural metadata (source, driver, size, dtype,
+  CRS, pixel size, extent, nodata, timestamp, attrs) with **no pixel reads** by
+  default. `describe(stats="approx")` (or `stats=True`) adds nodata-aware
+  per-band statistics from a fast decimated read (marked `~` as approximate);
+  `describe(stats="exact")` reads every pixel for exact statistics. `repr(ds)`
+  gives a one-line summary (`<EEORasterDataset 4×1200×1200 uint16 EPSG:32633>`).
 
 ### Changed
 
