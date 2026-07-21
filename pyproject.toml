@@ -116,7 +116,11 @@ indent-style = "space"
 # mypy (type checking)
 # ---------------------
 [tool.mypy]
-python_version = "3.10"
+# modern numpy (>=2.2) ships stubs that use PEP
+# 695 `type` statements, which mypy only parses when python_version >= 3.12.
+# Runtime support still starts at 3.10 (enforced by ruff target-version and the
+# py3.10 test-matrix leg); this only sets the language level mypy assumes.
+python_version = "3.12"
 files = ["eeo"]
 namespace_packages = true
 explicit_package_bases = true
@@ -160,7 +164,13 @@ addopts = [
 xfail_strict = true
 # Surface warnings as failures so deprecations and numerical warnings can't
 # slip through unnoticed. Tests that expect a warning use pytest.warns.
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # rasterio 1.5.x sets `.shape` on ndarrays inside its Cython read path;
+    # numpy 2.5 deprecated that. Out of our control until rasterio ships a
+    # fix — ignore the specific message rather than weakening the gate.
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
+]
 
 # ---------------------
 # coverage.py
