@@ -5,3 +5,8 @@ Core Module
     :members:
     :undoc-members:
     :show-inheritance:
+
+Utilities
+---------
+
+.. autofunction:: eeo.show_versions
