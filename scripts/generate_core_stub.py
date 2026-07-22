@@ -71,6 +71,7 @@ from rasterio import CRS
 from rasterio.coords import BoundingBox
 from rasterio.enums import Resampling
 
+from eeo.analysis.indices import BandSpec
 from eeo.analysis.stats import Coordinate
 from eeo.core.adapters import BaseRasterAdapter
 from eeo.core.types import ResamplingMethod

@@ -25,9 +25,18 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
+    "matplotlib.sphinxext.plot_directive",
 ]
 
 extensions.append("sphinx_copybutton")
+
+# -- matplotlib plot_directive -----------------------------------------------
+# Render the spectral-index comparison figure from source at build time (no
+# committed binary). Show only the image, not the source/PNG-vs-HiRes links.
+plot_include_source = False
+plot_html_show_source_link = False
+plot_html_show_formats = False
+plot_formats = [("png", 100)]
 
 # -- Napoleon (NumPy-style docstrings) ---------------------------------------
 # Docstrings are NumPy style everywhere (see CODE_STYLE.md); disable the

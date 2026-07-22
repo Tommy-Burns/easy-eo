@@ -16,6 +16,7 @@ from rasterio import CRS
 from rasterio.coords import BoundingBox
 from rasterio.enums import Resampling
 
+from eeo.analysis.indices import BandSpec
 from eeo.analysis.stats import Coordinate
 from eeo.core.adapters import BaseRasterAdapter
 from eeo.core.types import ResamplingMethod
@@ -107,6 +108,16 @@ class EEORasterDataset:
         method: str = ...,
         safe: bool = ...,
     ) -> EEORasterDataset: ...
+    def evi(
+        self,
+        red: BandSpec,
+        blue: BandSpec,
+        *,
+        nir: BandSpec = ...,
+        auto_align: bool = ...,
+        method: str = ...,
+        return_as_ndarray: bool = ...,
+    ) -> np.ndarray | EEORasterDataset: ...
     def extract_value_at_coordinate(
         self, coordinates: Coordinate, band_idx: int = ...
     ) -> int | float: ...
@@ -139,6 +150,42 @@ class EEORasterDataset:
     def multiply(
         self, other: EEORasterDataset | float | int, *, auto_align: bool = ..., method: str = ...
     ) -> EEORasterDataset: ...
+    def ndbi(
+        self,
+        nir: BandSpec,
+        *,
+        swir: BandSpec = ...,
+        auto_align: bool = ...,
+        method: str = ...,
+        return_as_ndarray: bool = ...,
+    ) -> np.ndarray | EEORasterDataset: ...
+    def ndmi(
+        self,
+        swir: BandSpec,
+        *,
+        nir: BandSpec = ...,
+        auto_align: bool = ...,
+        method: str = ...,
+        return_as_ndarray: bool = ...,
+    ) -> np.ndarray | EEORasterDataset: ...
+    def ndvi(
+        self,
+        red: BandSpec,
+        *,
+        nir: BandSpec = ...,
+        auto_align: bool = ...,
+        method: str = ...,
+        return_as_ndarray: bool = ...,
+    ) -> np.ndarray | EEORasterDataset: ...
+    def ndwi(
+        self,
+        nir: BandSpec,
+        *,
+        green: BandSpec = ...,
+        auto_align: bool = ...,
+        method: str = ...,
+        return_as_ndarray: bool = ...,
+    ) -> np.ndarray | EEORasterDataset: ...
     def normalize_min_max(
         self, *, new_min: float | int = ..., new_max: float | int = ...
     ) -> EEORasterDataset: ...
@@ -229,6 +276,16 @@ class EEORasterDataset:
         plot_kwargs=...,
         show_preview: bool = ...,
     ) -> EEORasterDataset: ...
+    def savi(
+        self,
+        red: BandSpec,
+        *,
+        nir: BandSpec = ...,
+        soil_factor: float = ...,
+        auto_align: bool = ...,
+        method: str = ...,
+        return_as_ndarray: bool = ...,
+    ) -> np.ndarray | EEORasterDataset: ...
     def sqrt(self) -> EEORasterDataset: ...
     def stack(self, others: EEORasterDataset | Iterable[EEORasterDataset]) -> EEORasterDataset: ...
     def standardize(self) -> EEORasterDataset: ...
