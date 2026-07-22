@@ -57,3 +57,19 @@ jobs:
           # skip (don't fail) if this version was
           # already uploaded, e.g. a re-run or an accidental duplicate tag.
           skip-existing: true
+
+  docs:
+    name: Trigger Read the Docs build
+    needs: publish
+    runs-on: ubuntu-latest
+    # Trigger build only for real version tags
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+    steps:
+      - name: Trigger Read the Docs build
+        run: >
+          curl --fail --silent --show-error -X POST
+          --data "token=${{ secrets.READTHEDOCS_WEBHOOK_TOKEN }}"
+          --data "branches=${{ github.ref_name }}"
+          "${{ secrets.READTHEDOCS_WEBHOOK_URL }}"
