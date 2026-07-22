@@ -71,6 +71,18 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- **Spectral index library** (`eeo.analysis.indices`): six chainable,
+  nodata-safe, float32-output indices bound onto `EEORasterDataset` —
+  `ndvi`, `ndwi` (McFeeters water), `ndmi`, `ndbi`, `evi`, and `savi`. Each
+  band argument accepts **either** a separate single-band `EEORasterDataset`
+  **or** a 1-based `int` band index into the receiver, so the same method
+  serves per-band rasters (`nir.ndvi(red)`) and one stacked scene
+  (`scene.ndvi(red=3, nir=4)`); the primary band defaults to index 1.
+  Mismatched-grid bands auto-align by default, a zero denominator is guarded
+  to 0, and nodata is contagious across all input bands (output nodata is
+  `NaN`). A new "Spectral Indices" user-guide page documents the formulas,
+  per-sensor band conventions (Sentinel-2, Landsat 8/9), and a comparison
+  figure.
 - **Custom exception hierarchy** in `eeo.core.exceptions`, exported from the
   top-level package: `EEOError` (base), `ValidationError`, `CRSMismatchError`,
   `AlignmentError`, and `BackendError`. Catch `EEOError` to handle any
