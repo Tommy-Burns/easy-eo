@@ -142,6 +142,25 @@ def test_ensure_asset_checksum_mismatch_raises(cache_env, local_asset, monkeypat
     assert not (cache_dir() / asset.remote).exists()  # corrupt download removed
 
 
+def test_download_writes_and_replaces_atomically(cache_env, monkeypatch):
+    """The real ``_download`` streams the response to dest via a temp file.
+
+    Exercises the success path (copy + atomic replace) without a network call
+    by patching ``urlopen`` to return an in-memory response, and confirms no
+    stray ``.part`` temp file is left behind.
+    """
+    import io
+
+    payload = b"streamed sample bytes \x00\x01" * 200
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: io.BytesIO(payload))
+
+    dest = cache_dir() / "downloaded.bin"
+    _cache._download("https://example.invalid/downloaded.bin", dest)
+
+    assert dest.read_bytes() == payload
+    assert not list(dest.parent.glob("*.part"))  # temp file renamed
+
+
 def test_download_network_error_raises_dataset_error(cache_env, local_asset, monkeypatch):
     import urllib.error
 
