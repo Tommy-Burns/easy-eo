@@ -27,9 +27,10 @@ from eeo.viz.plot import (
 # ---------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------
-# General-purpose rasters come from conftest.py. Composite tests need a
-# module-local fixture: plot_composite feeds bands straight to imshow and
-# stretches in place, so it needs float RGB data already in display range.
+# General-purpose rasters come from conftest.py. Composite tests use a
+# module-local float RGB fixture (values already in imshow's [0, 1] display
+# range) for the no-stretch path; the stretch path is covered separately
+# against the shared uint16 fixture.
 
 
 @pytest.fixture
@@ -268,3 +269,22 @@ def test_plot_composite_rgb(rgb_float32_raster):
 
 def test_plot_composite_stretched(rgb_float32_raster):
     plot_composite(rgb_float32_raster, bands=(1, 2, 3), stretch=True)
+
+
+def test_plot_composite_stretch_integer_not_truncated(multiband_uint16, monkeypatch):
+    """Regression: stretching an integer raster must not render black.
+
+    The stretched channels are floats in ``[0, 1]``; the composite must stay
+    floating rather than write them back into the uint16 band dtype, which
+    would floor every value below 1 to 0 and produce a black image.
+    """
+    captured = {}
+    monkeypatch.setattr(plt, "imshow", lambda arr, *a, **k: captured.update(arr=np.asarray(arr)))
+
+    plot_composite(multiband_uint16, bands=(3, 2, 1), stretch=True)
+
+    arr = captured["arr"]
+    assert np.issubdtype(arr.dtype, np.floating)  # not truncated to the band dtype
+    assert arr.min() >= 0.0 and arr.max() <= 1.0
+    assert arr.max() > 0.5  # real contrast survives; the image is not black
+    assert np.count_nonzero(arr) > arr.size // 2

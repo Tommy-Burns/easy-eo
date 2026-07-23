@@ -33,3 +33,7 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# Sample data (downloaded, not tracked)
+sample-data/
+scripts/build_sample_data.py

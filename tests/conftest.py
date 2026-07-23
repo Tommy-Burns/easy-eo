@@ -37,6 +37,26 @@ RES = 10.0
 NODATA = -9999.0
 
 
+def pytest_addoption(parser):
+    """Register ``--run-network`` to opt in to the live-download tests."""
+    parser.addoption(
+        "--run-network",
+        action="store_true",
+        default=False,
+        help="run tests marked @pytest.mark.network (real downloads)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip ``network``-marked tests unless ``--run-network`` is given."""
+    if config.getoption("--run-network"):
+        return
+    skip = pytest.mark.skip(reason="needs --run-network (real download)")
+    for item in items:
+        if "network" in item.keywords:
+            item.add_marker(skip)
+
+
 @pytest.fixture(autouse=True)
 def _silence_agg_show_warning():
     """Filter the UserWarning ``plt.show()`` emits under Agg.
