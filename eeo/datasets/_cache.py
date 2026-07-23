@@ -65,9 +65,14 @@ def _download(url: str, dest: Path) -> None:
     tmp_fd, tmp_name = tempfile.mkstemp(dir=str(dest.parent), suffix=".part")
     tmp = Path(tmp_name)
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": "easy-eo"})
-        with urllib.request.urlopen(request) as response, os.fdopen(tmp_fd, "wb") as out:
-            shutil.copyfileobj(response, out, _CHUNK)
+        # Wrap the temp fd in its closing context BEFORE opening the URL, so a
+        # failure in urlopen still closes the file. Otherwise the descriptor
+        # leaks open and the cleanup unlink below fails on Windows, where an
+        # open file cannot be deleted (WinError 32).
+        with os.fdopen(tmp_fd, "wb") as out:
+            request = urllib.request.Request(url, headers={"User-Agent": "easy-eo"})
+            with urllib.request.urlopen(request) as response:
+                shutil.copyfileobj(response, out, _CHUNK)
     except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
         tmp.unlink(missing_ok=True)
         raise DatasetError(
