@@ -93,6 +93,12 @@ class RasterioAdapter(BaseRasterAdapter):
     def get_metadata(self):
         return self._ds.meta.copy()
 
+    def get_band_descriptions(self) -> list[str | None]:
+        # rasterio exposes GDAL band descriptions as a length-count tuple with
+        # None for unnamed bands; normalise blank strings to None too.
+        descriptions = self._ds.descriptions or (None,) * self._ds.count
+        return [(d or None) for d in descriptions]
+
     # ========================
     # Data Access
     # ========================

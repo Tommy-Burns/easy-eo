@@ -68,6 +68,16 @@ class BaseRasterAdapter(ABC):
         """Return the raster profile (dtype, nodata, transform, crs, ...)."""
         ...
 
+    @abstractmethod
+    def get_band_descriptions(self) -> list[str | None]:
+        """Return the per-band names, one entry per band (``None`` if unnamed).
+
+        The returned list has length ``get_count()``. Backends without a native
+        band-description concept return all ``None``. Reads metadata only, never
+        pixel data.
+        """
+        ...
+
     ###########################
     # DATA ACCESS
     ##########################

@@ -172,6 +172,33 @@ def _describe_text(ds: EEORasterDataset, stats: bool | str) -> str:
     return "\n".join(lines)
 
 
+def _normalize_band_name(name: str | None) -> str | None:
+    """Normalize one band name: strip whitespace, treat blank as ``None``."""
+    if name is None:
+        return None
+    if isinstance(name, str):
+        return name.strip() or None
+    raise ValidationError(f"band name must be a str or None; got {type(name).__name__}")
+
+
+def _normalize_band_names(names, count: int) -> list[str | None]:
+    """Validate a band-name sequence against ``count`` and normalize each entry."""
+    names = list(names)
+    if len(names) != count:
+        raise ValidationError(
+            f"band_names must have one entry per band; expected {count}, got {len(names)}"
+        )
+    return [_normalize_band_name(n) for n in names]
+
+
+def _resolve_initial_band_names(adapter: BaseRasterAdapter, band_names) -> list[str | None]:
+    """Seed band names from an explicit list, else from the backend descriptions."""
+    count = adapter.get_count()
+    if band_names is None:
+        return _normalize_band_names(adapter.get_band_descriptions(), count)
+    return _normalize_band_names(band_names, count)
+
+
 # Core class
 class EEORasterDataset:
     """A chainable raster dataset backed by a swappable adapter.
@@ -196,6 +223,7 @@ class EEORasterDataset:
         *,
         timestamp: datetime | None = None,
         attrs: dict | None = None,
+        band_names: list[str | None] | None = None,
     ):
         """Wrap a backend adapter.
 
@@ -214,11 +242,17 @@ class EEORasterDataset:
             Optional free-form tags dict carried with the dataset and
             preserved through operations. Copied on assignment so datasets do
             not share a mutable dict.
+        band_names : list of (str or None) or None, default None
+            Optional per-band names, one entry per band (``None`` for an
+            unnamed band). When omitted, names are seeded from the backend's
+            band descriptions (all ``None`` for the NumPy backend). Must match
+            the band count.
         """
         self._adapter = adapter
         self.path = path
         self.timestamp = timestamp
         self.attrs: dict = {} if attrs is None else dict(attrs)
+        self._band_names: list[str | None] = _resolve_initial_band_names(adapter, band_names)
 
     def __repr__(self) -> str:
         """Return a concise one-line summary for REPLs and logs."""
@@ -280,6 +314,7 @@ class EEORasterDataset:
         *,
         timestamp: datetime | None = None,
         attrs: dict | None = None,
+        band_names: list[str | None] | None = None,
     ) -> EEORasterDataset:
         """Build a NumPy-backed dataset from an array and georeferencing.
 
@@ -299,6 +334,9 @@ class EEORasterDataset:
             Optional acquisition time carried with the dataset.
         attrs : dict or None, default None
             Optional free-form tags dict carried with the dataset.
+        band_names : list of (str or None) or None, default None
+            Optional per-band names, one entry per band. Must match the band
+            count.
 
         Returns
         -------
@@ -312,7 +350,7 @@ class EEORasterDataset:
             nodata=nodata,
             driver=driver,
         )
-        return cls(adapter=adapter, timestamp=timestamp, attrs=attrs)
+        return cls(adapter=adapter, timestamp=timestamp, attrs=attrs, band_names=band_names)
 
     # ========================
     # Conversion between adapters
@@ -549,6 +587,61 @@ class EEORasterDataset:
             If ``idx`` is outside the range of available bands.
         """
         return self._adapter.read_band(idx)
+
+    @property
+    def band_names(self) -> list[str | None]:
+        """Per-band names, one entry per band (``None`` for an unnamed band).
+
+        Seeded from the backend's band descriptions at load time and preserved
+        in memory. Assigning a new list replaces all names at once (it must
+        match the band count); assign ``None`` to clear every name. Use
+        :meth:`set_band_name` to rename a single band. Names are written to the
+        raster's GDAL band descriptions when the dataset is saved.
+
+        Returns
+        -------
+        list of (str or None)
+            A copy of the band names; mutate via assignment or
+            :meth:`set_band_name`, not by editing the returned list in place.
+        """
+        return list(self._band_names)
+
+    @band_names.setter
+    def band_names(self, names: list[str | None] | None) -> None:
+        """Replace all band names, or clear them when ``names`` is ``None``."""
+        if names is None:
+            self._band_names = [None] * self.get_count()
+        else:
+            self._band_names = _normalize_band_names(names, self.get_count())
+
+    def set_band_name(self, band: int, new_name: str | None) -> None:
+        """Rename a single band by its 1-based index.
+
+        Parameters
+        ----------
+        band : int
+            1-based index of the band to rename.
+        new_name : str or None
+            New name for the band; a blank or whitespace-only string, or
+            ``None``, clears the name.
+
+        Raises
+        ------
+        IndexError
+            If ``band`` is outside the range of available bands.
+        ValidationError
+            If ``new_name`` is neither a string nor ``None``.
+
+        Examples
+        --------
+        >>> ds.set_band_name(4, "red")
+        """
+        count = self.get_count()
+        if isinstance(band, bool) or not isinstance(band, int) or band < 1 or band > count:
+            raise IndexError(
+                f"band index {band!r} out of range; dataset has {count} band(s) (valid 1..{count})"
+            )
+        self._band_names[band - 1] = _normalize_band_name(new_name)
 
     # ========================
     # Saving

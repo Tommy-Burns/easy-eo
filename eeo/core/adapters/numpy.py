@@ -58,6 +58,11 @@ class NumpyRasterioAdapter(BaseRasterAdapter):
     def get_nodata(self) -> float | None:
         return self._nodata
 
+    def get_band_descriptions(self) -> list[str | None]:
+        # The NumPy backend has no native band-description concept; band names
+        # live on the EEORasterDataset itself.
+        return [None] * self.get_count()
+
     def get_metadata(self) -> dict:
         return {
             "dtype": self._array.dtype,
