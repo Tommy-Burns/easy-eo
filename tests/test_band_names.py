@@ -2,11 +2,13 @@
 
 import numpy as np
 import pytest
+import rasterio as rio
 from affine import Affine
 from rasterio.crs import CRS
 from rasterio.io import MemoryFile
 
-from eeo import load_array
+from eeo import load_array, load_raster
+from eeo.common import resolve_band_index
 from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import ValidationError
 
@@ -152,3 +154,123 @@ def test_band_names_length_matches_band_count():
     assert len(_numpy_ds(count=1).band_names) == 1
     assert len(_numpy_ds(count=4).band_names) == 4
     assert len(_rasterio_ds_with_descriptions([None] * 5).band_names) == 5
+
+
+# ---------------------------------------------------------------------------
+# Loader entry points
+# ---------------------------------------------------------------------------
+def test_load_array_accepts_band_names():
+    ds = load_array(
+        np.zeros((3, 4, 4), dtype=np.float32),
+        transform=TRANSFORM,
+        crs=CRS_4326,
+        band_names=["red", "green", "blue"],
+    )
+    assert ds.band_names == ["red", "green", "blue"]
+
+
+def test_load_array_wrong_length_band_names_raises():
+    with pytest.raises(ValidationError):
+        load_array(
+            np.zeros((3, 4, 4), dtype=np.float32),
+            transform=TRANSFORM,
+            crs=CRS_4326,
+            band_names=["red"],
+        )
+
+
+def test_load_raster_band_names_override_file_descriptions(tmp_path):
+    path = tmp_path / "scene.tif"
+    with rio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=4,
+        width=4,
+        count=2,
+        dtype="float32",
+        crs=CRS_4326,
+        transform=TRANSFORM,
+    ) as dst:
+        dst.write(np.zeros((2, 4, 4), dtype=np.float32))
+        dst.set_band_description(1, "from_file")
+        dst.set_band_description(2, "also_from_file")
+
+    # no override -> names come from the file's GDAL descriptions
+    assert load_raster(str(path)).band_names == ["from_file", "also_from_file"]
+    # explicit names win
+    ds = load_raster(str(path), band_names=["red", "nir"])
+    assert ds.band_names == ["red", "nir"]
+
+
+# ---------------------------------------------------------------------------
+# Name -> index resolution
+# ---------------------------------------------------------------------------
+def test_resolve_int_index_passes_through():
+    ds = _numpy_ds(count=3)
+    assert resolve_band_index(ds, 1) == 1
+    assert resolve_band_index(ds, 3) == 3
+
+
+@pytest.mark.parametrize("bad", [0, 4, -1])
+def test_resolve_int_index_out_of_range_raises_index_error(bad):
+    ds = _numpy_ds(count=3)
+    with pytest.raises(IndexError):
+        resolve_band_index(ds, bad)
+
+
+def test_resolve_name_to_index():
+    ds = _numpy_ds(count=3, band_names=["blue", "green", "red"])
+    assert resolve_band_index(ds, "blue") == 1
+    assert resolve_band_index(ds, "red") == 3
+
+
+@pytest.mark.parametrize("spelling", ["RED", "red", "  Red  ", "rEd"])
+def test_resolve_name_is_case_and_whitespace_insensitive(spelling):
+    ds = _numpy_ds(count=2, band_names=["nir", "Red"])
+    assert resolve_band_index(ds, spelling) == 2
+
+
+def test_resolve_missing_name_raises_with_available_names():
+    ds = _numpy_ds(count=2, band_names=["nir", "red"])
+    with pytest.raises(ValidationError) as excinfo:
+        resolve_band_index(ds, "swir")
+    message = str(excinfo.value)
+    assert "swir" in message
+    assert "'nir'" in message and "'red'" in message
+
+
+def test_resolve_name_on_unnamed_dataset_reports_none_available():
+    ds = _numpy_ds(count=2)
+    with pytest.raises(ValidationError) as excinfo:
+        resolve_band_index(ds, "red")
+    assert "none" in str(excinfo.value)
+
+
+def test_resolve_ambiguous_name_raises():
+    ds = _numpy_ds(count=3, band_names=["red", "red", "nir"])
+    with pytest.raises(ValidationError) as excinfo:
+        resolve_band_index(ds, "red")
+    assert "ambiguous" in str(excinfo.value)
+
+
+def test_numeric_string_is_a_name_never_an_index():
+    # "4" must not resolve to band 4; it only matches a band named "4".
+    ds = _numpy_ds(count=4)
+    with pytest.raises(ValidationError):
+        resolve_band_index(ds, "4")
+
+    named = _numpy_ds(count=4, band_names=["4", "b", "c", "d"])
+    assert resolve_band_index(named, "4") == 1
+
+
+def test_bool_is_not_a_valid_band_index():
+    ds = _numpy_ds(count=3)
+    with pytest.raises(ValidationError):
+        resolve_band_index(ds, True)
+
+
+def test_resolve_rejects_other_types():
+    ds = _numpy_ds(count=3)
+    with pytest.raises(ValidationError):
+        resolve_band_index(ds, 2.5)

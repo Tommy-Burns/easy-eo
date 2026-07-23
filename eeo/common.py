@@ -85,6 +85,71 @@ def get_nodata(ds: EEORasterDataset):
     return ds.get_metadata().get("nodata", None)
 
 
+def resolve_band_index(ds: EEORasterDataset, band: int | str) -> int:
+    """Resolve a band specifier to a validated 1-based band index.
+
+    An ``int`` is a 1-based index and is returned unchanged once range-checked.
+    A ``str`` is a band name, matched case-insensitively against ``ds``'s
+    ``band_names`` after stripping surrounding whitespace. The two lookup
+    spaces never overlap: a string is always treated as a name, so a numeric
+    string like ``"4"`` matches only a band literally named ``"4"``, never
+    band 4.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Dataset whose bands are being addressed.
+    band : int or str
+        1-based band index, or a band name declared in ``ds.band_names``.
+
+    Returns
+    -------
+    int
+        The 1-based index of the requested band.
+
+    Raises
+    ------
+    IndexError
+        If an int index is outside the range of available bands.
+    ValidationError
+        If a name is not found or is ambiguous (declared on more than one
+        band), or if ``band`` is neither an int nor a str.
+    """
+    from eeo.core.exceptions import ValidationError
+
+    count = ds.get_count()
+
+    # bool is a subclass of int; reject it so True/False never means band 1/0.
+    if isinstance(band, int) and not isinstance(band, bool):
+        if band < 1 or band > count:
+            raise IndexError(
+                f"band index {band} out of range; dataset has {count} band(s) (valid 1..{count})"
+            )
+        return band
+
+    if isinstance(band, str):
+        wanted = band.strip().casefold()
+        names = ds.band_names
+        matches = [i for i, name in enumerate(names, start=1) if name and name.casefold() == wanted]
+        if len(matches) == 1:
+            return matches[0]
+        if not matches:
+            declared = [n for n in names if n]
+            available = ", ".join(repr(n) for n in declared) if declared else "none"
+            raise ValidationError(
+                f"no band named {band!r}; available band names: {available}. "
+                "Set names via the band_names property, or pass a 1-based int index."
+            )
+        raise ValidationError(
+            f"band name {band!r} is ambiguous; it matches bands {matches}. "
+            "Rename the duplicates, or pass a 1-based int index."
+        )
+
+    raise ValidationError(
+        f"band must be a 1-based int index or a band name (str); got {type(band).__name__}"
+    )
+
+
 def _declared_nodata_mask(array, nodata):
     """Boolean mask of ``array`` pixels equal to a declared ``nodata`` value.
 

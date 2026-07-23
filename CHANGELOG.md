@@ -75,12 +75,15 @@ are called out under a **Breaking** heading.
   per-band name list (one entry per band, `None` for an unnamed band), seeded
   from the raster's GDAL band descriptions at load time. Read or replace them
   via the settable `band_names` property, rename a single band with
-  `set_band_name(band, new_name)`, or set them at construction via
-  `from_array(..., band_names=[...])`. Names are held in memory (so a
-  read-only file handle is never mutated) and normalized on assignment
-  (whitespace stripped, blanks become `None`). This is the storage foundation
-  for addressing bands by name; resolving a name to an index across the op API
-  follows in a later change.
+  `set_band_name(band, new_name)`, or set them at load time via
+  `load_raster(..., band_names=[...])` / `load_array(..., band_names=[...])`
+  (an explicit list overrides the file's own descriptions). Names are held in
+  memory (so a read-only file handle is never mutated) and normalized on
+  assignment (whitespace stripped, blanks become `None`). Band names resolve
+  case-insensitively, a string is always a name and an int always a 1-based
+  index (so `"4"` never means band 4), and an unknown or ambiguous name raises
+  `ValidationError` naming the available bands. Addressing bands by name
+  across the operation API follows in a later change.
 - **Spectral index library** (`eeo.analysis.indices`): six chainable,
   nodata-safe, float32-output indices bound onto `EEORasterDataset` —
   `ndvi`, `ndwi` (McFeeters water), `ndmi`, `ndbi`, `evi`, and `savi`. Each

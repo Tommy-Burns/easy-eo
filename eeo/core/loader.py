@@ -18,6 +18,7 @@ def load_raster(
     *,
     timestamp: datetime | None = None,
     attrs: dict | None = None,
+    band_names: list[str | None] | None = None,
 ) -> EEORasterDataset:
     """Open a raster file as an EEORasterDataset.
 
@@ -34,6 +35,10 @@ def load_raster(
     attrs : dict or None, default None
         Optional free-form tags dict carried with the dataset and preserved
         through operations.
+    band_names : list of (str or None) or None, default None
+        Optional per-band names, one entry per band. When omitted, names are
+        read from the file's GDAL band descriptions; when given, they override
+        whatever the file declares and must match the band count.
 
     Returns
     -------
@@ -46,10 +51,14 @@ def load_raster(
         If ``path`` does not exist.
     BackendError
         If the file exists but cannot be opened as a raster.
+    ValidationError
+        If ``band_names`` is given and its length does not match the band
+        count.
 
     Examples
     --------
     >>> ds = load_raster("scene.tif")
+    >>> ds = load_raster("stack.tif", band_names=["blue", "green", "red", "nir"])
     """
     if not os.path.isfile(path):
         raise FileNotFoundError(f'the file "{path}" does not exist')
@@ -61,6 +70,9 @@ def load_raster(
     ds.timestamp = timestamp
     if attrs is not None:
         ds.attrs = dict(attrs)
+    if band_names is not None:
+        # Explicit names win over the file's own band descriptions.
+        ds.band_names = band_names
     return ds
 
 
@@ -72,6 +84,7 @@ def load_array(
     nodata: float | int | None = None,
     timestamp: datetime | None = None,
     attrs: dict | None = None,
+    band_names: list[str | None] | None = None,
 ) -> EEORasterDataset:
     """Wrap an in-memory NumPy array as an EEORasterDataset.
 
@@ -94,6 +107,9 @@ def load_array(
     attrs : dict or None, default None
         Optional free-form tags dict carried with the dataset and preserved
         through operations.
+    band_names : list of (str or None) or None, default None
+        Optional per-band names, one entry per band (``None`` for an unnamed
+        band). Must match the band count.
 
     Returns
     -------
@@ -105,12 +121,14 @@ def load_array(
     Raises
     ------
     ValidationError
-        If ``array`` is not a NumPy array, or is neither 2D nor 3D.
+        If ``array`` is not a NumPy array, is neither 2D nor 3D, or
+        ``band_names`` is given and its length does not match the band count.
 
     Examples
     --------
     >>> import numpy as np
     >>> ds = load_array(np.zeros((64, 64), dtype="float32"), crs=4326)
+    >>> ds = load_array(rgb, crs=4326, band_names=["red", "green", "blue"])
     """
     if not isinstance(array, np.ndarray):
         raise ValidationError(f"array must be a NumPy ndarray; got {type(array).__name__}")
@@ -128,4 +146,5 @@ def load_array(
         nodata=nodata,
         timestamp=timestamp,
         attrs=attrs,
+        band_names=band_names,
     )
