@@ -9,9 +9,10 @@ import numpy as np
 import rasterio.plot as rioplot
 from rasterio.transform import Affine
 
-from eeo.common import is_rasterio_backed
+from eeo.common import is_rasterio_backed, resolve_band_index
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_viz
+from eeo.core.exceptions import ValidationError
 
 # Reads for display are capped at the figure's pixel resolution times this
 # oversampling factor, so moderate zooming stays sharp without ever pulling
@@ -43,10 +44,11 @@ def _normalize_bands(ds: EEORasterDataset, bands):
     Parameters
     ----------
     ds : EEORasterDataset
-        Dataset whose band count is used when ``bands`` is None.
-    bands : int or sequence of int or None
-        None selects every band; an int selects a single band; a sequence
-        selects the listed bands.
+        Dataset whose band count and names resolve the selection.
+    bands : int or str or sequence of (int or str) or None
+        None selects every band; a single int index or band name selects one
+        band; a sequence selects the listed bands and may mix indices and
+        names.
 
     Returns
     -------
@@ -55,9 +57,15 @@ def _normalize_bands(ds: EEORasterDataset, bands):
     """
     if bands is None:
         return list(range(1, ds.get_count() + 1))
-    if isinstance(bands, int):
-        return [bands]
-    return list(bands)
+    if isinstance(bands, (int, str)):
+        bands = [bands]
+    return [resolve_band_index(ds, band) for band in bands]
+
+
+def _band_label(ds: EEORasterDataset, band: int) -> str:
+    """Return a subplot label for a band, appending its name when it has one."""
+    name = ds.band_names[band - 1]
+    return f"Band {band}" if name is None else f"Band {band} ({name})"
 
 
 def _percentile_stretch(array, pmin=2, pmax=98):
@@ -160,7 +168,7 @@ def _read_band_for_display(
 @eeo_raster_viz
 def plot_band_array(
     ds: EEORasterDataset | list[EEORasterDataset],
-    bands: int | Sequence[int] | None = None,
+    bands: int | str | Sequence[int | str] | None = None,
     *,
     cmap: str = "gray",
     figsize: tuple[int, int] = (8, 8),
@@ -181,8 +189,9 @@ def plot_band_array(
     ----------
     ds : EEORasterDataset or list of EEORasterDataset
         One dataset, or several to display side by side.
-    bands : int or sequence of int or None, default None
-        1-based band(s) to plot; None plots every band.
+    bands : int or str or sequence of (int or str) or None, default None
+        Band(s) to plot, each a 1-based index or a band name; None plots
+        every band. A sequence may mix indices and names.
     cmap : str, default "gray"
         Matplotlib colormap.
     figsize : tuple of int, default (8, 8)
@@ -204,6 +213,14 @@ def plot_band_array(
     -------
     None
         Terminal operation; displays (and optionally saves) a figure.
+
+    Raises
+    ------
+    IndexError
+        If a band index is outside the range of available bands.
+    ValidationError
+        If ``bands`` names a band that is unknown or matches more than one
+        band.
 
     Notes
     -----
@@ -229,7 +246,7 @@ def plot_band_array(
             if stretch:
                 array = _percentile_stretch(array, pmin, pmax)
             ax.imshow(array, cmap=cmap, **imshow_kwargs)
-            ax.set_title(f"Band {band}")
+            ax.set_title(_band_label(d, band))
             ax.axis("off")
 
     if title:
@@ -247,7 +264,7 @@ def plot_band_array(
 @eeo_raster_viz
 def plot_raster(
     ds: EEORasterDataset | list[EEORasterDataset],
-    bands: int | Sequence[int] | None = None,
+    bands: int | str | Sequence[int | str] | None = None,
     *,
     cmap: str = "gray",
     figsize: tuple[int, int] = (10, 5),
@@ -268,8 +285,9 @@ def plot_raster(
     ----------
     ds : EEORasterDataset or list of EEORasterDataset
         One dataset, or several to display side by side.
-    bands : int or sequence of int or None, default None
-        1-based band(s) to plot; None plots every band.
+    bands : int or str or sequence of (int or str) or None, default None
+        Band(s) to plot, each a 1-based index or a band name; None plots
+        every band. A sequence may mix indices and names.
     cmap : str, default "gray"
         Matplotlib colormap.
     figsize : tuple of int, default (10, 5)
@@ -291,6 +309,14 @@ def plot_raster(
     -------
     None
         Terminal operation; displays (and optionally saves) a figure.
+
+    Raises
+    ------
+    IndexError
+        If a band index is outside the range of available bands.
+    ValidationError
+        If ``bands`` names a band that is unknown or matches more than one
+        band.
 
     Notes
     -----
@@ -316,7 +342,7 @@ def plot_raster(
             if stretch:
                 array = _percentile_stretch(array, pmin, pmax)
             rioplot.show(array, transform=transform, ax=ax, cmap=cmap, **show_kwargs)
-            ax.set_title(f"Band {band}")
+            ax.set_title(_band_label(d, band))
 
     if title:
         fig.suptitle(title)
@@ -332,7 +358,7 @@ def plot_raster(
 @eeo_raster_viz
 def plot_histogram(
     ds: EEORasterDataset | list[EEORasterDataset],
-    bands: int | Sequence[int] | None = None,
+    bands: int | str | Sequence[int | str] | None = None,
     *,
     bins: int = 256,
     figsize: tuple[int, int] = (10, 5),
@@ -350,8 +376,9 @@ def plot_histogram(
     ----------
     ds : EEORasterDataset or list of EEORasterDataset
         One dataset, or several to compare side by side.
-    bands : int or sequence of int or None, default None
-        1-based band(s) to plot; None plots every band.
+    bands : int or str or sequence of (int or str) or None, default None
+        Band(s) to plot, each a 1-based index or a band name; None plots
+        every band. A sequence may mix indices and names.
     bins : int, default 256
         Number of histogram bins.
     figsize : tuple of int, default (10, 5)
@@ -369,6 +396,14 @@ def plot_histogram(
     -------
     None
         Terminal operation; displays (and optionally saves) a figure.
+
+    Raises
+    ------
+    IndexError
+        If a band index is outside the range of available bands.
+    ValidationError
+        If ``bands`` names a band that is unknown or matches more than one
+        band.
 
     Notes
     -----
@@ -392,7 +427,7 @@ def plot_histogram(
             ax.hist(data, bins=bins, **hist_kwargs)
             if log:
                 ax.set_yscale("log")
-            ax.set_title(f"Band {band}")
+            ax.set_title(_band_label(d, band))
 
     if title:
         fig.suptitle(title)
@@ -408,7 +443,7 @@ def plot_histogram(
 @eeo_raster_viz
 def plot_raster_with_histogram(
     ds: EEORasterDataset,
-    bands: int | Sequence[int] | None = None,
+    bands: int | str | Sequence[int | str] | None = None,
     *,
     cmap: str = "gray",
     figsize: tuple[int, int] = (10, 5),
@@ -429,8 +464,9 @@ def plot_raster_with_histogram(
     ----------
     ds : EEORasterDataset
         Raster dataset to display.
-    bands : int or sequence of int or None, default None
-        1-based band(s) to plot; None plots every band.
+    bands : int or str or sequence of (int or str) or None, default None
+        Band(s) to plot, each a 1-based index or a band name; None plots
+        every band. A sequence may mix indices and names.
     cmap : str, default "gray"
         Matplotlib colormap for the raster panel.
     figsize : tuple of int, default (10, 5)
@@ -454,6 +490,14 @@ def plot_raster_with_histogram(
     -------
     None
         Terminal operation; displays (and optionally saves) a figure.
+
+    Raises
+    ------
+    IndexError
+        If a band index is outside the range of available bands.
+    ValidationError
+        If ``bands`` names a band that is unknown or matches more than one
+        band.
 
     Notes
     -----
@@ -481,8 +525,8 @@ def plot_raster_with_histogram(
         rioplot.show(array, transform=transform, ax=axes[row, 0], cmap=cmap)
         axes[row, 1].hist(array.ravel(), bins=bins)
 
-        axes[row, 0].set_title(f"Band {band}")
-        axes[row, 1].set_title(f"Histogram of {band}")
+        axes[row, 0].set_title(_band_label(ds, band))
+        axes[row, 1].set_title(f"Histogram of {_band_label(ds, band).lower()}")
 
     if title:
         fig.suptitle(title)
@@ -498,7 +542,7 @@ def plot_raster_with_histogram(
 @eeo_raster_viz
 def plot_composite(
     ds: EEORasterDataset,
-    bands: tuple[int, int, int],
+    bands: Sequence[int | str],
     *,
     stretch: bool = False,
     figsize: tuple[int, int] = (8, 8),
@@ -516,8 +560,9 @@ def plot_composite(
     ----------
     ds : EEORasterDataset
         Raster dataset to display.
-    bands : tuple of int
-        Exactly three 1-based band indices, mapped to R, G, B in order.
+    bands : sequence of (int or str)
+        Exactly three bands, each a 1-based index or a band name, mapped to
+        R, G, B in order.
     stretch : bool, default False
         If True, apply percentile contrast stretching to each channel.
     figsize : tuple of int, default (8, 8)
@@ -536,6 +581,14 @@ def plot_composite(
     None
         Terminal operation; displays (and optionally saves) a figure.
 
+    Raises
+    ------
+    IndexError
+        If a band index is outside the range of available bands.
+    ValidationError
+        If ``bands`` does not resolve to exactly three bands, or names a band
+        that is unknown or matches more than one band.
+
     Notes
     -----
     Reads the three bands decimated to the figure's display resolution
@@ -550,7 +603,10 @@ def plot_composite(
     --------
     >>> ds.plot_composite(bands=(3, 2, 1))
     """
-    composite = np.stack([_read_band_for_display(ds, b, figsize)[0] for b in bands], axis=-1)
+    bands_list = _normalize_bands(ds, bands)
+    if len(bands_list) != 3:
+        raise ValidationError(f"a composite needs exactly 3 bands (R, G, B); got {len(bands_list)}")
+    composite = np.stack([_read_band_for_display(ds, b, figsize)[0] for b in bands_list], axis=-1)
 
     if stretch:
         for i in range(3):

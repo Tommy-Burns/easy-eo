@@ -93,6 +93,12 @@ class RasterioAdapter(BaseRasterAdapter):
     def get_metadata(self):
         return self._ds.meta.copy()
 
+    def get_band_descriptions(self) -> list[str | None]:
+        # rasterio exposes GDAL band descriptions as a length-count tuple with
+        # None for unnamed bands; normalise blank strings to None too.
+        descriptions = self._ds.descriptions or (None,) * self._ds.count
+        return [(d or None) for d in descriptions]
+
     # ========================
     # Data Access
     # ========================
@@ -110,13 +116,20 @@ class RasterioAdapter(BaseRasterAdapter):
     # ========================
     # Persistence
     # ========================
-    def write(self, path: str, driver: str = "GTiff") -> None:
+    def write(
+        self, path: str, driver: str = "GTiff", band_names: list[str | None] | None = None
+    ) -> None:
         meta = self._ds.meta.copy()
         meta.update(driver=driver)
 
         with rio.open(path, "w", **meta) as dst:
             for i in range(1, self._ds.count + 1):
                 dst.write(self._ds.read(i), i)
+            # Flush the in-memory names to GDAL band descriptions; unnamed
+            # bands are left alone so the file records no description at all.
+            for i, name in enumerate(band_names or [], start=1):
+                if name:
+                    dst.set_band_description(i, name)
 
     def close(self) -> None:
         try:

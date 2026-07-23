@@ -68,6 +68,16 @@ class BaseRasterAdapter(ABC):
         """Return the raster profile (dtype, nodata, transform, crs, ...)."""
         ...
 
+    @abstractmethod
+    def get_band_descriptions(self) -> list[str | None]:
+        """Return the per-band names, one entry per band (``None`` if unnamed).
+
+        The returned list has length ``get_count()``. Backends without a native
+        band-description concept return all ``None``. Reads metadata only, never
+        pixel data.
+        """
+        ...
+
     ###########################
     # DATA ACCESS
     ##########################
@@ -86,8 +96,15 @@ class BaseRasterAdapter(ABC):
     # Persistence
     ##########################
     @abstractmethod
-    def write(self, path: str, driver: str = "GTiff") -> None:
-        """Write the raster to ``path`` using the given GDAL driver."""
+    def write(
+        self, path: str, driver: str = "GTiff", band_names: list[str | None] | None = None
+    ) -> None:
+        """Write the raster to ``path`` using the given GDAL driver.
+
+        ``band_names`` holds the dataset's in-memory band names, written to the
+        output's GDAL band descriptions so they survive a save/load round trip.
+        Entries that are ``None`` leave the corresponding description unset.
+        """
         ...
 
     @abstractmethod

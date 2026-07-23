@@ -11,7 +11,7 @@ from rasterio import CRS
 from rasterio.coords import BoundingBox
 from rasterio.transform import Affine
 
-from eeo.common import is_rasterio_backed, mask_nodata
+from eeo.common import is_rasterio_backed, mask_nodata, resolve_band_index
 from eeo.core.adapters import BaseRasterAdapter, NumpyRasterioAdapter, RasterioAdapter
 from eeo.core.exceptions import ValidationError
 
@@ -81,9 +81,25 @@ def _decimated_stats_shape(
     return max(1, round(height * scale)), max(1, round(width * scale))
 
 
-def _band_stats_line(ds: EEORasterDataset, band_idx: int, array, approximate: bool) -> str:
+def _band_label(ds: EEORasterDataset, band_idx: int) -> str:
+    """Label a band by number, appending its name when it has one."""
+    name = ds.band_names[band_idx - 1]
+    return f"band {band_idx}" if name is None else f"band {band_idx} ({name})"
+
+
+def _band_names_row(ds: EEORasterDataset) -> str:
+    """Render the band-name list for ``describe``, or "none" when unnamed."""
+    names = ds.band_names
+    if not any(names):
+        return "none"
+    return ", ".join(f"{i}: {name or '—'}" for i, name in enumerate(names, start=1))
+
+
+def _band_stats_line(
+    ds: EEORasterDataset, band_idx: int, array, approximate: bool, width: int = 11
+) -> str:
     """Build one nodata-aware per-band statistics line for ``describe``."""
-    label = f"band {band_idx}"
+    label = _band_label(ds, band_idx)
     masked = mask_nodata(ds, array)
     if np.issubdtype(masked.dtype, np.floating):
         valid = ~np.isnan(masked)
@@ -92,7 +108,7 @@ def _band_stats_line(ds: EEORasterDataset, band_idx: int, array, approximate: bo
 
     n_valid = int(valid.sum())
     if n_valid == 0:
-        return f"  {label:<11} : all nodata"
+        return f"  {label:<{width}} : all nodata"
 
     with np.errstate(all="ignore"):
         vmin, vmax = float(np.nanmin(masked)), float(np.nanmax(masked))
@@ -105,7 +121,7 @@ def _band_stats_line(ds: EEORasterDataset, band_idx: int, array, approximate: bo
         return f"{value:.6g}"
 
     line = (
-        f"  {label:<11} : min{m} {f(vmin)}   max{m} {f(vmax)}   "
+        f"  {label:<{width}} : min{m} {f(vmin)}   max{m} {f(vmax)}   "
         f"mean{m} {f(vmean)}   std{m} {f(vstd)}   valid{m} {pct:.1f}%"
     )
     if not approximate:
@@ -126,10 +142,15 @@ def _stats_lines(ds: EEORasterDataset, mode: str) -> list[str]:
     else:
         header = "exact — full read"
 
-    lines = ["", f"  {'statistics':<11} : {header}"]
+    # Named bands make the labels longer, so size the label column to the
+    # widest one and keep the ` : ` separators aligned.
+    labels = [_band_label(ds, i) for i in range(1, ds.get_count() + 1)]
+    width = max(11, *(len(label) for label in labels)) if labels else 11
+
+    lines = ["", f"  {'statistics':<{width}} : {header}"]
     for band_idx in range(1, ds.get_count() + 1):
         array = ds.read(band_idx, out_shape=out_shape) if approximate else ds.get_band(band_idx)
-        lines.append(_band_stats_line(ds, band_idx, array, approximate))
+        lines.append(_band_stats_line(ds, band_idx, array, approximate, width))
     return lines
 
 
@@ -154,6 +175,7 @@ def _describe_text(ds: EEORasterDataset, stats: bool | str) -> str:
         row("source", ds.path or "<in-memory>"),
         row("driver", meta.get("driver", "unknown")),
         row("bands", ds.get_count()),
+        row("band names", _band_names_row(ds)),
         row("size", f"{height} × {width}  (height × width)"),
         row("dtype", meta.get("dtype", "unknown")),
         row("crs", _format_crs(ds.get_crs())),
@@ -170,6 +192,33 @@ def _describe_text(ds: EEORasterDataset, stats: bool | str) -> str:
     if mode is not None:
         lines.extend(_stats_lines(ds, mode))
     return "\n".join(lines)
+
+
+def _normalize_band_name(name: str | None) -> str | None:
+    """Normalize one band name: strip whitespace, treat blank as ``None``."""
+    if name is None:
+        return None
+    if isinstance(name, str):
+        return name.strip() or None
+    raise ValidationError(f"band name must be a str or None; got {type(name).__name__}")
+
+
+def _normalize_band_names(names, count: int) -> list[str | None]:
+    """Validate a band-name sequence against ``count`` and normalize each entry."""
+    names = list(names)
+    if len(names) != count:
+        raise ValidationError(
+            f"band_names must have one entry per band; expected {count}, got {len(names)}"
+        )
+    return [_normalize_band_name(n) for n in names]
+
+
+def _resolve_initial_band_names(adapter: BaseRasterAdapter, band_names) -> list[str | None]:
+    """Seed band names from an explicit list, else from the backend descriptions."""
+    count = adapter.get_count()
+    if band_names is None:
+        return _normalize_band_names(adapter.get_band_descriptions(), count)
+    return _normalize_band_names(band_names, count)
 
 
 # Core class
@@ -196,6 +245,7 @@ class EEORasterDataset:
         *,
         timestamp: datetime | None = None,
         attrs: dict | None = None,
+        band_names: list[str | None] | None = None,
     ):
         """Wrap a backend adapter.
 
@@ -214,11 +264,17 @@ class EEORasterDataset:
             Optional free-form tags dict carried with the dataset and
             preserved through operations. Copied on assignment so datasets do
             not share a mutable dict.
+        band_names : list of (str or None) or None, default None
+            Optional per-band names, one entry per band (``None`` for an
+            unnamed band). When omitted, names are seeded from the backend's
+            band descriptions (all ``None`` for the NumPy backend). Must match
+            the band count.
         """
         self._adapter = adapter
         self.path = path
         self.timestamp = timestamp
         self.attrs: dict = {} if attrs is None else dict(attrs)
+        self._band_names: list[str | None] = _resolve_initial_band_names(adapter, band_names)
 
     def __repr__(self) -> str:
         """Return a concise one-line summary for REPLs and logs."""
@@ -229,9 +285,20 @@ class EEORasterDataset:
             crs = self.get_crs()
             epsg = crs.to_epsg() if crs is not None else None
             crs_str = f"EPSG:{epsg}" if epsg else "no CRS"
-            return f"<EEORasterDataset {count}×{height}×{width} {dtype} {crs_str}>"
+            names = self._band_names_summary()
+            return f"<EEORasterDataset {count}×{height}×{width} {dtype} {crs_str}{names}>"
         except Exception:
             return "<EEORasterDataset (unavailable)>"
+
+    def _band_names_summary(self, limit: int = 4) -> str:
+        """Render band names for ``__repr__``, elided past ``limit`` entries."""
+        names = self._band_names
+        if not any(names):
+            return ""
+        shown = [name or "—" for name in names[:limit]]
+        if len(names) > limit:
+            shown.append("…")
+        return " [" + ", ".join(shown) + "]"
 
     # ========================
     # Constructors
@@ -280,6 +347,7 @@ class EEORasterDataset:
         *,
         timestamp: datetime | None = None,
         attrs: dict | None = None,
+        band_names: list[str | None] | None = None,
     ) -> EEORasterDataset:
         """Build a NumPy-backed dataset from an array and georeferencing.
 
@@ -299,6 +367,9 @@ class EEORasterDataset:
             Optional acquisition time carried with the dataset.
         attrs : dict or None, default None
             Optional free-form tags dict carried with the dataset.
+        band_names : list of (str or None) or None, default None
+            Optional per-band names, one entry per band. Must match the band
+            count.
 
         Returns
         -------
@@ -312,7 +383,7 @@ class EEORasterDataset:
             nodata=nodata,
             driver=driver,
         )
-        return cls(adapter=adapter, timestamp=timestamp, attrs=attrs)
+        return cls(adapter=adapter, timestamp=timestamp, attrs=attrs, band_names=band_names)
 
     # ========================
     # Conversion between adapters
@@ -330,7 +401,8 @@ class EEORasterDataset:
         Notes
         -----
         Promoting a NumPy-backed dataset reads its full array into an
-        in-memory rasterio ``MemoryFile``.
+        in-memory rasterio ``MemoryFile``. Band names, ``timestamp``, and
+        ``attrs`` are carried onto the promoted dataset.
 
         Examples
         --------
@@ -353,7 +425,12 @@ class EEORasterDataset:
             crs=crs,
             nodata=nodata,
         )
-        return EEORasterDataset(adapter=adapter, timestamp=self.timestamp, attrs=self.attrs)
+        return EEORasterDataset(
+            adapter=adapter,
+            timestamp=self.timestamp,
+            attrs=self.attrs,
+            band_names=self.band_names,
+        )
 
     def to_array(self) -> np.ndarray:
         """Read the raster into a NumPy array.
@@ -442,10 +519,11 @@ class EEORasterDataset:
     def describe(self, *, stats: bool | str = False) -> None:
         """Print a human-readable description of the raster.
 
-        Always shows structural metadata (source, driver, band count, size,
-        dtype, CRS, pixel size, extent, nodata, and the ``timestamp`` /
-        ``attrs`` provenance fields) without reading any pixels. Optionally
-        appends per-band statistics.
+        Always shows structural metadata (source, driver, band count, band
+        names, size, dtype, CRS, pixel size, extent, nodata, and the
+        ``timestamp`` / ``attrs`` provenance fields) without reading any
+        pixels. Optionally appends per-band statistics, whose rows are labelled
+        ``band 4 (red)`` for a named band.
 
         Parameters
         ----------
@@ -530,13 +608,15 @@ class EEORasterDataset:
         """
         return self.ds.index
 
-    def get_band(self, idx: int) -> np.ndarray:
-        """Read a single band.
+    def get_band(self, idx: int | str) -> np.ndarray:
+        """Read a single band, addressed by index or by name.
 
         Parameters
         ----------
-        idx : int
-            1-based band index.
+        idx : int or str
+            1-based band index, or a band name declared in
+            :attr:`band_names`. A string is always a name: ``"4"`` matches a
+            band literally named ``"4"``, never band 4.
 
         Returns
         -------
@@ -547,8 +627,71 @@ class EEORasterDataset:
         ------
         IndexError
             If ``idx`` is outside the range of available bands.
+        ValidationError
+            If ``idx`` is a name that is unknown or declared on more than one
+            band.
+
+        Examples
+        --------
+        >>> nir = ds.get_band(8)
+        >>> nir = ds.get_band("nir")
         """
-        return self._adapter.read_band(idx)
+        return self._adapter.read_band(resolve_band_index(self, idx))
+
+    @property
+    def band_names(self) -> list[str | None]:
+        """Per-band names, one entry per band (``None`` for an unnamed band).
+
+        Seeded from the backend's band descriptions at load time and preserved
+        in memory. Assigning a new list replaces all names at once (it must
+        match the band count); assign ``None`` to clear every name. Use
+        :meth:`set_band_name` to rename a single band. Names are written to the
+        raster's GDAL band descriptions when the dataset is saved.
+
+        Returns
+        -------
+        list of (str or None)
+            A copy of the band names; mutate via assignment or
+            :meth:`set_band_name`, not by editing the returned list in place.
+        """
+        return list(self._band_names)
+
+    @band_names.setter
+    def band_names(self, names: list[str | None] | None) -> None:
+        """Replace all band names, or clear them when ``names`` is ``None``."""
+        if names is None:
+            self._band_names = [None] * self.get_count()
+        else:
+            self._band_names = _normalize_band_names(names, self.get_count())
+
+    def set_band_name(self, band: int, new_name: str | None) -> None:
+        """Rename a single band by its 1-based index.
+
+        Parameters
+        ----------
+        band : int
+            1-based index of the band to rename.
+        new_name : str or None
+            New name for the band; a blank or whitespace-only string, or
+            ``None``, clears the name.
+
+        Raises
+        ------
+        IndexError
+            If ``band`` is outside the range of available bands.
+        ValidationError
+            If ``new_name`` is neither a string nor ``None``.
+
+        Examples
+        --------
+        >>> ds.set_band_name(4, "red")
+        """
+        count = self.get_count()
+        if isinstance(band, bool) or not isinstance(band, int) or band < 1 or band > count:
+            raise IndexError(
+                f"band index {band!r} out of range; dataset has {count} band(s) (valid 1..{count})"
+            )
+        self._band_names[band - 1] = _normalize_band_name(new_name)
 
     # ========================
     # Saving
@@ -567,11 +710,17 @@ class EEORasterDataset:
         -------
         None
 
+        Notes
+        -----
+        Band names are written to the output's GDAL band descriptions, so they
+        are read back automatically by :func:`eeo.load_raster`. Formats that
+        cannot store band descriptions simply drop them.
+
         Examples
         --------
         >>> ds.save_raster("out.tif")
         """
-        self._adapter.write(path=path, driver=driver)
+        self._adapter.write(path=path, driver=driver, band_names=self.band_names)
 
     # ========================
     # Lifecycle

@@ -71,6 +71,42 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- **Band names on `EEORasterDataset`.** Datasets now carry an optional
+  per-band name list (one entry per band, `None` for an unnamed band), seeded
+  from the raster's GDAL band descriptions at load time. Read or replace them
+  via the settable `band_names` property, rename a single band with
+  `set_band_name(band, new_name)`, or set them at load time via
+  `load_raster(..., band_names=[...])` / `load_array(..., band_names=[...])`
+  (an explicit list overrides the file's own descriptions). Names are held in
+  memory (so a read-only file handle is never mutated) and normalized on
+  assignment (whitespace stripped, blanks become `None`). Band names resolve
+  case-insensitively, a string is always a name and an int always a 1-based
+  index (so `"4"` never means band 4), and an unknown or ambiguous name raises
+  `ValidationError` naming the available bands.
+- **Bands can be addressed by name anywhere an index is accepted.**
+  `get_band`, the pixel-stats ops and `extract_value_at_coordinate`
+  (`band_idx=`), every spectral-index band argument, and the plotting
+  functions (`bands=`, including mixed lists such as `["red", 2, "blue"]` and
+  `plot_composite(bands=["red", "green", "blue"])`) all take a band name in
+  place of a 1-based index. Plot subplot titles show the name beside the band
+  number when the band has one.
+- **Band names propagate through operations by rule, not by blanket copy.**
+  Identity-preserving ops (scalar algebra, `clip_*`, `resample`,
+  `reproject_raster`, the normalizations) carry their input's names onto the
+  result. Index ops synthesize a new band that maps to no input band, so they
+  never auto-name their output after the operation — the result is unnamed
+  unless you pass `name=` (`scene.ndvi(red="red", name="ndvi_2024")`), which
+  `normalized_difference` also accepts for single-band results. `stack`
+  concatenates its inputs' names in band order and `mosaic` keeps the
+  primary's, both overridable with `names=`. `to_rasterio()` carries names
+  onto the promoted dataset. Names can always be corrected afterwards via
+  `band_names` / `set_band_name`.
+- **Band names round-trip through a GeoTIFF.** `save_raster` writes them to
+  the output's GDAL band descriptions and `load_raster` reads them back, so
+  no sidecar file is needed. `describe()` gained a `band names` row and
+  labels each per-band statistics row `band 4 (red)`; `repr()` lists the
+  names (elided past four bands). A new "Naming Bands" user-guide page covers
+  assignment, resolution rules, the propagation table, and the round trip.
 - **Spectral index library** (`eeo.analysis.indices`): six chainable,
   nodata-safe, float32-output indices bound onto `EEORasterDataset` —
   `ndvi`, `ndwi` (McFeeters water), `ndmi`, `ndbi`, `evi`, and `savi`. Each

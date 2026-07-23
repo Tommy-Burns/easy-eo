@@ -3,11 +3,17 @@
 Each index (NDVI, NDWI, NDMI, NDBI, EVI, SAVI) is a thin, chainable wrapper
 that combines a handful of bands into a nodata-safe, float32 index raster.
 
-Every band argument accepts either an :class:`~eeo.core.core.EEORasterDataset`
-(a separate single-band raster) or an ``int`` (a 1-based band index into the
-receiver), so the same method serves both a per-band collection of rasters and
-one stacked multi-band scene. The primary band defaults to index ``1``, which
-keeps the separate-band case a clean one-liner (``nir_ds.ndvi(red_ds)``).
+Every band argument accepts an :class:`~eeo.core.core.EEORasterDataset` (a
+separate single-band raster), an ``int`` (a 1-based band index into the
+receiver), or a ``str`` (the name of one of the receiver's bands), so the same
+method serves both a per-band collection of rasters and one stacked multi-band
+scene, addressed by number or by name. The primary band defaults to index
+``1``, which keeps the separate-band case a clean one-liner
+(``nir_ds.ndvi(red_ds)``).
+
+An index band is a new measurement that maps to no input band, so it is never
+named after the operation: the output band is unnamed unless the caller passes
+``name=``.
 
 The general two-operand primitive, :func:`normalized_difference`, is also kept
 here: any normalized-difference index can be expressed with it directly.
@@ -16,12 +22,17 @@ here: any normalized-difference index can be expressed with it directly.
 import numpy as np
 import rasterio as rio
 
-from eeo.common import align_raster_to_target, apply_nodata_contract, get_nodata
+from eeo.common import (
+    align_raster_to_target,
+    apply_nodata_contract,
+    get_nodata,
+    resolve_band_index,
+)
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import AlignmentError, ValidationError
 
-BandSpec = EEORasterDataset | int
+BandSpec = EEORasterDataset | int | str
 
 _ALIGN_MISMATCH = (
     "rasters must share the same grid for this operation; "
@@ -44,10 +55,12 @@ def _safe_ratio(numerator, denominator):
 def _resolve_band(ds, spec, *, auto_align, method):
     """Resolve a band spec to ``(band_float32, band_raw, nodata)``.
 
-    ``spec`` is either a 1-based ``int`` band index into ``ds`` or a separate
-    ``EEORasterDataset`` (its first band is used, aligned onto ``ds``'s grid
-    when ``auto_align`` is True). ``band_raw`` keeps its source dtype so the
-    nodata mask compares against the declared sentinel exactly.
+    ``spec`` is a 1-based ``int`` band index into ``ds``, the ``str`` name of
+    one of ``ds``'s bands, or a separate ``EEORasterDataset`` (its first band
+    is used, aligned onto ``ds``'s grid when ``auto_align`` is True). Index and
+    name specs both go through the shared resolver, so a string is always a
+    name and never an index. ``band_raw`` keeps its source dtype so the nodata
+    mask compares against the declared sentinel exactly.
     """
     if isinstance(spec, EEORasterDataset):
         other = spec
@@ -60,24 +73,25 @@ def _resolve_band(ds, spec, *, auto_align, method):
                 )
         raw = other.get_band(1)
         nodata = get_nodata(other)
-    elif isinstance(spec, int) and not isinstance(spec, bool):
-        raw = ds.get_band(spec)
+    elif isinstance(spec, (int, str)) and not isinstance(spec, bool):
+        raw = ds.get_band(resolve_band_index(ds, spec))
         nodata = get_nodata(ds)
     else:
         raise ValidationError(
-            "band must be an EEORasterDataset or a 1-based int band index; "
-            f"got {type(spec).__name__}"
+            "band must be an EEORasterDataset, a 1-based int band index, or a "
+            f"band name; got {type(spec).__name__}"
         )
     return raw.astype(rio.float32), raw, nodata
 
 
-def _compute_index(ds, band_specs, formula, *, auto_align, method, return_as_ndarray):
+def _compute_index(ds, band_specs, formula, *, auto_align, method, return_as_ndarray, name=None):
     """Resolve band specs, apply ``formula``, and package the float32 result.
 
     ``band_specs`` is the ordered list of band specs; the first is the primary
     band. ``formula`` maps the list of float32 band arrays to a 2D result. The
     result is masked per the nodata contract (contagious across every band) and
-    returned as a raw array or a single-band float32 ``EEORasterDataset``.
+    returned as a raw array or a single-band float32 ``EEORasterDataset`` whose
+    band carries ``name`` (unnamed when ``name`` is None).
     """
     ds = ds.to_rasterio()
     resolved = [
@@ -109,7 +123,10 @@ def _compute_index(ds, band_specs, formula, *, auto_align, method, return_as_nda
     memfile = rio.io.MemoryFile()
     out_ds = memfile.open(**meta)
     out_ds.write(data)
-    return EEORasterDataset.from_rasterio(out_ds)
+    result = EEORasterDataset.from_rasterio(out_ds)
+    if name is not None:
+        result.set_band_name(1, name)
+    return result
 
 
 def _normalized_difference(bands):
@@ -118,7 +135,7 @@ def _normalized_difference(bands):
     return _safe_ratio(a - b, a + b)
 
 
-@eeo_raster_op
+@eeo_raster_op(propagate_band_names=False)
 def normalized_difference(
     ds: EEORasterDataset,
     other: EEORasterDataset,
@@ -126,6 +143,7 @@ def normalized_difference(
     auto_align: bool = True,
     method: str = "bilinear",
     return_as_ndarray: bool = False,
+    name: str | None = None,
 ) -> np.ndarray | EEORasterDataset:
     """Compute the normalized difference ``(ds - other) / (ds + other)``.
 
@@ -151,6 +169,10 @@ def normalized_difference(
     return_as_ndarray : bool, default False
         If True, return the raw NumPy array instead of an
         ``EEORasterDataset``.
+    name : str or None, default None
+        Optional name for the output band. The result is never named
+        automatically; ``name`` applies only to a single-band result — for a
+        multi-band one, assign ``band_names`` on the result instead.
 
     Returns
     -------
@@ -166,6 +188,8 @@ def normalized_difference(
     ------
     AlignmentError
         If the two rasters are on different grids and ``auto_align`` is False.
+    ValidationError
+        If ``name`` is given for a result with more than one band.
 
     Notes
     -----
@@ -219,10 +243,18 @@ def normalized_difference(
     out_ds = memfile.open(**meta)
     out_ds.write(nd)
 
-    return EEORasterDataset.from_rasterio(out_ds)
+    result = EEORasterDataset.from_rasterio(out_ds)
+    if name is not None:
+        if result.get_count() != 1:
+            raise ValidationError(
+                f"name applies to a single-band result, but this normalized_difference "
+                f"produced {result.get_count()} bands; assign result.band_names instead"
+            )
+        result.set_band_name(1, name)
+    return result
 
 
-@eeo_raster_op
+@eeo_raster_op(propagate_band_names=False)
 def ndvi(
     ds: EEORasterDataset,
     red: BandSpec,
@@ -231,15 +263,17 @@ def ndvi(
     auto_align: bool = True,
     method: str = "bilinear",
     return_as_ndarray: bool = False,
+    name: str | None = None,
 ) -> np.ndarray | EEORasterDataset:
     """Compute the Normalized Difference Vegetation Index.
 
     ``NDVI = (NIR - Red) / (NIR + Red)``. Higher values indicate denser, more
     photosynthetically active vegetation; values fall in ``[-1, 1]``.
 
-    Each band is either a separate ``EEORasterDataset`` or a 1-based ``int``
-    band index into ``ds``. The NIR band defaults to band ``1`` of ``ds``, so
-    calling on a single-band NIR raster and passing the Red raster is enough.
+    Each band is either a separate ``EEORasterDataset``, a 1-based ``int`` band
+    index into ``ds``, or the name of one of ``ds``'s bands. The NIR band defaults
+    to band ``1`` of ``ds``, so calling on a single-band NIR raster and passing the
+    Red raster is enough.
 
     Parameters
     ----------
@@ -247,12 +281,12 @@ def ndvi(
         Receiver raster. When ``nir`` is an int index, this is the multi-band
         scene the bands are read from; when ``nir`` defaults to band 1, this is
         the NIR band itself.
-    red : EEORasterDataset or int
-        Red band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B4; Landsat 8/9 (OLI): B4.
-    nir : EEORasterDataset or int, default 1
-        NIR band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B8; Landsat 8/9 (OLI): B5.
+    red : EEORasterDataset or int or str
+        Red band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B4; Landsat 8/9 (OLI): B4.
+    nir : EEORasterDataset or int or str, default 1
+        NIR band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B8; Landsat 8/9 (OLI): B5.
     auto_align : bool, default True
         If True, resample a dataset band onto ``ds``'s grid when their shape or
         transform differ. If False, a mismatch raises ``AlignmentError``.
@@ -262,6 +296,11 @@ def ndvi(
     return_as_ndarray : bool, default False
         If True, return the raw 2D ``(height, width)`` NumPy array instead of
         an ``EEORasterDataset``.
+    name : str or None, default None
+        Optional name for the output band. An index band maps to no input
+        band, so it is never named automatically: it stays unnamed unless a
+        name is given here or assigned later via ``band_names`` /
+        ``set_band_name``.
 
     Returns
     -------
@@ -279,7 +318,8 @@ def ndvi(
     IndexError
         If an int band index is outside the range of available bands.
     ValidationError
-        If a band argument is neither an ``EEORasterDataset`` nor an int.
+        If a band argument is not an ``EEORasterDataset``, an int index, or a
+        band name, or if a band name is unknown or matches more than one band.
 
     Notes
     -----
@@ -298,10 +338,11 @@ def ndvi(
         auto_align=auto_align,
         method=method,
         return_as_ndarray=return_as_ndarray,
+        name=name,
     )
 
 
-@eeo_raster_op
+@eeo_raster_op(propagate_band_names=False)
 def ndwi(
     ds: EEORasterDataset,
     nir: BandSpec,
@@ -310,6 +351,7 @@ def ndwi(
     auto_align: bool = True,
     method: str = "bilinear",
     return_as_ndarray: bool = False,
+    name: str | None = None,
 ) -> np.ndarray | EEORasterDataset:
     """Compute the Normalized Difference Water Index (McFeeters, 1996).
 
@@ -317,21 +359,22 @@ def ndwi(
     takes positive values while vegetation and soil go negative; values fall
     in ``[-1, 1]``.
 
-    Each band is either a separate ``EEORasterDataset`` or a 1-based ``int``
-    band index into ``ds``. The Green band defaults to band ``1`` of ``ds``, so
-    calling on a single-band Green raster and passing the NIR raster is enough.
+    Each band is either a separate ``EEORasterDataset``, a 1-based ``int`` band
+    index into ``ds``, or the name of one of ``ds``'s bands. The Green band defaults
+    to band ``1`` of ``ds``, so calling on a single-band Green raster and passing
+    the NIR raster is enough.
 
     Parameters
     ----------
     ds : EEORasterDataset
         Receiver raster (the multi-band scene, or the Green band when ``green``
         defaults to band 1).
-    nir : EEORasterDataset or int
-        NIR band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B8; Landsat 8/9 (OLI): B5.
-    green : EEORasterDataset or int, default 1
-        Green band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B3; Landsat 8/9 (OLI): B3.
+    nir : EEORasterDataset or int or str
+        NIR band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B8; Landsat 8/9 (OLI): B5.
+    green : EEORasterDataset or int or str, default 1
+        Green band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B3; Landsat 8/9 (OLI): B3.
     auto_align : bool, default True
         If True, resample a dataset band onto ``ds``'s grid when their shape or
         transform differ. If False, a mismatch raises ``AlignmentError``.
@@ -341,6 +384,11 @@ def ndwi(
     return_as_ndarray : bool, default False
         If True, return the raw 2D ``(height, width)`` NumPy array instead of
         an ``EEORasterDataset``.
+    name : str or None, default None
+        Optional name for the output band. An index band maps to no input
+        band, so it is never named automatically: it stays unnamed unless a
+        name is given here or assigned later via ``band_names`` /
+        ``set_band_name``.
 
     Returns
     -------
@@ -358,7 +406,8 @@ def ndwi(
     IndexError
         If an int band index is outside the range of available bands.
     ValidationError
-        If a band argument is neither an ``EEORasterDataset`` nor an int.
+        If a band argument is not an ``EEORasterDataset``, an int index, or a
+        band name, or if a band name is unknown or matches more than one band.
 
     Notes
     -----
@@ -378,10 +427,11 @@ def ndwi(
         auto_align=auto_align,
         method=method,
         return_as_ndarray=return_as_ndarray,
+        name=name,
     )
 
 
-@eeo_raster_op
+@eeo_raster_op(propagate_band_names=False)
 def ndmi(
     ds: EEORasterDataset,
     swir: BandSpec,
@@ -390,27 +440,29 @@ def ndmi(
     auto_align: bool = True,
     method: str = "bilinear",
     return_as_ndarray: bool = False,
+    name: str | None = None,
 ) -> np.ndarray | EEORasterDataset:
     """Compute the Normalized Difference Moisture Index.
 
     ``NDMI = (NIR - SWIR1) / (NIR + SWIR1)``. Tracks vegetation water content;
     higher values indicate wetter canopies. Values fall in ``[-1, 1]``.
 
-    Each band is either a separate ``EEORasterDataset`` or a 1-based ``int``
-    band index into ``ds``. The NIR band defaults to band ``1`` of ``ds``, so
-    calling on a single-band NIR raster and passing the SWIR1 raster is enough.
+    Each band is either a separate ``EEORasterDataset``, a 1-based ``int`` band
+    index into ``ds``, or the name of one of ``ds``'s bands. The NIR band defaults
+    to band ``1`` of ``ds``, so calling on a single-band NIR raster and passing the
+    SWIR1 raster is enough.
 
     Parameters
     ----------
     ds : EEORasterDataset
         Receiver raster (the multi-band scene, or the NIR band when ``nir``
         defaults to band 1).
-    swir : EEORasterDataset or int
-        SWIR1 band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B11; Landsat 8/9 (OLI): B6.
-    nir : EEORasterDataset or int, default 1
-        NIR band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B8 (or B8A); Landsat 8/9 (OLI): B5.
+    swir : EEORasterDataset or int or str
+        SWIR1 band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B11; Landsat 8/9 (OLI): B6.
+    nir : EEORasterDataset or int or str, default 1
+        NIR band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B8 (or B8A); Landsat 8/9 (OLI): B5.
     auto_align : bool, default True
         If True, resample a dataset band onto ``ds``'s grid when their shape or
         transform differ. If False, a mismatch raises ``AlignmentError``.
@@ -420,6 +472,11 @@ def ndmi(
     return_as_ndarray : bool, default False
         If True, return the raw 2D ``(height, width)`` NumPy array instead of
         an ``EEORasterDataset``.
+    name : str or None, default None
+        Optional name for the output band. An index band maps to no input
+        band, so it is never named automatically: it stays unnamed unless a
+        name is given here or assigned later via ``band_names`` /
+        ``set_band_name``.
 
     Returns
     -------
@@ -437,7 +494,8 @@ def ndmi(
     IndexError
         If an int band index is outside the range of available bands.
     ValidationError
-        If a band argument is neither an ``EEORasterDataset`` nor an int.
+        If a band argument is not an ``EEORasterDataset``, an int index, or a
+        band name, or if a band name is unknown or matches more than one band.
 
     Notes
     -----
@@ -457,10 +515,11 @@ def ndmi(
         auto_align=auto_align,
         method=method,
         return_as_ndarray=return_as_ndarray,
+        name=name,
     )
 
 
-@eeo_raster_op
+@eeo_raster_op(propagate_band_names=False)
 def ndbi(
     ds: EEORasterDataset,
     nir: BandSpec,
@@ -469,6 +528,7 @@ def ndbi(
     auto_align: bool = True,
     method: str = "bilinear",
     return_as_ndarray: bool = False,
+    name: str | None = None,
 ) -> np.ndarray | EEORasterDataset:
     """Compute the Normalized Difference Built-up Index.
 
@@ -476,21 +536,22 @@ def ndbi(
     impervious surfaces, which take higher values than vegetation. Values fall
     in ``[-1, 1]``.
 
-    Each band is either a separate ``EEORasterDataset`` or a 1-based ``int``
-    band index into ``ds``. The SWIR1 band defaults to band ``1`` of ``ds``, so
-    calling on a single-band SWIR1 raster and passing the NIR raster is enough.
+    Each band is either a separate ``EEORasterDataset``, a 1-based ``int`` band
+    index into ``ds``, or the name of one of ``ds``'s bands. The SWIR1 band defaults
+    to band ``1`` of ``ds``, so calling on a single-band SWIR1 raster and passing
+    the NIR raster is enough.
 
     Parameters
     ----------
     ds : EEORasterDataset
         Receiver raster (the multi-band scene, or the SWIR1 band when ``swir``
         defaults to band 1).
-    nir : EEORasterDataset or int
-        NIR band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B8; Landsat 8/9 (OLI): B5.
-    swir : EEORasterDataset or int, default 1
-        SWIR1 band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B11; Landsat 8/9 (OLI): B6.
+    nir : EEORasterDataset or int or str
+        NIR band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B8; Landsat 8/9 (OLI): B5.
+    swir : EEORasterDataset or int or str, default 1
+        SWIR1 band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B11; Landsat 8/9 (OLI): B6.
     auto_align : bool, default True
         If True, resample a dataset band onto ``ds``'s grid when their shape or
         transform differ. If False, a mismatch raises ``AlignmentError``.
@@ -500,6 +561,11 @@ def ndbi(
     return_as_ndarray : bool, default False
         If True, return the raw 2D ``(height, width)`` NumPy array instead of
         an ``EEORasterDataset``.
+    name : str or None, default None
+        Optional name for the output band. An index band maps to no input
+        band, so it is never named automatically: it stays unnamed unless a
+        name is given here or assigned later via ``band_names`` /
+        ``set_band_name``.
 
     Returns
     -------
@@ -517,7 +583,8 @@ def ndbi(
     IndexError
         If an int band index is outside the range of available bands.
     ValidationError
-        If a band argument is neither an ``EEORasterDataset`` nor an int.
+        If a band argument is not an ``EEORasterDataset``, an int index, or a
+        band name, or if a band name is unknown or matches more than one band.
 
     Notes
     -----
@@ -537,10 +604,11 @@ def ndbi(
         auto_align=auto_align,
         method=method,
         return_as_ndarray=return_as_ndarray,
+        name=name,
     )
 
 
-@eeo_raster_op
+@eeo_raster_op(propagate_band_names=False)
 def evi(
     ds: EEORasterDataset,
     red: BandSpec,
@@ -550,6 +618,7 @@ def evi(
     auto_align: bool = True,
     method: str = "bilinear",
     return_as_ndarray: bool = False,
+    name: str | None = None,
 ) -> np.ndarray | EEORasterDataset:
     """Compute the Enhanced Vegetation Index.
 
@@ -562,23 +631,24 @@ def evi(
     are integer DN or reflectance scaled by 10000, divide by the scale factor
     first (e.g. ``scene.divide(10000).evi(...)``).
 
-    Each band is either a separate ``EEORasterDataset`` or a 1-based ``int``
-    band index into ``ds``. The NIR band defaults to band ``1`` of ``ds``.
+    Each band is either a separate ``EEORasterDataset``, a 1-based ``int`` band
+    index into ``ds``, or the name of one of ``ds``'s bands. The NIR band defaults
+    to band ``1`` of ``ds``.
 
     Parameters
     ----------
     ds : EEORasterDataset
         Receiver raster (the multi-band scene, or the NIR band when ``nir``
         defaults to band 1).
-    red : EEORasterDataset or int
-        Red band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B4; Landsat 8/9 (OLI): B4.
-    blue : EEORasterDataset or int
-        Blue band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B2; Landsat 8/9 (OLI): B2.
-    nir : EEORasterDataset or int, default 1
-        NIR band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B8; Landsat 8/9 (OLI): B5.
+    red : EEORasterDataset or int or str
+        Red band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B4; Landsat 8/9 (OLI): B4.
+    blue : EEORasterDataset or int or str
+        Blue band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B2; Landsat 8/9 (OLI): B2.
+    nir : EEORasterDataset or int or str, default 1
+        NIR band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B8; Landsat 8/9 (OLI): B5.
     auto_align : bool, default True
         If True, resample a dataset band onto ``ds``'s grid when their shape or
         transform differ. If False, a mismatch raises ``AlignmentError``.
@@ -588,6 +658,11 @@ def evi(
     return_as_ndarray : bool, default False
         If True, return the raw 2D ``(height, width)`` NumPy array instead of
         an ``EEORasterDataset``.
+    name : str or None, default None
+        Optional name for the output band. An index band maps to no input
+        band, so it is never named automatically: it stays unnamed unless a
+        name is given here or assigned later via ``band_names`` /
+        ``set_band_name``.
 
     Returns
     -------
@@ -606,7 +681,8 @@ def evi(
     IndexError
         If an int band index is outside the range of available bands.
     ValidationError
-        If a band argument is neither an ``EEORasterDataset`` nor an int.
+        If a band argument is not an ``EEORasterDataset``, an int index, or a
+        band name, or if a band name is unknown or matches more than one band.
 
     Notes
     -----
@@ -625,6 +701,7 @@ def evi(
         auto_align=auto_align,
         method=method,
         return_as_ndarray=return_as_ndarray,
+        name=name,
     )
 
 
@@ -634,7 +711,7 @@ def _evi_formula(bands):
     return _safe_ratio(2.5 * (nir - red), nir + 6.0 * red - 7.5 * blue + 1.0)
 
 
-@eeo_raster_op
+@eeo_raster_op(propagate_band_names=False)
 def savi(
     ds: EEORasterDataset,
     red: BandSpec,
@@ -644,6 +721,7 @@ def savi(
     auto_align: bool = True,
     method: str = "bilinear",
     return_as_ndarray: bool = False,
+    name: str | None = None,
 ) -> np.ndarray | EEORasterDataset:
     """Compute the Soil-Adjusted Vegetation Index.
 
@@ -651,20 +729,21 @@ def savi(
     brightness correction (``soil_factor``). SAVI dampens soil-background
     influence in sparsely vegetated areas; with ``L = 0`` it reduces to NDVI.
 
-    Each band is either a separate ``EEORasterDataset`` or a 1-based ``int``
-    band index into ``ds``. The NIR band defaults to band ``1`` of ``ds``.
+    Each band is either a separate ``EEORasterDataset``, a 1-based ``int`` band
+    index into ``ds``, or the name of one of ``ds``'s bands. The NIR band defaults
+    to band ``1`` of ``ds``.
 
     Parameters
     ----------
     ds : EEORasterDataset
         Receiver raster (the multi-band scene, or the NIR band when ``nir``
         defaults to band 1).
-    red : EEORasterDataset or int
-        Red band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B4; Landsat 8/9 (OLI): B4.
-    nir : EEORasterDataset or int, default 1
-        NIR band, as a separate raster or a 1-based band index into ``ds``.
-        Sentinel-2: B8; Landsat 8/9 (OLI): B5.
+    red : EEORasterDataset or int or str
+        Red band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B4; Landsat 8/9 (OLI): B4.
+    nir : EEORasterDataset or int or str, default 1
+        NIR band, as a separate raster, a 1-based band index into ``ds``, or
+        one of ``ds``'s band names. Sentinel-2: B8; Landsat 8/9 (OLI): B5.
     soil_factor : float, default 0.5
         Soil brightness correction ``L`` in ``[0, 1]``: 0 for dense
         vegetation (equivalent to NDVI), 1 for very sparse cover; 0.5 is the
@@ -678,6 +757,11 @@ def savi(
     return_as_ndarray : bool, default False
         If True, return the raw 2D ``(height, width)`` NumPy array instead of
         an ``EEORasterDataset``.
+    name : str or None, default None
+        Optional name for the output band. An index band maps to no input
+        band, so it is never named automatically: it stays unnamed unless a
+        name is given here or assigned later via ``band_names`` /
+        ``set_band_name``.
 
     Returns
     -------
@@ -695,7 +779,8 @@ def savi(
     IndexError
         If an int band index is outside the range of available bands.
     ValidationError
-        If a band argument is neither an ``EEORasterDataset`` nor an int.
+        If a band argument is not an ``EEORasterDataset``, an int index, or a
+        band name, or if a band name is unknown or matches more than one band.
 
     Notes
     -----
@@ -714,6 +799,7 @@ def savi(
         auto_align=auto_align,
         method=method,
         return_as_ndarray=return_as_ndarray,
+        name=name,
     )
 
 

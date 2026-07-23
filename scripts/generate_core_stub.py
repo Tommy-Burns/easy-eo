@@ -108,8 +108,14 @@ def _stubify(func_def: ast.FunctionDef, *, drop_first: bool) -> ast.FunctionDef:
         node.args.args = [ast.arg(arg="self", annotation=None), *node.args.args]
         node.decorator_list = []
     else:
+        # Keep plain decorators (property/classmethod/staticmethod) and the
+        # ``@<prop>.setter`` / ``.getter`` / ``.deleter`` forms so a settable
+        # property renders with both its getter and setter in the stub.
         node.decorator_list = [
-            d for d in node.decorator_list if isinstance(d, ast.Name) and d.id in _KEEP_DECORATORS
+            d
+            for d in node.decorator_list
+            if (isinstance(d, ast.Name) and d.id in _KEEP_DECORATORS)
+            or (isinstance(d, ast.Attribute) and d.attr in {"setter", "getter", "deleter"})
         ]
 
     return node
