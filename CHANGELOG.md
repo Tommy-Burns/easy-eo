@@ -71,6 +71,20 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- **Sample-data helper (`eeo.datasets`).** `eeo.datasets.load(name)` fetches a
+  small curated Sentinel-2 / Copernicus-DEM sample and returns it ready to use
+  (band names and acquisition timestamp already set for rasters; the cached
+  path for vectors); `eeo.datasets.fetch(name)` returns the cached file path(s)
+  without opening them. Files download on first use to `~/.cache/easy-eo`
+  (override with `EEO_DATA_DIR`, or `XDG_CACHE_HOME`) and are verified against a
+  checksum shipped inside the package, so fetches are instant after the first
+  call and never return corrupt data. `available()` lists the datasets and
+  `info(name)` prints the description and required Copernicus attribution.
+  Downloading uses only the standard library — no new dependency. Registered
+  datasets: `sentinel2_small` (a single pre-stacked 4-band GeoTIFF),
+  `sentinel2_small_cog` (its COG variant), `sentinel2_small_bands` (the same
+  four bands as separate single-band files), `dem_small`, `dem_small_cog`, and
+  `sentinel2_small_boundary`.
 - **Band names on `EEORasterDataset`.** Datasets now carry an optional
   per-band name list (one entry per band, `None` for an unnamed band), seeded
   from the raster's GDAL band descriptions at load time. Read or replace them
@@ -174,6 +188,11 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- **`plot_composite(stretch=True)` no longer renders integer rasters black.**
+  The percentile-stretched channels (floats in ``[0, 1]``) were written back
+  into the composite's integer band dtype, truncating every value below 1 to 0
+  — so a true-colour composite of any integer raster (e.g. Sentinel-2
+  reflectance) came out black. The composite now stays floating when stretched.
 - `normalized_difference` no longer leaves `inf` where the denominator is zero
   but the numerator is not (``ds + other == 0`` with ``ds != other``); the
   zero-denominator guard now sets both the ``0/0`` and ``x/0`` cases to 0.

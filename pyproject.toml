@@ -164,6 +164,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+markers = [
+    "network: test performs a real network download (opt in with --run-network)",
+]
 # Coverage is always measured; the suite fails below the documented ≥80%
 # target (see CODE_STYLE.md "Testing Expectations").
 addopts = [
