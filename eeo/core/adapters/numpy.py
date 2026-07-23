@@ -92,14 +92,16 @@ class NumpyRasterioAdapter(BaseRasterAdapter):
     # ========================
     # Persistence
     # ========================
-    def write(self, path: str, driver: str = "GTiff") -> None:
+    def write(
+        self, path: str, driver: str = "GTiff", band_names: list[str | None] | None = None
+    ) -> None:
         adapter = RasterioAdapter.from_array(
             array=self._array,
             transform=self._transform,
             crs=self._crs,
             nodata=self._nodata,
         )
-        adapter.write(path, driver=driver)
+        adapter.write(path, driver=driver, band_names=band_names)
         adapter.close()
 
     def close(self) -> None:

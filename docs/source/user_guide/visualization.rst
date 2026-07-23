@@ -22,6 +22,10 @@ Visualization in Easy-EO supports:
 Most plotting functions support optional **percentile contrast stretching**
 for improved visual interpretation.
 
+Every ``bands`` argument accepts a 1-based band index, a band name, or a list
+mixing the two (``bands=["red", 2, "blue"]``), and each subplot is titled with
+the band's name when it has one. See :doc:`band_names`.
+
 Percentile Contrast Stretching
 ------------------------------
 

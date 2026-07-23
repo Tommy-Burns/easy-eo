@@ -10,18 +10,20 @@ the same algebra primitives you can use directly.
 .. seealso::
 
    :doc:`nodata_and_dtype` for how every index treats nodata pixels and why
-   the output is always float32.
+   the output is always float32, and :doc:`band_names` for addressing bands by
+   name and for why an index result is never auto-named after its operation.
 
 -----
 
-Two ways to supply bands
-------------------------
+Three ways to supply bands
+--------------------------
 
-Every band argument accepts **either** a separate single-band
-``EEORasterDataset`` **or** a 1-based ``int`` band index into the receiver, so
-the same method works whether your bands are individual files or one stacked
-multi-band scene. The *primary* band defaults to index ``1``, which keeps the
-separate-band case a clean one-liner.
+Every band argument accepts a separate single-band ``EEORasterDataset``, a
+1-based ``int`` band index into the receiver, or the ``str`` name of one of the
+receiver's bands, so the same method works whether your bands are individual
+files or one stacked multi-band scene, addressed by number or by name. The
+*primary* band defaults to index ``1``, which keeps the separate-band case a
+clean one-liner.
 
 .. code-block:: python
 
@@ -35,6 +37,10 @@ separate-band case a clean one-liner.
    # (b) one stacked scene -- select bands by 1-based index
    scene = load_raster("sentinel2_stack.tif")   # e.g. [B02, B03, B04, B08]
    ndvi = scene.ndvi(red=3, nir=4)
+
+   # (c) the same scene, addressed by name
+   scene = load_raster("sentinel2_stack.tif", band_names=["blue", "green", "red", "nir"])
+   ndvi = scene.ndvi(red="red", nir="nir")
 
 When a band is a separate raster on a different grid, it is resampled onto the
 receiver's grid automatically (``auto_align=True``, the default); pass

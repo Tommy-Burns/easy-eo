@@ -81,9 +81,25 @@ def _decimated_stats_shape(
     return max(1, round(height * scale)), max(1, round(width * scale))
 
 
-def _band_stats_line(ds: EEORasterDataset, band_idx: int, array, approximate: bool) -> str:
+def _band_label(ds: EEORasterDataset, band_idx: int) -> str:
+    """Label a band by number, appending its name when it has one."""
+    name = ds.band_names[band_idx - 1]
+    return f"band {band_idx}" if name is None else f"band {band_idx} ({name})"
+
+
+def _band_names_row(ds: EEORasterDataset) -> str:
+    """Render the band-name list for ``describe``, or "none" when unnamed."""
+    names = ds.band_names
+    if not any(names):
+        return "none"
+    return ", ".join(f"{i}: {name or '—'}" for i, name in enumerate(names, start=1))
+
+
+def _band_stats_line(
+    ds: EEORasterDataset, band_idx: int, array, approximate: bool, width: int = 11
+) -> str:
     """Build one nodata-aware per-band statistics line for ``describe``."""
-    label = f"band {band_idx}"
+    label = _band_label(ds, band_idx)
     masked = mask_nodata(ds, array)
     if np.issubdtype(masked.dtype, np.floating):
         valid = ~np.isnan(masked)
@@ -92,7 +108,7 @@ def _band_stats_line(ds: EEORasterDataset, band_idx: int, array, approximate: bo
 
     n_valid = int(valid.sum())
     if n_valid == 0:
-        return f"  {label:<11} : all nodata"
+        return f"  {label:<{width}} : all nodata"
 
     with np.errstate(all="ignore"):
         vmin, vmax = float(np.nanmin(masked)), float(np.nanmax(masked))
@@ -105,7 +121,7 @@ def _band_stats_line(ds: EEORasterDataset, band_idx: int, array, approximate: bo
         return f"{value:.6g}"
 
     line = (
-        f"  {label:<11} : min{m} {f(vmin)}   max{m} {f(vmax)}   "
+        f"  {label:<{width}} : min{m} {f(vmin)}   max{m} {f(vmax)}   "
         f"mean{m} {f(vmean)}   std{m} {f(vstd)}   valid{m} {pct:.1f}%"
     )
     if not approximate:
@@ -126,10 +142,15 @@ def _stats_lines(ds: EEORasterDataset, mode: str) -> list[str]:
     else:
         header = "exact — full read"
 
-    lines = ["", f"  {'statistics':<11} : {header}"]
+    # Named bands make the labels longer, so size the label column to the
+    # widest one and keep the ` : ` separators aligned.
+    labels = [_band_label(ds, i) for i in range(1, ds.get_count() + 1)]
+    width = max(11, *(len(label) for label in labels)) if labels else 11
+
+    lines = ["", f"  {'statistics':<{width}} : {header}"]
     for band_idx in range(1, ds.get_count() + 1):
         array = ds.read(band_idx, out_shape=out_shape) if approximate else ds.get_band(band_idx)
-        lines.append(_band_stats_line(ds, band_idx, array, approximate))
+        lines.append(_band_stats_line(ds, band_idx, array, approximate, width))
     return lines
 
 
@@ -154,6 +175,7 @@ def _describe_text(ds: EEORasterDataset, stats: bool | str) -> str:
         row("source", ds.path or "<in-memory>"),
         row("driver", meta.get("driver", "unknown")),
         row("bands", ds.get_count()),
+        row("band names", _band_names_row(ds)),
         row("size", f"{height} × {width}  (height × width)"),
         row("dtype", meta.get("dtype", "unknown")),
         row("crs", _format_crs(ds.get_crs())),
@@ -263,9 +285,20 @@ class EEORasterDataset:
             crs = self.get_crs()
             epsg = crs.to_epsg() if crs is not None else None
             crs_str = f"EPSG:{epsg}" if epsg else "no CRS"
-            return f"<EEORasterDataset {count}×{height}×{width} {dtype} {crs_str}>"
+            names = self._band_names_summary()
+            return f"<EEORasterDataset {count}×{height}×{width} {dtype} {crs_str}{names}>"
         except Exception:
             return "<EEORasterDataset (unavailable)>"
+
+    def _band_names_summary(self, limit: int = 4) -> str:
+        """Render band names for ``__repr__``, elided past ``limit`` entries."""
+        names = self._band_names
+        if not any(names):
+            return ""
+        shown = [name or "—" for name in names[:limit]]
+        if len(names) > limit:
+            shown.append("…")
+        return " [" + ", ".join(shown) + "]"
 
     # ========================
     # Constructors
@@ -486,10 +519,11 @@ class EEORasterDataset:
     def describe(self, *, stats: bool | str = False) -> None:
         """Print a human-readable description of the raster.
 
-        Always shows structural metadata (source, driver, band count, size,
-        dtype, CRS, pixel size, extent, nodata, and the ``timestamp`` /
-        ``attrs`` provenance fields) without reading any pixels. Optionally
-        appends per-band statistics.
+        Always shows structural metadata (source, driver, band count, band
+        names, size, dtype, CRS, pixel size, extent, nodata, and the
+        ``timestamp`` / ``attrs`` provenance fields) without reading any
+        pixels. Optionally appends per-band statistics, whose rows are labelled
+        ``band 4 (red)`` for a named band.
 
         Parameters
         ----------
@@ -676,11 +710,17 @@ class EEORasterDataset:
         -------
         None
 
+        Notes
+        -----
+        Band names are written to the output's GDAL band descriptions, so they
+        are read back automatically by :func:`eeo.load_raster`. Formats that
+        cannot store band descriptions simply drop them.
+
         Examples
         --------
         >>> ds.save_raster("out.tif")
         """
-        self._adapter.write(path=path, driver=driver)
+        self._adapter.write(path=path, driver=driver, band_names=self.band_names)
 
     # ========================
     # Lifecycle

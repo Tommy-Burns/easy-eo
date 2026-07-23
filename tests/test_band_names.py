@@ -278,7 +278,7 @@ def test_resolve_rejects_other_types():
 
 
 # ---------------------------------------------------------------------------
-# Names are accepted wherever a band index is (21.4)
+# Names are accepted wherever a band index is
 # ---------------------------------------------------------------------------
 def _named(ds, names):
     """Name ``ds``'s bands in place and return it, for terse test setup."""
@@ -358,7 +358,7 @@ def test_band_label_appends_the_name(multiband_uint16):
 
 
 # ---------------------------------------------------------------------------
-# Propagation through operations (21.5)
+# Propagation through operations
 # ---------------------------------------------------------------------------
 def test_to_rasterio_carries_band_names():
     ds = _numpy_ds(count=2, band_names=["red", "nir"])
@@ -457,3 +457,70 @@ def test_mosaic_keeps_the_primary_names(single_band_float32):
     ds = _named(single_band_float32, ["red"])
     assert ds.mosaic(ds).band_names == ["red"]
     assert ds.mosaic(ds, names=["mosaicked"]).band_names == ["mosaicked"]
+
+
+# ---------------------------------------------------------------------------
+# GeoTIFF round trip
+# ---------------------------------------------------------------------------
+def test_names_survive_a_save_load_round_trip(multiband_uint16, tmp_path):
+    ds = _named(multiband_uint16, ["blue", None, "red", "nir"])
+    path = tmp_path / "named.tif"
+    ds.save_raster(str(path))
+    assert load_raster(str(path)).band_names == ["blue", None, "red", "nir"]
+
+
+def test_names_survive_a_round_trip_from_the_numpy_backend(tmp_path):
+    ds = _numpy_ds(count=2, band_names=["red", "nir"])
+    path = tmp_path / "numpy_backed.tif"
+    ds.save_raster(str(path))
+    assert load_raster(str(path)).band_names == ["red", "nir"]
+
+
+def test_round_trip_of_an_unnamed_raster_stays_unnamed(multiband_uint16, tmp_path):
+    path = tmp_path / "unnamed.tif"
+    multiband_uint16.save_raster(str(path))
+    assert load_raster(str(path)).band_names == [None] * 4
+
+
+def test_names_assigned_after_an_operation_round_trip(single_band_float32, tmp_path):
+    ndvi = single_band_float32.ndvi(single_band_float32.add(1))
+    ndvi.set_band_name(1, "ndvi_2024")
+    path = tmp_path / "ndvi.tif"
+    ndvi.save_raster(str(path))
+    assert load_raster(str(path)).band_names == ["ndvi_2024"]
+
+
+# ---------------------------------------------------------------------------
+# describe() / __repr__
+# ---------------------------------------------------------------------------
+def test_repr_lists_band_names(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", None, "red", "nir"])
+    assert repr(ds).endswith("[blue, —, red, nir]>")
+
+
+def test_repr_elides_a_long_name_list():
+    ds = _numpy_ds(count=6, band_names=[f"b{i}" for i in range(1, 7)])
+    assert repr(ds).endswith("[b1, b2, b3, b4, …]>")
+
+
+def test_repr_omits_names_when_unnamed(multiband_uint16):
+    assert repr(multiband_uint16).endswith("EPSG:32633>")
+
+
+def test_describe_lists_band_names(multiband_uint16, capsys):
+    _named(multiband_uint16, ["blue", None, "red", "nir"]).describe()
+    out = capsys.readouterr().out
+    assert "band names  : 1: blue, 2: —, 3: red, 4: nir" in out
+
+
+def test_describe_reports_no_band_names_when_unnamed(multiband_uint16, capsys):
+    multiband_uint16.describe()
+    assert "band names  : none" in capsys.readouterr().out
+
+
+def test_describe_stats_rows_are_labelled_with_names(multiband_uint16, capsys):
+    _named(multiband_uint16, ["blue", None, "red", "nir"]).describe(stats="exact")
+    out = capsys.readouterr().out
+    assert "band 1 (blue) :" in out
+    assert "band 2        :" in out  # unnamed band, padded to the same width
+    assert "band 4 (nir)  :" in out

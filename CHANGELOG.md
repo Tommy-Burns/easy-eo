@@ -101,6 +101,12 @@ are called out under a **Breaking** heading.
   primary's, both overridable with `names=`. `to_rasterio()` carries names
   onto the promoted dataset. Names can always be corrected afterwards via
   `band_names` / `set_band_name`.
+- **Band names round-trip through a GeoTIFF.** `save_raster` writes them to
+  the output's GDAL band descriptions and `load_raster` reads them back, so
+  no sidecar file is needed. `describe()` gained a `band names` row and
+  labels each per-band statistics row `band 4 (red)`; `repr()` lists the
+  names (elided past four bands). A new "Naming Bands" user-guide page covers
+  assignment, resolution rules, the propagation table, and the round trip.
 - **Spectral index library** (`eeo.analysis.indices`): six chainable,
   nodata-safe, float32-output indices bound onto `EEORasterDataset` —
   `ndvi`, `ndwi` (McFeeters water), `ndmi`, `ndbi`, `evi`, and `savi`. Each
