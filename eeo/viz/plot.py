@@ -594,9 +594,9 @@ def plot_composite(
     Reads the three bands decimated to the figure's display resolution
     (rasterio ``out_shape``, served from overviews when present); rasters
     already within the display budget, and NumPy-backed datasets, are read
-    in full. Percentile stretching writes the scaled values back into the
-    composite's own dtype, so stretch a floating-dtype raster to avoid
-    truncating them. Displays the figure with ``matplotlib.pyplot.show``
+    in full. When ``stretch=True`` the channels are rescaled to floating-point
+    ``[0, 1]`` before display, so integer rasters (e.g. Sentinel-2 reflectance)
+    render correctly. Displays the figure with ``matplotlib.pyplot.show``
     and, when ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
@@ -606,11 +606,15 @@ def plot_composite(
     bands_list = _normalize_bands(ds, bands)
     if len(bands_list) != 3:
         raise ValidationError(f"a composite needs exactly 3 bands (R, G, B); got {len(bands_list)}")
-    composite = np.stack([_read_band_for_display(ds, b, figsize)[0] for b in bands_list], axis=-1)
+    channels = [_read_band_for_display(ds, b, figsize)[0] for b in bands_list]
 
     if stretch:
-        for i in range(3):
-            composite[..., i] = _percentile_stretch(composite[..., i], pmin, pmax)
+        # Stretch into float [0, 1]; stacking the float results keeps the
+        # composite floating so the scaled values are not truncated to an
+        # integer band dtype (which would render the image black).
+        channels = [_percentile_stretch(channel, pmin, pmax) for channel in channels]
+
+    composite = np.stack(channels, axis=-1)
 
     plt.figure(figsize=figsize)
     plt.imshow(composite)
