@@ -17,7 +17,7 @@ from eeo.core.exceptions import (
 )
 
 
-@eeo_raster_op(preserve_none=True)
+@eeo_raster_op(preserve_none=True, propagate_band_names=False)
 def mosaic(
     ds: EEORasterDataset,
     others: EEORasterDataset | Iterable[EEORasterDataset],
@@ -25,6 +25,7 @@ def mosaic(
     resampling_method: str = "nearest",
     save_path: str | None = None,
     auto_reproject: bool = False,
+    names: list[str | None] | None = None,
     **kwargs,
 ) -> EEORasterDataset | None:
     """Mosaic one or more rasters into a single raster.
@@ -45,6 +46,10 @@ def mosaic(
         If True, reproject any raster in ``others`` whose CRS differs from
         ``ds`` before mosaicking. If False, a CRS mismatch raises
         ``CRSMismatchError``.
+    names : list of (str or None) or None, default None
+        Optional band names for the mosaic, one per band. By default the
+        mosaic inherits ``ds``'s band names — every tile contributes the same
+        bands, so the primary's names describe the result.
     **kwargs
         Additional keyword arguments forwarded to ``rasterio.merge.merge``.
 
@@ -61,7 +66,8 @@ def mosaic(
     BackendError
         If ``ds`` is not backed by rasterio.
     ValidationError
-        If ``others`` is empty.
+        If ``others`` is empty, or ``names`` is given and its length does not
+        match the mosaic's band count.
     CRSMismatchError
         If a CRS mismatch is found and ``auto_reproject=False``.
 
@@ -129,6 +135,9 @@ def mosaic(
     out_ds.write(mosaic_data)
 
     result = EEORasterDataset.from_rasterio(out_ds)
+    # Band identity is unchanged by mosaicking - only the extent grows - so the
+    # primary's names carry over unless the caller overrides them.
+    result.band_names = ds.band_names if names is None else names
 
     # save or return EEORasterDataset
     if save_path is not None:
@@ -138,10 +147,12 @@ def mosaic(
     return result
 
 
-@eeo_raster_op
+@eeo_raster_op(propagate_band_names=False)
 def stack(
     ds: EEORasterDataset,
     others: EEORasterDataset | Iterable[EEORasterDataset],
+    *,
+    names: list[str | None] | None = None,
 ) -> EEORasterDataset:
     """Stack rasters band-wise into a single multi-band raster.
 
@@ -156,6 +167,11 @@ def stack(
         Base raster; its bands lead the output.
     others : EEORasterDataset or Iterable[EEORasterDataset]
         One or more rasters whose bands are appended, in order.
+    names : list of (str or None) or None, default None
+        Optional band names for the stack, one per output band. By default the
+        inputs' own band names are concatenated in the same order as their
+        bands, so a named band keeps its name and an unnamed one stays
+        unnamed.
 
     Returns
     -------
@@ -169,7 +185,8 @@ def stack(
     BackendError
         If ``ds`` is not backed by rasterio.
     ValidationError
-        If ``others`` is empty.
+        If ``others`` is empty, or ``names`` is given and its length does not
+        match the stacked band count.
     CRSMismatchError
         If any input's CRS differs from ``ds``.
     AlignmentError
@@ -184,6 +201,7 @@ def stack(
     Examples
     --------
     >>> rgb = ds_red.stack([ds_green, ds_blue])
+    >>> rgb = ds_red.stack([ds_green, ds_blue], names=["red", "green", "blue"])
     """
     # Ensure stack for only rasterio-backend datasets
     if not is_rasterio_backed(ds):
@@ -227,4 +245,12 @@ def stack(
     out_ds = memfile.open(**meta)
     out_ds.write(stacked)
 
-    return EEORasterDataset.from_rasterio(out_ds)
+    result = EEORasterDataset.from_rasterio(out_ds)
+    if names is None:
+        # Each output band is exactly one input band, so names concatenate in
+        # the same order the bands do.
+        names = list(ds.band_names)
+        for obj in others:
+            names.extend(obj.band_names)
+    result.band_names = names
+    return result

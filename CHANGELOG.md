@@ -82,8 +82,25 @@ are called out under a **Breaking** heading.
   assignment (whitespace stripped, blanks become `None`). Band names resolve
   case-insensitively, a string is always a name and an int always a 1-based
   index (so `"4"` never means band 4), and an unknown or ambiguous name raises
-  `ValidationError` naming the available bands. Addressing bands by name
-  across the operation API follows in a later change.
+  `ValidationError` naming the available bands.
+- **Bands can be addressed by name anywhere an index is accepted.**
+  `get_band`, the pixel-stats ops and `extract_value_at_coordinate`
+  (`band_idx=`), every spectral-index band argument, and the plotting
+  functions (`bands=`, including mixed lists such as `["red", 2, "blue"]` and
+  `plot_composite(bands=["red", "green", "blue"])`) all take a band name in
+  place of a 1-based index. Plot subplot titles show the name beside the band
+  number when the band has one.
+- **Band names propagate through operations by rule, not by blanket copy.**
+  Identity-preserving ops (scalar algebra, `clip_*`, `resample`,
+  `reproject_raster`, the normalizations) carry their input's names onto the
+  result. Index ops synthesize a new band that maps to no input band, so they
+  never auto-name their output after the operation — the result is unnamed
+  unless you pass `name=` (`scene.ndvi(red="red", name="ndvi_2024")`), which
+  `normalized_difference` also accepts for single-band results. `stack`
+  concatenates its inputs' names in band order and `mosaic` keeps the
+  primary's, both overridable with `names=`. `to_rasterio()` carries names
+  onto the promoted dataset. Names can always be corrected afterwards via
+  `band_names` / `set_band_name`.
 - **Spectral index library** (`eeo.analysis.indices`): six chainable,
   nodata-safe, float32-output indices bound onto `EEORasterDataset` —
   `ndvi`, `ndwi` (McFeeters water), `ndmi`, `ndbi`, `evi`, and `savi`. Each

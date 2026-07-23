@@ -1,4 +1,4 @@
-"""Band-name storage, seeding, and mutation on EEORasterDataset"""
+"""Band-name storage, seeding, mutation, resolution, and propagation."""
 
 import numpy as np
 import pytest
@@ -11,6 +11,7 @@ from eeo import load_array, load_raster
 from eeo.common import resolve_band_index
 from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import ValidationError
+from eeo.viz.plot import _band_label, _normalize_bands
 
 CRS_4326 = CRS.from_epsg(4326)
 TRANSFORM = Affine.translation(0, 4) * Affine.scale(1, -1)
@@ -274,3 +275,185 @@ def test_resolve_rejects_other_types():
     ds = _numpy_ds(count=3)
     with pytest.raises(ValidationError):
         resolve_band_index(ds, 2.5)
+
+
+# ---------------------------------------------------------------------------
+# Names are accepted wherever a band index is (21.4)
+# ---------------------------------------------------------------------------
+def _named(ds, names):
+    """Name ``ds``'s bands in place and return it, for terse test setup."""
+    ds.band_names = names
+    return ds
+
+
+def test_get_band_accepts_a_name(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    np.testing.assert_array_equal(ds.get_band("red"), ds.get_band(3))
+
+
+def test_get_band_rejects_an_unknown_name(multiband_uint16):
+    with pytest.raises(ValidationError):
+        multiband_uint16.get_band("red")
+
+
+@pytest.mark.parametrize("op", ["get_maximum_pixel", "get_minimum_pixel", "get_mean_pixel"])
+def test_stats_ops_accept_a_band_name(multiband_uint16, op):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    assert getattr(ds, op)(band_idx="red") == getattr(ds, op)(band_idx=3)
+
+
+def test_get_percentile_pixel_accepts_a_band_name(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    assert ds.get_percentile_pixel(90, band_idx="nir") == ds.get_percentile_pixel(90, band_idx=4)
+
+
+def test_extract_value_at_coordinate_accepts_a_band_name(raster_3x3):
+    ds = _named(raster_3x3, ["elevation"])
+    assert ds.extract_value_at_coordinate((1.5, 1.5), band_idx="elevation") == (
+        ds.extract_value_at_coordinate((1.5, 1.5), band_idx=1)
+    )
+
+
+def test_index_band_specs_accept_names(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    by_name = ds.ndvi(red="red", nir="nir", return_as_ndarray=True)
+    by_index = ds.ndvi(red=3, nir=4, return_as_ndarray=True)
+    np.testing.assert_array_equal(by_name, by_index)
+
+
+def test_index_band_spec_rejects_an_unknown_name(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    with pytest.raises(ValidationError):
+        ds.ndvi(red="swir", nir="nir")
+
+
+def test_index_band_spec_rejects_a_bad_type(multiband_uint16):
+    with pytest.raises(ValidationError):
+        multiband_uint16.ndvi(red=2.5)
+
+
+def test_plot_band_selection_mixes_indices_and_names(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    assert _normalize_bands(ds, ["red", 2, "blue"]) == [3, 2, 1]
+    assert _normalize_bands(ds, "nir") == [4]
+    assert _normalize_bands(ds, None) == [1, 2, 3, 4]
+
+
+def test_plot_composite_accepts_band_names(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    # Smoke test under the Agg backend: resolving the names must not raise.
+    ds.plot_composite(bands=["red", "green", "blue"])
+
+
+def test_plot_composite_rejects_a_selection_that_is_not_three_bands(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    with pytest.raises(ValidationError):
+        ds.plot_composite(bands=["red", "green"])
+
+
+def test_band_label_appends_the_name(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", None, "red", "nir"])
+    assert _band_label(ds, 1) == "Band 1 (blue)"
+    assert _band_label(ds, 2) == "Band 2"
+
+
+# ---------------------------------------------------------------------------
+# Propagation through operations (21.5)
+# ---------------------------------------------------------------------------
+def test_to_rasterio_carries_band_names():
+    ds = _numpy_ds(count=2, band_names=["red", "nir"])
+    assert ds.to_rasterio().band_names == ["red", "nir"]
+
+
+def test_scalar_algebra_preserves_band_names(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    assert ds.add(1).band_names == ["blue", "green", "red", "nir"]
+    assert ds.multiply(2).sqrt().band_names == ["blue", "green", "red", "nir"]
+
+
+def test_resample_preserves_band_names(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    assert ds.resample(scale_factor=0.5).band_names == ["blue", "green", "red", "nir"]
+
+
+def test_normalize_preserves_band_names(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    assert ds.normalize_min_max().band_names == ["blue", "green", "red", "nir"]
+
+
+def test_clip_preserves_band_names(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    left, bottom, right, top = ds.get_bounds()
+    clipped = ds.clip_raster_with_bbox((left, bottom, left + 30, bottom + 30))
+    assert clipped.band_names == ["blue", "green", "red", "nir"]
+
+
+def test_unnamed_input_stays_unnamed_through_ops(multiband_uint16):
+    assert multiband_uint16.add(1).band_names == [None] * 4
+
+
+def test_index_output_is_unnamed_by_default(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    assert ds.ndvi(red="red", nir="nir").band_names == [None]
+
+
+def test_index_output_honours_an_explicit_name(multiband_uint16):
+    ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
+    assert ds.ndvi(red="red", nir="nir", name="ndvi_2024").band_names == ["ndvi_2024"]
+
+
+def test_single_band_index_input_is_not_inherited(single_band_float32):
+    # A single-band NIR raster named "nir": the NDVI band is a new measurement,
+    # so it must not silently inherit the receiver's name.
+    nir = _named(single_band_float32, ["nir"])
+    red = load_array(
+        np.ones((6, 6), dtype=np.float32),
+        transform=nir.get_transform(),
+        crs=nir.get_crs(),
+    ).to_rasterio()
+    assert nir.ndvi(red).band_names == [None]
+
+
+def test_normalized_difference_naming(single_band_float32):
+    ds = _named(single_band_float32, ["nir"])
+    other = load_array(
+        np.ones((6, 6), dtype=np.float32),
+        transform=ds.get_transform(),
+        crs=ds.get_crs(),
+    ).to_rasterio()
+    assert ds.normalized_difference(other).band_names == [None]
+    assert ds.normalized_difference(other, name="nd").band_names == ["nd"]
+
+
+def test_normalized_difference_name_rejected_for_multiband_result(multiband_uint16):
+    other = multiband_uint16.add(1)
+    with pytest.raises(ValidationError):
+        multiband_uint16.normalized_difference(other, name="nd")
+
+
+def test_stack_concatenates_input_names(single_band_float32):
+    red = _named(single_band_float32, ["red"])
+    green = _named(
+        load_array(
+            np.ones((6, 6), dtype=np.float32),
+            transform=red.get_transform(),
+            crs=red.get_crs(),
+        ).to_rasterio(),
+        ["green"],
+    )
+    unnamed = load_array(
+        np.zeros((6, 6), dtype=np.float32),
+        transform=red.get_transform(),
+        crs=red.get_crs(),
+    ).to_rasterio()
+
+    assert red.stack([green, unnamed]).band_names == ["red", "green", None]
+    assert red.stack([green, unnamed], names=["a", "b", "c"]).band_names == ["a", "b", "c"]
+    with pytest.raises(ValidationError):
+        red.stack([green], names=["only-one"])
+
+
+def test_mosaic_keeps_the_primary_names(single_band_float32):
+    ds = _named(single_band_float32, ["red"])
+    assert ds.mosaic(ds).band_names == ["red"]
+    assert ds.mosaic(ds, names=["mosaicked"]).band_names == ["mosaicked"]

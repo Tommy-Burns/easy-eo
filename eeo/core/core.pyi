@@ -68,7 +68,7 @@ class EEORasterDataset:
     def get_height(self) -> int: ...
     def get_count(self) -> int: ...
     def get_index(self): ...
-    def get_band(self, idx: int) -> np.ndarray: ...
+    def get_band(self, idx: int | str) -> np.ndarray: ...
     @property
     def band_names(self) -> list[str | None]: ...
     @band_names.setter
@@ -125,23 +125,24 @@ class EEORasterDataset:
         auto_align: bool = ...,
         method: str = ...,
         return_as_ndarray: bool = ...,
+        name: str | None = ...,
     ) -> np.ndarray | EEORasterDataset: ...
     def extract_value_at_coordinate(
-        self, coordinates: Coordinate, band_idx: int = ...
+        self, coordinates: Coordinate, band_idx: int | str = ...
     ) -> int | float: ...
     def get_maximum_pixel(
-        self, band_idx: int = ..., *, return_position_as_pixel_coordinate: bool = ...
+        self, band_idx: int | str = ..., *, return_position_as_pixel_coordinate: bool = ...
     ) -> dict: ...
     def get_mean_pixel(
-        self, band_idx: int = ..., *, return_position_as_pixel_coordinate: bool = ...
+        self, band_idx: int | str = ..., *, return_position_as_pixel_coordinate: bool = ...
     ) -> dict: ...
     def get_minimum_pixel(
-        self, band_idx: int = ..., *, return_position_as_pixel_coordinate: bool = ...
+        self, band_idx: int | str = ..., *, return_position_as_pixel_coordinate: bool = ...
     ) -> dict: ...
     def get_percentile_pixel(
         self,
         percentile: float,
-        band_idx: int = ...,
+        band_idx: int | str = ...,
         *,
         return_position_as_pixel_coordinate: bool = ...,
     ) -> dict: ...
@@ -153,6 +154,7 @@ class EEORasterDataset:
         resampling_method: str = ...,
         save_path: str | None = ...,
         auto_reproject: bool = ...,
+        names: list[str | None] | None = ...,
         **kwargs,
     ) -> EEORasterDataset | None: ...
     def multiply(
@@ -166,6 +168,7 @@ class EEORasterDataset:
         auto_align: bool = ...,
         method: str = ...,
         return_as_ndarray: bool = ...,
+        name: str | None = ...,
     ) -> np.ndarray | EEORasterDataset: ...
     def ndmi(
         self,
@@ -175,6 +178,7 @@ class EEORasterDataset:
         auto_align: bool = ...,
         method: str = ...,
         return_as_ndarray: bool = ...,
+        name: str | None = ...,
     ) -> np.ndarray | EEORasterDataset: ...
     def ndvi(
         self,
@@ -184,6 +188,7 @@ class EEORasterDataset:
         auto_align: bool = ...,
         method: str = ...,
         return_as_ndarray: bool = ...,
+        name: str | None = ...,
     ) -> np.ndarray | EEORasterDataset: ...
     def ndwi(
         self,
@@ -193,6 +198,7 @@ class EEORasterDataset:
         auto_align: bool = ...,
         method: str = ...,
         return_as_ndarray: bool = ...,
+        name: str | None = ...,
     ) -> np.ndarray | EEORasterDataset: ...
     def normalize_min_max(
         self, *, new_min: float | int = ..., new_max: float | int = ...
@@ -207,10 +213,11 @@ class EEORasterDataset:
         auto_align: bool = ...,
         method: str = ...,
         return_as_ndarray: bool = ...,
+        name: str | None = ...,
     ) -> np.ndarray | EEORasterDataset: ...
     def plot_band_array(
         self,
-        bands: int | Sequence[int] | None = ...,
+        bands: int | str | Sequence[int | str] | None = ...,
         *,
         cmap: str = ...,
         figsize: tuple[int, int] = ...,
@@ -223,7 +230,7 @@ class EEORasterDataset:
     ) -> None: ...
     def plot_composite(
         self,
-        bands: tuple[int, int, int],
+        bands: Sequence[int | str],
         *,
         stretch: bool = ...,
         figsize: tuple[int, int] = ...,
@@ -234,7 +241,7 @@ class EEORasterDataset:
     ) -> None: ...
     def plot_histogram(
         self,
-        bands: int | Sequence[int] | None = ...,
+        bands: int | str | Sequence[int | str] | None = ...,
         *,
         bins: int = ...,
         figsize: tuple[int, int] = ...,
@@ -245,7 +252,7 @@ class EEORasterDataset:
     ) -> None: ...
     def plot_raster(
         self,
-        bands: int | Sequence[int] | None = ...,
+        bands: int | str | Sequence[int | str] | None = ...,
         *,
         cmap: str = ...,
         figsize: tuple[int, int] = ...,
@@ -258,7 +265,7 @@ class EEORasterDataset:
     ) -> None: ...
     def plot_raster_with_histogram(
         self,
-        bands: int | Sequence[int] | None = ...,
+        bands: int | str | Sequence[int | str] | None = ...,
         *,
         cmap: str = ...,
         figsize: tuple[int, int] = ...,
@@ -293,9 +300,15 @@ class EEORasterDataset:
         auto_align: bool = ...,
         method: str = ...,
         return_as_ndarray: bool = ...,
+        name: str | None = ...,
     ) -> np.ndarray | EEORasterDataset: ...
     def sqrt(self) -> EEORasterDataset: ...
-    def stack(self, others: EEORasterDataset | Iterable[EEORasterDataset]) -> EEORasterDataset: ...
+    def stack(
+        self,
+        others: EEORasterDataset | Iterable[EEORasterDataset],
+        *,
+        names: list[str | None] | None = ...,
+    ) -> EEORasterDataset: ...
     def standardize(self) -> EEORasterDataset: ...
     def subtract(
         self, other: EEORasterDataset | float | int, *, auto_align: bool = ..., method: str = ...

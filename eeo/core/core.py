@@ -11,7 +11,7 @@ from rasterio import CRS
 from rasterio.coords import BoundingBox
 from rasterio.transform import Affine
 
-from eeo.common import is_rasterio_backed, mask_nodata
+from eeo.common import is_rasterio_backed, mask_nodata, resolve_band_index
 from eeo.core.adapters import BaseRasterAdapter, NumpyRasterioAdapter, RasterioAdapter
 from eeo.core.exceptions import ValidationError
 
@@ -368,7 +368,8 @@ class EEORasterDataset:
         Notes
         -----
         Promoting a NumPy-backed dataset reads its full array into an
-        in-memory rasterio ``MemoryFile``.
+        in-memory rasterio ``MemoryFile``. Band names, ``timestamp``, and
+        ``attrs`` are carried onto the promoted dataset.
 
         Examples
         --------
@@ -391,7 +392,12 @@ class EEORasterDataset:
             crs=crs,
             nodata=nodata,
         )
-        return EEORasterDataset(adapter=adapter, timestamp=self.timestamp, attrs=self.attrs)
+        return EEORasterDataset(
+            adapter=adapter,
+            timestamp=self.timestamp,
+            attrs=self.attrs,
+            band_names=self.band_names,
+        )
 
     def to_array(self) -> np.ndarray:
         """Read the raster into a NumPy array.
@@ -568,13 +574,15 @@ class EEORasterDataset:
         """
         return self.ds.index
 
-    def get_band(self, idx: int) -> np.ndarray:
-        """Read a single band.
+    def get_band(self, idx: int | str) -> np.ndarray:
+        """Read a single band, addressed by index or by name.
 
         Parameters
         ----------
-        idx : int
-            1-based band index.
+        idx : int or str
+            1-based band index, or a band name declared in
+            :attr:`band_names`. A string is always a name: ``"4"`` matches a
+            band literally named ``"4"``, never band 4.
 
         Returns
         -------
@@ -585,8 +593,16 @@ class EEORasterDataset:
         ------
         IndexError
             If ``idx`` is outside the range of available bands.
+        ValidationError
+            If ``idx`` is a name that is unknown or declared on more than one
+            band.
+
+        Examples
+        --------
+        >>> nir = ds.get_band(8)
+        >>> nir = ds.get_band("nir")
         """
-        return self._adapter.read_band(idx)
+        return self._adapter.read_band(resolve_band_index(self, idx))
 
     @property
     def band_names(self) -> list[str | None]:

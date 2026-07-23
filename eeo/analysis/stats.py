@@ -12,7 +12,7 @@ Coordinate = tuple[float, float] | list[float]
 
 @eeo_raster_op
 def extract_value_at_coordinate(
-    ds: EEORasterDataset, coordinates: Coordinate, band_idx: int = 1
+    ds: EEORasterDataset, coordinates: Coordinate, band_idx: int | str = 1
 ) -> int | float:
     """Sample a single pixel value at a world coordinate.
 
@@ -23,8 +23,8 @@ def extract_value_at_coordinate(
     coordinates : tuple of float or list of float
         ``(x, y)`` position in the raster's CRS units. Must contain exactly
         two values and fall within the raster extent.
-    band_idx : int, default 1
-        1-based band to sample.
+    band_idx : int or str, default 1
+        Band to sample, as a 1-based index or a band name.
 
     Returns
     -------
@@ -37,8 +37,11 @@ def extract_value_at_coordinate(
 
     Raises
     ------
+    IndexError
+        If ``band_idx`` is an index outside the range of available bands.
     ValidationError
-        If ``coordinates`` does not contain exactly two values.
+        If ``coordinates`` does not contain exactly two values, or
+        ``band_idx`` is a name that is unknown or matches more than one band.
 
     Notes
     -----
@@ -80,7 +83,7 @@ def extract_value_at_coordinate(
 @eeo_raster_op
 def get_maximum_pixel(
     ds: EEORasterDataset,
-    band_idx: int = 1,
+    band_idx: int | str = 1,
     *,
     return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
@@ -90,10 +93,11 @@ def get_maximum_pixel(
     ----------
     ds : EEORasterDataset
         Input raster dataset.
-    band_idx : int, default 1
-        1-based band to analyse. The default selects the first band, which
-        for a single-band raster is its only band; pass a band number to
-        analyse a different band of a multi-band raster.
+    band_idx : int or str, default 1
+        Band to analyse, as a 1-based index or a band name. The default
+        selects the first band, which for a single-band raster is its only
+        band; pass a band number or name to analyse a different band of a
+        multi-band raster.
     return_position_as_pixel_coordinate : bool, default False
         If True, return the position as ``(row, col)`` pixel indices;
         otherwise as ``(x, y)`` world coordinates in the raster's CRS.
@@ -107,7 +111,10 @@ def get_maximum_pixel(
     Raises
     ------
     IndexError
-        If ``band_idx`` is outside the range of available bands.
+        If ``band_idx`` is an index outside the range of available bands.
+    ValidationError
+        If ``band_idx`` is a name that is unknown or matches more than one
+        band.
 
     Notes
     -----
@@ -136,7 +143,7 @@ def get_maximum_pixel(
 @eeo_raster_op
 def get_minimum_pixel(
     ds: EEORasterDataset,
-    band_idx: int = 1,
+    band_idx: int | str = 1,
     *,
     return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
@@ -146,10 +153,11 @@ def get_minimum_pixel(
     ----------
     ds : EEORasterDataset
         Input raster dataset.
-    band_idx : int, default 1
-        1-based band to analyse. The default selects the first band, which
-        for a single-band raster is its only band; pass a band number to
-        analyse a different band of a multi-band raster.
+    band_idx : int or str, default 1
+        Band to analyse, as a 1-based index or a band name. The default
+        selects the first band, which for a single-band raster is its only
+        band; pass a band number or name to analyse a different band of a
+        multi-band raster.
     return_position_as_pixel_coordinate : bool, default False
         If True, return the position as ``(row, col)`` pixel indices;
         otherwise as ``(x, y)`` world coordinates in the raster's CRS.
@@ -163,7 +171,10 @@ def get_minimum_pixel(
     Raises
     ------
     IndexError
-        If ``band_idx`` is outside the range of available bands.
+        If ``band_idx`` is an index outside the range of available bands.
+    ValidationError
+        If ``band_idx`` is a name that is unknown or matches more than one
+        band.
 
     Notes
     -----
@@ -192,7 +203,7 @@ def get_minimum_pixel(
 @eeo_raster_op
 def get_mean_pixel(
     ds: EEORasterDataset,
-    band_idx: int = 1,
+    band_idx: int | str = 1,
     *,
     return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
@@ -202,10 +213,11 @@ def get_mean_pixel(
     ----------
     ds : EEORasterDataset
         Input raster dataset.
-    band_idx : int, default 1
-        1-based band to analyse. The default selects the first band, which
-        for a single-band raster is its only band; pass a band number to
-        analyse a different band of a multi-band raster.
+    band_idx : int or str, default 1
+        Band to analyse, as a 1-based index or a band name. The default
+        selects the first band, which for a single-band raster is its only
+        band; pass a band number or name to analyse a different band of a
+        multi-band raster.
     return_position_as_pixel_coordinate : bool, default False
         If True, return the position as ``(row, col)`` pixel indices;
         otherwise as ``(x, y)`` world coordinates in the raster's CRS.
@@ -220,7 +232,10 @@ def get_mean_pixel(
     Raises
     ------
     IndexError
-        If ``band_idx`` is outside the range of available bands.
+        If ``band_idx`` is an index outside the range of available bands.
+    ValidationError
+        If ``band_idx`` is a name that is unknown or matches more than one
+        band.
 
     Notes
     -----
@@ -251,7 +266,7 @@ def get_mean_pixel(
 def get_percentile_pixel(
     ds: EEORasterDataset,
     percentile: float,
-    band_idx: int = 1,
+    band_idx: int | str = 1,
     *,
     return_position_as_pixel_coordinate: bool = False,
 ) -> dict:
@@ -263,10 +278,11 @@ def get_percentile_pixel(
         Input raster dataset.
     percentile : float
         Percentile to compute, in the range ``[0, 100]``.
-    band_idx : int, default 1
-        1-based band to analyse. The default selects the first band, which
-        for a single-band raster is its only band; pass a band number to
-        analyse a different band of a multi-band raster.
+    band_idx : int or str, default 1
+        Band to analyse, as a 1-based index or a band name. The default
+        selects the first band, which for a single-band raster is its only
+        band; pass a band number or name to analyse a different band of a
+        multi-band raster.
     return_position_as_pixel_coordinate : bool, default False
         If True, return the position as ``(row, col)`` pixel indices;
         otherwise as ``(x, y)`` world coordinates in the raster's CRS.
@@ -281,7 +297,10 @@ def get_percentile_pixel(
     Raises
     ------
     IndexError
-        If ``band_idx`` is outside the range of available bands.
+        If ``band_idx`` is an index outside the range of available bands.
+    ValidationError
+        If ``band_idx`` is a name that is unknown or matches more than one
+        band.
 
     Notes
     -----

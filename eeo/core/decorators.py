@@ -26,10 +26,12 @@ def eeo_raster_op(func: Callable[P, R]) -> Callable[P, R]: ...
 
 
 @overload
-def eeo_raster_op(*, preserve_none: bool = ...) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+def eeo_raster_op(
+    *, preserve_none: bool = ..., propagate_band_names: bool = ...
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
 
 
-def eeo_raster_op(func=None, *, preserve_none=False):
+def eeo_raster_op(func=None, *, preserve_none=False, propagate_band_names=True):
     """Attach a free function to EEORasterDataset as a chainable method.
 
     Usable bare (``@eeo_raster_op``) or with arguments
@@ -40,6 +42,15 @@ def eeo_raster_op(func=None, *, preserve_none=False):
     ``preserve_none=True`` for operations whose ``None`` return is meaningful
     (e.g. ``mosaic`` returns ``None`` when it writes to ``save_path``); the
     bound method then returns that ``None`` unchanged instead of ``self``.
+
+    Band names are propagated only for identity-preserving operations — those
+    whose result has the same band count as the input, where output band *i*
+    still means what input band *i* meant (scalar algebra, clipping,
+    resampling, reprojection, normalization). Operations that synthesize a new
+    band (the spectral indices) or rearrange bands (``stack``, ``mosaic``) must
+    set ``propagate_band_names=False`` and name their output themselves;
+    inheriting names there would mislabel the data. The names of a result that
+    already carries its own are never overwritten.
     """
     from .core import EEORasterDataset
 
@@ -65,6 +76,12 @@ def eeo_raster_op(func=None, *, preserve_none=False):
                     result.timestamp = self.timestamp
                 if not result.attrs:
                     result.attrs = dict(self.attrs)
+                if (
+                    propagate_band_names
+                    and result.get_count() == self.get_count()
+                    and not any(result.band_names)
+                ):
+                    result.band_names = self.band_names
             return result
 
         # Bind to EEORasterDataset
