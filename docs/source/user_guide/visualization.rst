@@ -19,8 +19,9 @@ Visualization in Easy-EO supports:
     - Side-by-side raster and histogram views
     - Three-band composites (RGB or false-color)
 
-Most plotting functions support optional **percentile contrast stretching**
-for improved visual interpretation.
+Most plotting functions apply **percentile contrast stretching** by default
+(a 2-98 percentile stretch), because that renders most Earth-observation
+rasters best without any tuning.
 
 Every ``bands`` argument accepts a 1-based band index, a band name, or a list
 mixing the two (``bands=["red", 2, "blue"]``), and each subplot is titled with
@@ -29,7 +30,7 @@ the band's name when it has one. See :doc:`band_names`.
 Percentile Contrast Stretching
 ------------------------------
 
-Several visualization functions accept a ``stretch`` parameter. When
+Every visualization function accepts a ``stretch`` parameter. When
 ``stretch=True``, raster values are normalized using a percentile-based
 contrast stretch:
 
@@ -37,15 +38,25 @@ contrast stretch:
 
    x_{norm} = \frac{x - p_{min}}{p_{max} - p_{min}}
 
-where ``pmin`` and ``pmax`` are computed using NaN-aware percentile estimation.
+where ``pmin`` and ``pmax`` (defaulting to ``2`` and ``98``) are computed using
+NaN-aware percentile estimation.
+
+Defaults:
+    - ``plot_band_array``, ``plot_raster`` and ``plot_composite`` default to
+      ``stretch=True`` — so rasters display well out of the box. Pass
+      ``stretch=False`` to show raw values.
+    - ``plot_raster_with_histogram`` defaults to ``stretch=False``, so its
+      histogram shows the **raw** value distribution (the point of pairing a
+      raster with its histogram is to inspect real values before choosing a
+      stretch). Pass ``stretch=True`` to stretch its raster panel.
 
 Important behavior notes:
     - When ``stretch=False``, values are passed directly to Matplotlib and may be
       auto-scaled according to Matplotlib’s default behavior.
     - When ``stretch=True``, values are explicitly normalized into the range
-      ``[0, 1]``.
-    - The output becomes float-like, even if the original raster bands are
-      ``uint16`` or integer types.
+      ``[0, 1]``. The output becomes float-like, even if the original raster
+      bands are ``uint16`` or integer types — which is also why integer rasters
+      such as Sentinel-2 reflectance render correctly rather than as black.
     - Percentile stretching is intended for **visualization only** and does not
       modify the underlying dataset.
 
@@ -54,7 +65,7 @@ This approach is robust to outliers and commonly used for EO raster inspection.
 Plot Band Arrays (Array Coordinates)
 ------------------------------------
 
-.. function:: plot_band_array(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (8, 8), stretch=False, pmin=2, pmax=98, title=None, save_path=None, **imshow_kwargs)
+.. function:: plot_band_array(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (8, 8), stretch=True, pmin=2, pmax=98, title=None, save_path=None, **imshow_kwargs)
 
    Plot raster bands as NumPy arrays using row/column coordinates.
 
@@ -65,7 +76,7 @@ Plot Band Arrays (Array Coordinates)
    :param bands: Band index or indices (1-based). If ``None``, all bands are plotted.
    :type bands: int | Sequence[int] | None
    :param cmap: Matplotlib colormap.
-   :param stretch: Apply percentile contrast stretching.
+   :param stretch: Apply percentile contrast stretching. Defaults to ``True``; pass ``False`` for raw values.
    :param pmin: Lower percentile used when ``stretch=True``.
    :param pmax: Upper percentile used when ``stretch=True``.
    :param title: Optional figure title.
@@ -76,7 +87,7 @@ Plot Band Arrays (Array Coordinates)
 Plot Raster (Spatial Coordinates)
 ---------------------------------
 
-.. function:: plot_raster(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), stretch=False, pmin=2, pmax=98, title=None, save_path=None, **show_kwargs)
+.. function:: plot_raster(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), stretch=True, pmin=2, pmax=98, title=None, save_path=None, **show_kwargs)
 
    Plot raster bands in spatial (CRS-aware) coordinates.
 
@@ -88,7 +99,7 @@ Plot Raster (Spatial Coordinates)
    :param bands: Band index or indices (1-based). If ``None``, all bands are plotted.
    :param cmap: Matplotlib colormap.
    :param figsize: Size of the matplotlib figure
-   :param stretch: Apply percentile contrast stretching.
+   :param stretch: Apply percentile contrast stretching. Defaults to ``True``; pass ``False`` for raw values.
    :param pmin: Lower percentile used when ``stretch=True``.
    :param pmax: Upper percentile used when ``stretch=True``.
    :param title: Optional figure title.
@@ -133,7 +144,7 @@ Plot Raster with Histogram
    :param cmap: Matplotlib colormap.
    :param figsize: Size of the matplotlib figure
    :param bins: Number of histogram bins.
-   :param stretch: Apply percentile contrast stretching to the raster display.
+   :param stretch: Apply percentile contrast stretching to the raster display. Defaults to ``False`` so the histogram shows the raw value distribution.
    :param pmin: Lower percentile used when ``stretch=True``.
    :param pmax: Upper percentile used when ``stretch=True``.
    :param sharey: Share the y-axis between histogram plots.
@@ -143,7 +154,7 @@ Plot Raster with Histogram
 Plot Composite (RGB / False-Color)
 ----------------------------------
 
-.. function:: plot_composite(ds, bands, *, stretch=False, figsize=(8, 8), pmin=2, pmax=98, title=None, save_path=None)
+.. function:: plot_composite(ds, bands, *, stretch=True, figsize=(8, 8), pmin=2, pmax=98, title=None, save_path=None)
 
    Plot a three-band raster composite (e.g., RGB or false-color).
 
@@ -152,7 +163,7 @@ Plot Composite (RGB / False-Color)
    :param ds: Raster dataset.
    :type ds: EEORasterDataset
    :param bands: Tuple of three band indices ``(R, G, B)``.
-   :param stretch: Apply percentile contrast stretching independently to each band.
+   :param stretch: Apply percentile contrast stretching independently to each band. Defaults to ``True``; pass ``False`` for raw values.
    :param figsize: Size of the matplotlib figure.
    :param pmin: Lower percentile used when ``stretch=True``.
    :param pmax: Upper percentile used when ``stretch=True``.
@@ -161,5 +172,8 @@ Plot Composite (RGB / False-Color)
 
    .. note::
 
-      When ``stretch=False``, composite values are passed directly to Matplotlib
-      and may be auto-scaled depending on their data range.
+      ``stretch`` is ``True`` by default, so a 2-98 percentile stretch is applied
+      to each band — this is what makes integer rasters (e.g. Sentinel-2
+      reflectance) display correctly rather than as black. When ``stretch=False``,
+      composite values are passed directly to Matplotlib and may be auto-scaled
+      depending on their data range.

@@ -179,20 +179,23 @@ Visualization functions are **terminal operations** and should be used last in a
         plot_raster_with_histogram
     )
 
-    # Plot a single band
-    ds.plot_raster(bands=1, cmap="gray", stretch=True)
+    # Plot a single band (2-98 percentile stretch is on by default)
+    ds.plot_raster(bands=1, cmap="gray")
 
     # Plot histogram for multiple bands
     ds.plot_histogram(bands=[1,2,3], bins=256, sharey=True)
 
-    # Plot raster and its histogram
+    # Plot raster and its histogram (histogram shows raw values; opt in to stretch)
     ds.plot_raster_with_histogram(bands=[1,2], stretch=True, sharey=True)
 
-    # Plot composite (e.g., RGB)
-    ds.plot_composite(bands=(4,3,2), stretch=True)
+    # Plot composite (e.g., RGB) — stretched by default
+    ds.plot_composite(bands=(4,3,2))
 
 .. note::
-    - Percentile stretching (`stretch=True`) improves contrast
+    - Percentile stretching is on by default for ``plot_raster``,
+      ``plot_band_array`` and ``plot_composite`` (pass ``stretch=False`` for raw
+      values); ``plot_raster_with_histogram`` defaults to raw so its histogram
+      reflects true values
     - `sharey=True` aligns histogram axes across multiple bands
     - Multi-band plotting works with single or multiple rasters
     - Composite plotting supports RGB/false-color conventions

@@ -20,6 +20,13 @@ are called out under a **Breaking** heading.
     `"bilinear"`), matching `reproject_raster` and avoiding blending of
     categorical values and nodata edges. Pass `resampling_method="bilinear"`
     to restore the old default.
+  - `plot_band_array`, `plot_raster` and `plot_composite` now default to
+    `stretch=True` (previously `False`), so a 2-98 percentile contrast stretch
+    is applied out of the box — the setting that renders most EO rasters best
+    (and stops integer rasters such as Sentinel-2 reflectance from displaying as
+    black). Pass `stretch=False` to display raw values. `pmin`/`pmax` are
+    unchanged (2/98). `plot_raster_with_histogram` deliberately keeps
+    `stretch=False` so its histogram reflects the raw value distribution.
 - **Operations now raise the Easy-EO exception hierarchy** instead of bare
   built-ins. Most raises keep a built-in base for backward compatibility, so
   `except ValueError` (validation, CRS, alignment) and `except RuntimeError`
