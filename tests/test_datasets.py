@@ -281,6 +281,8 @@ def test_info_and_attribution_travel_with_handle():
     assert "B02.tif" in text
     assert "raster" in text
     assert sd.sentinel2_blue.attribution in text
+    assert sd.sentinel2_blue.description in text
+    assert "blue" in sd.sentinel2_blue.description.lower()
 
 
 def test_boundary_is_vector():
