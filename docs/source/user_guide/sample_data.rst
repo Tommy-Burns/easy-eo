@@ -42,6 +42,42 @@ cached path — read them with GeoPandas:
    boundary = gpd.read_file(eeo.datasets.load("sentinel2_small_boundary"))
    clipped = scene.clip_raster_with_vector(boundary)
 
+Dotted access with ``load_sample_dataset()``
+--------------------------------------------
+
+When you want the individual files by a readable, autocompletable name — rather
+than remembering string keys — call :func:`~eeo.datasets.load_sample_dataset`.
+It returns a namespace whose attributes are the sample files; pass any attribute
+straight to :func:`~eeo.load_raster`:
+
+.. code-block:: python
+
+   from eeo.datasets import load_sample_dataset
+   from eeo import load_raster
+
+   sd = load_sample_dataset()                     # instant — no download
+
+   scene = load_raster(sd.sentinel2_cog_stacked)  # downloads that one file
+   dem = load_raster(sd.copernicus_dem)
+   blue = load_raster(sd.sentinel2_blue)
+
+Each attribute is *lazy*: holding ``sd.copernicus_dem`` touches no network — the
+file is downloaded and checksum-verified only when it is actually opened. Nothing
+is fetched that you do not use. To warm the whole cache up front (before going
+offline), pass ``load_sample_dataset(prefetch=True)``.
+
+Available attributes: ``sentinel2_stacked``, ``sentinel2_cog_stacked``,
+``sentinel2_blue`` / ``sentinel2_green`` / ``sentinel2_red`` / ``sentinel2_nir``,
+``copernicus_dem``, ``copernicus_dem_cog``, and ``boundary`` (a vector — read it
+with GeoPandas, ``gpd.read_file(sd.boundary)``, not ``load_raster``).
+
+.. note::
+
+   ``load_raster(sd.<name>)`` reads band names from the file but does **not**
+   set the acquisition timestamp. Use ``load("sentinel2_small")`` when you need
+   the timestamp too, or the in-memory four-band stack from the separate band
+   files.
+
 Getting file paths with ``fetch()``
 -----------------------------------
 

@@ -215,6 +215,26 @@ _DATASETS: dict[str, Dataset] = {
 }
 
 
+#: Single-file sample assets exposed as attributes by
+#: :func:`eeo.datasets.load_sample_dataset`. Each maps a readable attribute name
+#: to exactly one :class:`Asset`, so the value can be handed straight to
+#: :func:`eeo.load_raster`. Band files use the library's colour band names
+#: (matching the band-name-centric API). Per-band Cloud-Optimized GeoTIFFs are
+#: intentionally absent: only the stacked COG has a checksum pinned in this
+#: registry today, and fabricating one would defeat the download verification.
+SAMPLE_FILES: dict[str, Asset] = {
+    "sentinel2_stacked": _DATASETS["sentinel2_small"].assets[0],
+    "sentinel2_cog_stacked": _DATASETS["sentinel2_small_cog"].assets[0],
+    "sentinel2_blue": _S2_BANDS[0],
+    "sentinel2_green": _S2_BANDS[1],
+    "sentinel2_red": _S2_BANDS[2],
+    "sentinel2_nir": _S2_BANDS[3],
+    "copernicus_dem": _DATASETS["dem_small"].assets[0],
+    "copernicus_dem_cog": _DATASETS["dem_small_cog"].assets[0],
+    "boundary": _DATASETS["sentinel2_small_boundary"].assets[0],
+}
+
+
 def get_dataset(name: str) -> Dataset:
     """Return the registry entry for ``name`` or raise a listing error.
 

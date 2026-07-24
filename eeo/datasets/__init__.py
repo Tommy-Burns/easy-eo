@@ -29,8 +29,19 @@ from eeo.core.loader import load_array, load_raster
 
 from ._cache import DatasetError, cache_dir, ensure_asset
 from ._registry import available, get_dataset
+from ._samples import SampleDataset, SamplePath, load_sample_dataset
 
-__all__ = ["fetch", "load", "info", "available", "cache_dir", "DatasetError"]
+__all__ = [
+    "fetch",
+    "load",
+    "info",
+    "available",
+    "cache_dir",
+    "DatasetError",
+    "load_sample_dataset",
+    "SampleDataset",
+    "SamplePath",
+]
 
 
 def fetch(name: str) -> Path | list[Path]:

@@ -85,6 +85,19 @@ are called out under a **Breaking** heading.
   `sentinel2_small_cog` (its COG variant), `sentinel2_small_bands` (the same
   four bands as separate single-band files), `dem_small`, `dem_small_cog`, and
   `sentinel2_small_boundary`.
+- **Dotted sample access (`eeo.datasets.load_sample_dataset`).** Returns a
+  `SampleDataset` namespace whose attributes are the individual sample files, so
+  a file can be opened by readable, autocompletable name —
+  `load_raster(sd.copernicus_dem)`, `load_raster(sd.sentinel2_blue)`,
+  `load_raster(sd.sentinel2_cog_stacked)` — instead of a string key. Each
+  attribute is a lazy `SamplePath` (an `os.PathLike`): constructing the
+  namespace touches no network, and a file is downloaded and checksum-verified
+  only when it is actually opened. Pass `prefetch=True` to warm the whole cache
+  up front. Exposed attributes: `sentinel2_stacked`, `sentinel2_cog_stacked`,
+  `sentinel2_blue`/`green`/`red`/`nir`, `copernicus_dem`, `copernicus_dem_cog`,
+  and `boundary` (a vector, for GeoPandas). A thin convenience layer over the
+  existing `load`/`fetch` string API, which remains the way to get the
+  timestamped in-memory band stack.
 - **Band names on `EEORasterDataset`.** Datasets now carry an optional
   per-band name list (one entry per band, `None` for an unnamed band), seeded
   from the raster's GDAL band descriptions at load time. Read or replace them

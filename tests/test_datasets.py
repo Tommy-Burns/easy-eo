@@ -8,6 +8,7 @@ integration test is marked ``network`` and skipped unless ``--run-network``.
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,9 +19,10 @@ from affine import Affine
 from rasterio.crs import CRS
 
 import eeo
-from eeo.datasets import _cache, _registry
+from eeo.datasets import _cache, _registry, _samples
 from eeo.datasets._cache import DatasetError, cache_dir, ensure_asset
 from eeo.datasets._registry import Asset, Dataset
+from eeo.datasets._samples import SampleDataset, SamplePath, load_sample_dataset
 
 UTM = CRS.from_epsg(32633)
 TRANSFORM = Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(10.0, -10.0)
@@ -321,6 +323,101 @@ def test_sentinel2_small_bands_is_multi_in_band_order():
     ds = _registry.get_dataset("sentinel2_small_bands")
     assert ds.multi and ds.kind == "raster"
     assert [a.band_name for a in ds.assets] == ["blue", "green", "red", "nir"]
+
+
+# --------------------------------------------------------------------------- #
+# load_sample_dataset: attribute-addressable, lazy access
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def fake_ensure(monkeypatch, tmp_path):
+    """Stub ``ensure_asset`` with a real synthetic GeoTIFF per asset name.
+
+    Returns the list of assets ``ensure_asset`` was called with, so tests can
+    assert exactly which (and how many) files were fetched.
+    """
+    calls: list = []
+
+    def _ensure(asset):
+        calls.append(asset)
+        dest = tmp_path / asset.remote
+        if not dest.exists():
+            _write_band(dest, value=1234, name="blue")
+        return dest
+
+    monkeypatch.setattr(_samples._cache, "ensure_asset", _ensure)
+    return calls
+
+
+def test_load_sample_dataset_exposes_all_names():
+    sd = load_sample_dataset()
+    assert isinstance(sd, SampleDataset)
+    for name in _registry.SAMPLE_FILES:
+        assert isinstance(getattr(sd, name), SamplePath)
+
+
+def test_declared_attrs_match_registry():
+    # The explicit class annotations (for autocomplete/type-checkers) must not
+    # drift from the actual SAMPLE_FILES source of truth.
+    assert set(SampleDataset.__annotations__) == set(_registry.SAMPLE_FILES)
+
+
+def test_construction_does_not_fetch(fake_ensure):
+    load_sample_dataset()
+    assert fake_ensure == []  # no network on construction
+
+
+def test_attribute_access_does_not_fetch(fake_ensure):
+    sd = load_sample_dataset()
+    _ = sd.copernicus_dem  # holding the handle must not download
+    assert fake_ensure == []
+
+
+def test_fspath_triggers_fetch_once(fake_ensure):
+    sd = load_sample_dataset()
+    p1 = os.fspath(sd.sentinel2_blue)
+    p2 = os.fspath(sd.sentinel2_blue)  # memoized: no second fetch
+    assert p1 == p2
+    assert len(fake_ensure) == 1
+    assert fake_ensure[0] is _registry.SAMPLE_FILES["sentinel2_blue"]
+
+
+def test_prefetch_downloads_everything(fake_ensure):
+    load_sample_dataset(prefetch=True)
+    assert len(fake_ensure) == len(_registry.SAMPLE_FILES)
+
+
+def test_load_raster_opens_sample_path(fake_ensure):
+    sd = load_sample_dataset()
+    ds = eeo.load_raster(sd.sentinel2_blue)
+    assert ds.get_count() == 1
+    assert ds.to_array().min() == 1234
+    assert len(fake_ensure) == 1  # opened exactly one file
+
+
+def test_sample_path_str_is_side_effect_free(fake_ensure):
+    sd = load_sample_dataset()
+    # Before fetch: shows the target filename, no download.
+    assert str(sd.copernicus_dem) == _registry.SAMPLE_FILES["copernicus_dem"].remote
+    assert fake_ensure == []
+    # After fetch: shows the cached path.
+    resolved = sd.copernicus_dem.fetch()
+    assert str(sd.copernicus_dem) == str(resolved)
+
+
+def test_sample_path_repr_and_name(fake_ensure):
+    sd = load_sample_dataset()
+    assert sd.copernicus_dem.name == "copernicus_dem"
+    assert "not fetched" in repr(sd.copernicus_dem)
+    sd.copernicus_dem.fetch()
+    assert "cached" in repr(sd.copernicus_dem)
+    assert "copernicus_dem" in repr(sd)
+
+
+def test_sample_files_are_single_pinned_assets():
+    for name, asset in _registry.SAMPLE_FILES.items():
+        assert isinstance(asset, Asset), name
+        assert len(asset.sha256) == 64
+        assert asset.nbytes > 0
 
 
 # --------------------------------------------------------------------------- #
