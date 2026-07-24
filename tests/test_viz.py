@@ -78,6 +78,26 @@ def test_normalize_bands_iterable(multiband_uint16):
     assert bands == [1, 3]
 
 
+@pytest.mark.parametrize(
+    "func, expected",
+    [
+        (plot_band_array, True),
+        (plot_raster, True),
+        (plot_composite, True),
+        (plot_raster_with_histogram, False),  # keeps raw histogram
+    ],
+    ids=["plot_band_array", "plot_raster", "plot_composite", "plot_raster_with_histogram"],
+)
+def test_stretch_default(func, expected):
+    import inspect
+
+    sig = inspect.signature(func)
+    assert sig.parameters["stretch"].default is expected
+    # The percentile bounds default to the conventional 2-98 everywhere.
+    assert sig.parameters["pmin"].default == 2
+    assert sig.parameters["pmax"].default == 98
+
+
 def test_percentile_stretch_basic():
     arr = np.array([0, 1, 2, 3, 4], dtype=np.float32)
     stretched = _percentile_stretch(arr, 0, 100)

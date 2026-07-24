@@ -1,14 +1,15 @@
-"""Tests for the sample-dataset fetch/cache helpers (:mod:`eeo.datasets`).
+"""Tests for the sample-dataset helpers (:mod:`eeo.datasets`).
 
 Every test in the default run is offline: downloads are redirected to
-locally-built synthetic files via a patched ``_download``. One real-network
-integration test is marked ``network`` and skipped unless ``--run-network``.
+locally-built synthetic files via a patched ``_download`` (or a stubbed
+``ensure_asset``). One real-network integration test is marked ``network`` and
+skipped unless ``--run-network``.
 """
 
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+import os
 from pathlib import Path
 
 import numpy as np
@@ -18,9 +19,10 @@ from affine import Affine
 from rasterio.crs import CRS
 
 import eeo
-from eeo.datasets import _cache, _registry
+from eeo.datasets import _cache, _registry, _samples
 from eeo.datasets._cache import DatasetError, cache_dir, ensure_asset
-from eeo.datasets._registry import Asset, Dataset
+from eeo.datasets._registry import Asset, SampleFile
+from eeo.datasets._samples import SampleDataset, SamplePath, load_sample_dataset
 
 UTM = CRS.from_epsg(32633)
 TRANSFORM = Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(10.0, -10.0)
@@ -175,152 +177,140 @@ def test_download_network_error_raises_dataset_error(cache_env, local_asset, mon
 
 
 # --------------------------------------------------------------------------- #
-# fetch / load / info via a synthetic registry
+# load_sample_dataset: attribute-addressable, lazy access
 # --------------------------------------------------------------------------- #
 @pytest.fixture
-def synthetic_registry(cache_env, tmp_path, monkeypatch):
-    """Replace the registry with local synthetic rasters + a vector stand-in."""
-    # Build two single-band rasters and a "vector" blob on disk.
-    red = tmp_path / "red_src.tif"
-    nir = tmp_path / "nir_src.tif"
-    _write_band(red, value=1000, name="red")
-    _write_band(nir, value=4000, name="nir")
-    vec = tmp_path / "roi_src.gpkg"
-    vec.write_bytes(b"fake-geopackage-bytes")
+def fake_ensure(monkeypatch, tmp_path):
+    """Stub ``ensure_asset`` with a real synthetic GeoTIFF per asset name.
 
-    sources = {"red.tif": red, "nir.tif": nir, "roi.gpkg": vec}
+    Returns the list of assets ``ensure_asset`` was called with, so tests can
+    assert exactly which (and how many) files were fetched.
+    """
+    calls: list = []
 
-    def sha(p: Path) -> str:
-        return _sha256_bytes(p.read_bytes())
+    def _ensure(asset):
+        calls.append(asset)
+        dest = tmp_path / asset.remote
+        if not dest.exists():
+            _write_band(dest, value=1234, name="blue")
+        return dest
 
-    ts = datetime(2023, 9, 7, 10, 0, 31, tzinfo=timezone.utc)
-    registry = {
-        "s2": Dataset(
-            name="s2",
-            kind="raster",
-            assets=[
-                Asset("red.tif", sha(red), red.stat().st_size, "red"),
-                Asset("nir.tif", sha(nir), nir.stat().st_size, "nir"),
-            ],
-            description="synthetic two-band",
-            attribution="test attribution",
-            timestamp=ts,
-            nodata=0,
-            band_names=["red", "nir"],
-        ),
-        "single": Dataset(
-            name="single",
-            kind="raster",
-            assets=[Asset("red.tif", sha(red), red.stat().st_size, "red")],
-            description="synthetic one-band",
-            attribution="test attribution",
-            timestamp=ts,
-            band_names=["red"],
-        ),
-        "roi": Dataset(
-            name="roi",
-            kind="vector",
-            assets=[Asset("roi.gpkg", sha(vec), vec.stat().st_size)],
-            description="synthetic vector",
-            attribution="test attribution",
-        ),
-    }
-    monkeypatch.setattr(_registry, "_DATASETS", registry)
-
-    def fake_download(url, dest):
-        dest.write_bytes(sources[dest.name].read_bytes())
-
-    monkeypatch.setattr(_cache, "_download", fake_download)
-    return registry, ts
+    monkeypatch.setattr(_samples._cache, "ensure_asset", _ensure)
+    return calls
 
 
-def test_fetch_single_returns_path(synthetic_registry):
-    path = eeo.datasets.fetch("single")
-    assert isinstance(path, Path)
-    assert path.name == "red.tif"
+def test_load_sample_dataset_exposes_all_names():
+    sd = load_sample_dataset()
+    assert isinstance(sd, SampleDataset)
+    for name in _registry.SAMPLE_FILES:
+        assert isinstance(getattr(sd, name), SamplePath)
 
 
-def test_fetch_multi_returns_list_in_band_order(synthetic_registry):
-    paths = eeo.datasets.fetch("s2")
-    assert isinstance(paths, list)
-    assert [p.name for p in paths] == ["red.tif", "nir.tif"]
+def test_declared_attrs_match_registry():
+    # The explicit class annotations (for autocomplete/type-checkers) must not
+    # drift from the actual SAMPLE_FILES source of truth.
+    assert set(SampleDataset.__annotations__) == set(_registry.SAMPLE_FILES)
 
 
-def test_load_stack_sets_names_timestamp_and_stacks(synthetic_registry):
-    _, ts = synthetic_registry
-    ds = eeo.datasets.load("s2")
-    assert ds.get_count() == 2
-    assert ds.band_names == ["red", "nir"]
-    assert ds.timestamp == ts
-    arr = ds.to_array()
-    assert arr.shape == (2, 4, 4)
-    assert arr[0].min() == 1000 and arr[1].min() == 4000  # band order preserved
+def test_construction_does_not_fetch(fake_ensure):
+    load_sample_dataset()
+    assert fake_ensure == []  # no network on construction
 
 
-def test_load_single_raster_is_lazy_with_names(synthetic_registry):
-    ds = eeo.datasets.load("single")
+def test_attribute_access_does_not_fetch(fake_ensure):
+    sd = load_sample_dataset()
+    _ = sd.copernicus_dem  # holding the handle must not download
+    assert fake_ensure == []
+
+
+def test_fspath_triggers_fetch_once(fake_ensure):
+    sd = load_sample_dataset()
+    p1 = os.fspath(sd.sentinel2_blue)
+    p2 = os.fspath(sd.sentinel2_blue)  # memoized: no second fetch
+    assert p1 == p2
+    assert len(fake_ensure) == 1
+    assert fake_ensure[0] is _registry.SAMPLE_FILES["sentinel2_blue"].asset
+
+
+def test_prefetch_downloads_everything(fake_ensure):
+    load_sample_dataset(prefetch=True)
+    assert len(fake_ensure) == len(_registry.SAMPLE_FILES)
+
+
+def test_load_raster_opens_sample_path(fake_ensure):
+    sd = load_sample_dataset()
+    ds = eeo.load_raster(sd.sentinel2_blue)
     assert ds.get_count() == 1
-    assert ds.band_names == ["red"]
+    assert ds.to_array().min() == 1234
+    assert len(fake_ensure) == 1  # opened exactly one file
 
 
-def test_load_vector_returns_path(synthetic_registry):
-    result = eeo.datasets.load("roi")
-    assert isinstance(result, Path)
-    assert result.name == "roi.gpkg"
+def test_path_property_fetches(fake_ensure):
+    sd = load_sample_dataset()
+    p = sd.copernicus_dem.path
+    assert isinstance(p, Path)
+    assert p.is_file()
+    assert len(fake_ensure) == 1
 
 
-def test_load_stack_ndvi_by_name(synthetic_registry):
-    ds = eeo.datasets.load("s2")
-    ndvi = ds.ndvi(red="red", nir="nir")
-    a = ndvi.to_array()
-    # (4000 - 1000) / (4000 + 1000) = 0.6 everywhere
-    assert np.allclose(a, 0.6, atol=1e-4)
-    assert a.dtype == np.float32
+def test_sample_path_str_is_side_effect_free(fake_ensure):
+    sd = load_sample_dataset()
+    # Before fetch: shows the target filename, no download.
+    assert str(sd.copernicus_dem) == _registry.SAMPLE_FILES["copernicus_dem"].asset.remote
+    assert fake_ensure == []
+    # After fetch: shows the cached path.
+    resolved = sd.copernicus_dem.fetch()
+    assert str(sd.copernicus_dem) == str(resolved)
 
 
-def test_info_includes_attribution(synthetic_registry):
-    text = eeo.datasets.info("s2")
-    assert "test attribution" in text
-    assert "red.tif" in text and "nir.tif" in text
+def test_sample_path_repr_and_name(fake_ensure):
+    sd = load_sample_dataset()
+    assert sd.copernicus_dem.name == "copernicus_dem"
+    assert "not fetched" in repr(sd.copernicus_dem)
+    sd.copernicus_dem.fetch()
+    assert "cached" in repr(sd.copernicus_dem)
+    assert "copernicus_dem" in repr(sd)
 
 
-# --------------------------------------------------------------------------- #
-# Error handling and registry integrity (no network, real registry)
-# --------------------------------------------------------------------------- #
-def test_unknown_dataset_lists_available():
-    with pytest.raises(KeyError, match="unknown dataset"):
-        eeo.datasets.fetch("does_not_exist")
+def test_info_and_attribution_travel_with_handle():
+    sd = load_sample_dataset()
+    # Attribution is queryable from code without touching the network.
+    assert "Copernicus DEM" in sd.copernicus_dem.attribution
+    assert "Sentinel-2" in sd.sentinel2_blue.attribution
+    text = sd.sentinel2_blue.info()
+    assert "B02.tif" in text
+    assert "raster" in text
+    assert sd.sentinel2_blue.attribution in text
+    assert sd.sentinel2_blue.description in text
+    assert "blue" in sd.sentinel2_blue.description.lower()
 
 
-def test_available_matches_registry():
-    names = eeo.datasets.available()
-    assert names == sorted(names)
-    assert "sentinel2_small" in names
-    assert set(names) == set(_registry._DATASETS)
+def test_boundary_is_vector():
+    sd = load_sample_dataset()
+    assert sd.boundary.kind == "vector"
+    assert all(getattr(sd, n).kind == "raster" for n in _registry.SAMPLE_FILES if n != "boundary")
 
 
-def test_real_registry_checksums_are_wellformed():
-    for name in eeo.datasets.available():
-        ds = _registry.get_dataset(name)
-        assert ds.assets, name
-        for asset in ds.assets:
-            assert len(asset.sha256) == 64
-            assert all(c in "0123456789abcdef" for c in asset.sha256)
-            assert asset.nbytes > 0
+def test_namespace_iterates_all_handles():
+    sd = load_sample_dataset()
+    assert len(sd) == len(_registry.SAMPLE_FILES)
+    assert {h.name for h in sd} == set(_registry.SAMPLE_FILES)
+    assert all(isinstance(h, SamplePath) for h in sd)
 
 
-def test_sentinel2_small_is_single_stacked_raster():
-    ds = _registry.get_dataset("sentinel2_small")
-    assert ds.kind == "raster"
-    assert not ds.multi  # a single pre-stacked 4-band file
-    assert len(ds.assets) == 1
-    assert ds.band_names == ["blue", "green", "red", "nir"]
+def test_sample_files_are_single_pinned_assets():
+    for name, sample in _registry.SAMPLE_FILES.items():
+        assert isinstance(sample, SampleFile), name
+        assert sample.kind in {"raster", "vector"}
+        assert len(sample.asset.sha256) == 64
+        assert all(c in "0123456789abcdef" for c in sample.asset.sha256)
+        assert sample.asset.nbytes > 0
 
 
-def test_sentinel2_small_bands_is_multi_in_band_order():
-    ds = _registry.get_dataset("sentinel2_small_bands")
-    assert ds.multi and ds.kind == "raster"
-    assert [a.band_name for a in ds.assets] == ["blue", "green", "red", "nir"]
+def test_string_key_api_is_not_public():
+    # Data is reachable only through the namespace, never by hard-coded string.
+    for removed in ("load", "fetch", "info", "available"):
+        assert not hasattr(eeo.datasets, removed), removed
 
 
 # --------------------------------------------------------------------------- #
@@ -328,11 +318,11 @@ def test_sentinel2_small_bands_is_multi_in_band_order():
 # --------------------------------------------------------------------------- #
 @pytest.mark.network
 def test_real_download_roundtrip(tmp_path, monkeypatch):
-    """Download the smallest real asset and verify checksum + open it."""
+    """Download real assets through the namespace and verify checksum + open."""
     monkeypatch.setenv("EEO_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-    path = eeo.datasets.fetch("sentinel2_small_boundary")
-    assert path.is_file()
-    ds = eeo.datasets.load("sentinel2_small")
-    assert ds.band_names == ["blue", "green", "red", "nir"]
+    sd = load_sample_dataset()
+    assert sd.boundary.fetch().is_file()  # smallest asset, checksum-verified
+    ds = eeo.load_raster(sd.sentinel2_stacked)
     assert ds.get_count() == 4
+    assert ds.band_names == ["blue", "green", "red", "nir"]

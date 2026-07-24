@@ -20,6 +20,13 @@ are called out under a **Breaking** heading.
     `"bilinear"`), matching `reproject_raster` and avoiding blending of
     categorical values and nodata edges. Pass `resampling_method="bilinear"`
     to restore the old default.
+  - `plot_band_array`, `plot_raster` and `plot_composite` now default to
+    `stretch=True` (previously `False`), so a 2-98 percentile contrast stretch
+    is applied out of the box — the setting that renders most EO rasters best
+    (and stops integer rasters such as Sentinel-2 reflectance from displaying as
+    black). Pass `stretch=False` to display raw values. `pmin`/`pmax` are
+    unchanged (2/98). `plot_raster_with_histogram` deliberately keeps
+    `stretch=False` so its histogram reflects the raw value distribution.
 - **Operations now raise the Easy-EO exception hierarchy** instead of bare
   built-ins. Most raises keep a built-in base for backward compatibility, so
   `except ValueError` (validation, CRS, alignment) and `except RuntimeError`
@@ -71,20 +78,23 @@ are called out under a **Breaking** heading.
 
 ### Added
 
-- **Sample-data helper (`eeo.datasets`).** `eeo.datasets.load(name)` fetches a
-  small curated Sentinel-2 / Copernicus-DEM sample and returns it ready to use
-  (band names and acquisition timestamp already set for rasters; the cached
-  path for vectors); `eeo.datasets.fetch(name)` returns the cached file path(s)
-  without opening them. Files download on first use to `~/.cache/easy-eo`
-  (override with `EEO_DATA_DIR`, or `XDG_CACHE_HOME`) and are verified against a
-  checksum shipped inside the package, so fetches are instant after the first
-  call and never return corrupt data. `available()` lists the datasets and
-  `info(name)` prints the description and required Copernicus attribution.
-  Downloading uses only the standard library — no new dependency. Registered
-  datasets: `sentinel2_small` (a single pre-stacked 4-band GeoTIFF),
-  `sentinel2_small_cog` (its COG variant), `sentinel2_small_bands` (the same
-  four bands as separate single-band files), `dem_small`, `dem_small_cog`, and
-  `sentinel2_small_boundary`.
+- **Sample-data helper (`eeo.datasets.load_sample_dataset`).** Returns a
+  `SampleDataset` namespace whose attributes are the individual bundled files, so
+  a curated Sentinel-2 / Copernicus-DEM sample is opened by readable,
+  autocompletable name — `load_raster(sd.copernicus_dem)`,
+  `load_raster(sd.sentinel2_blue)`, `load_raster(sd.sentinel2_cog_stacked)` —
+  never by a hard-coded string key. Each attribute is a lazy `SamplePath` (an
+  `os.PathLike`): constructing the namespace touches no network, and a file is
+  downloaded to `~/.cache/easy-eo` (override with `EEO_DATA_DIR`, or
+  `XDG_CACHE_HOME`) and checksum-verified only when it is actually opened, so a
+  fetch is instant after the first call and never returns corrupt data. Pass
+  `prefetch=True` to warm the whole cache up front. Provenance travels with each
+  handle: `sd.<name>.info()` and `sd.<name>.attribution` carry the required
+  Copernicus attribution; `sd.<name>.path` gives the raw cached path; the
+  namespace is iterable. Downloading uses only the standard library — no new
+  dependency. Exposed files: `sentinel2_stacked`, `sentinel2_cog_stacked`,
+  `sentinel2_blue`/`green`/`red`/`nir`, `copernicus_dem`, `copernicus_dem_cog`,
+  and `boundary` (a vector, for GeoPandas).
 - **Band names on `EEORasterDataset`.** Datasets now carry an optional
   per-band name list (one entry per band, `None` for an unnamed band), seeded
   from the raster's GDAL band descriptions at load time. Read or replace them

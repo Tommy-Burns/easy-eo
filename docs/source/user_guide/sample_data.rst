@@ -2,11 +2,12 @@ Sample Data
 ===========
 
 Easy-EO ships a tiny, curated sample so every tutorial and quickstart runs in
-minutes without hunting for data. The helpers in :mod:`eeo.datasets` download a
-hosted Sentinel-2 / Copernicus-DEM subset on first use, cache it locally, and
-verify it against a checksum baked into the package — so a fetch is instant
-after the first call and never returns corrupt data. Downloading uses only the
-Python standard library, so it adds **no extra dependency**.
+minutes without hunting for data. :func:`~eeo.datasets.load_sample_dataset`
+returns a namespace whose attributes are the individual sample files; each is
+downloaded on first use, cached locally, and verified against a checksum baked
+into the package — so a fetch is instant after the first call and never returns
+corrupt data. Downloading uses only the Python standard library, so it adds
+**no extra dependency**.
 
 .. seealso::
 
@@ -15,87 +16,84 @@ Python standard library, so it adds **no extra dependency**.
 
 -----
 
-Loading the sample
-------------------
+Loading a sample
+----------------
 
-``load()`` returns a ready-to-use dataset for rasters — band names and the
-acquisition timestamp are already set — so you can go straight to analysis:
+Call :func:`~eeo.datasets.load_sample_dataset` once, then open any file by
+dotted name with :func:`~eeo.load_raster` — no string keys, and your editor
+autocompletes the available names:
 
 .. code-block:: python
 
-   import eeo
+   from eeo.datasets import load_sample_dataset
+   from eeo import load_raster
 
-   scene = eeo.datasets.load("sentinel2_small")
-   scene.band_names          # ['blue', 'green', 'red', 'nir']
-   scene.timestamp           # 2023-09-07 10:00:31+00:00
+   sd = load_sample_dataset()                     # instant — no download
+
+   scene = load_raster(sd.sentinel2_cog_stacked)  # downloads that one file
+   dem = load_raster(sd.copernicus_dem)
+   blue = load_raster(sd.sentinel2_blue)
 
    ndvi = scene.ndvi(red="red", nir="nir")
    ndvi.plot_raster()
 
-Vector datasets have no raster representation, so ``load()`` returns their
-cached path — read them with GeoPandas:
+Each attribute is *lazy*: holding ``sd.copernicus_dem`` touches no network — the
+file is downloaded and checksum-verified only when it is actually opened. Nothing
+is fetched that you do not use. To warm the whole cache up front (before going
+offline), pass ``load_sample_dataset(prefetch=True)``.
+
+The ``boundary`` sample is a vector, so read it with GeoPandas rather than
+``load_raster`` (the handle is a path, so pass it straight in):
 
 .. code-block:: python
 
    import geopandas as gpd
 
-   boundary = gpd.read_file(eeo.datasets.load("sentinel2_small_boundary"))
-   clipped = scene.clip_raster_with_vector(boundary)
+   roi = gpd.read_file(sd.boundary)
+   clipped = scene.clip_raster_with_vector(roi)
 
-Getting file paths with ``fetch()``
------------------------------------
-
-When you want the files rather than an opened dataset — to pass to another
-library, or to work with the Cloud-Optimized GeoTIFFs directly — use
-``fetch()``. It returns a single :class:`~pathlib.Path` for a one-file dataset,
-or a list of paths (in band order) for a multi-file one:
+Need the raw cached path (to hand to another library, or to inspect the
+Cloud-Optimized GeoTIFFs directly)? Use ``.path``:
 
 .. code-block:: python
 
-   scene_path = eeo.datasets.fetch("sentinel2_small")         # Path (one 4-band file)
-   boundary_path = eeo.datasets.fetch("sentinel2_small_boundary")  # Path
-   band_paths = eeo.datasets.fetch("sentinel2_small_bands")   # [Path, Path, Path, Path]
+   scene_path = sd.sentinel2_cog_stacked.path   # pathlib.Path (downloads if needed)
 
-Available datasets
-------------------
+Available samples
+-----------------
 
-List everything with ``eeo.datasets.available()``; describe one with
-``eeo.datasets.info(name)``.
+Iterate ``sd`` to see every handle; each carries a description and the required
+attribution (``sd.<name>.info()`` / ``sd.<name>.attribution``).
 
 .. list-table::
    :header-rows: 1
    :widths: 26 10 64
 
-   * - Name
+   * - Attribute
      - Kind
      - Contents
-   * - ``sentinel2_small``
+   * - ``sentinel2_stacked``
      - raster
      - Sentinel-2 L2A blue/green/red/nir as one 4-band file, 1024×1024 @ 10 m,
        EPSG:32633.
-   * - ``sentinel2_small_cog``
+   * - ``sentinel2_cog_stacked``
      - raster
      - Cloud-Optimized GeoTIFF variant of the 4-band stack (HTTP range-read).
-   * - ``sentinel2_small_bands``
+   * - ``sentinel2_blue`` / ``sentinel2_green`` / ``sentinel2_red`` / ``sentinel2_nir``
      - raster
-     - The same four bands as *separate* single-band files (stacked in memory
-       on load); handy for workflows that treat bands as individual rasters.
-   * - ``dem_small``
+     - The four Sentinel-2 bands as separate single-band files.
+   * - ``copernicus_dem``
      - raster
      - Copernicus GLO-30 DEM warped onto the same grid (float32 metres).
-   * - ``dem_small_cog``
+   * - ``copernicus_dem_cog``
      - raster
      - Cloud-Optimized GeoTIFF variant of the DEM.
-   * - ``sentinel2_small_boundary``
+   * - ``boundary``
      - vector
      - Region-of-interest polygon (GeoPackage, EPSG:4326) inside the footprint.
 
-``sentinel2_small`` is a single pre-stacked 4-band GeoTIFF, so ``load`` opens it
-lazily and ``fetch`` returns one path; ``sentinel2_small_bands`` is the same
-imagery split across four single-band files, read into an in-memory stack on
-load and returned by ``fetch`` as a list of paths. All names share one
-1024×1024 grid (the DEM is warped to match), so the imagery, elevation, and
-boundary overlay pixel-for-pixel.
+All rasters share one 1024×1024 grid (the DEM is warped to match), so the
+imagery, elevation, and boundary overlay pixel-for-pixel.
 
 Where files are cached
 ----------------------
@@ -108,14 +106,15 @@ resolved as:
 3. ``~/.cache/easy-eo`` otherwise.
 
 A cached file whose checksum still matches is reused untouched; a missing or
-corrupted file is transparently re-downloaded.
+corrupted file is transparently re-downloaded. :func:`eeo.datasets.cache_dir`
+returns the resolved directory.
 
 Licensing and attribution
 --------------------------
 
 The sample is derived from open Copernicus data. If you redistribute figures or
-data made from it, carry the attribution — ``eeo.datasets.info(name)`` prints
-the exact text:
+data made from it, carry the attribution — ``sd.<name>.info()`` and
+``sd.<name>.attribution`` print the exact text:
 
 - **Sentinel-2:** *Contains modified Copernicus Sentinel-2 L2A data 2023 (tile
   T33UUP, acquired 2023-09-07), processed by ESA; accessed via Microsoft

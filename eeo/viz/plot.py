@@ -172,7 +172,7 @@ def plot_band_array(
     *,
     cmap: str = "gray",
     figsize: tuple[int, int] = (8, 8),
-    stretch: bool = False,
+    stretch: bool = True,
     pmin: float = 2,
     pmax: float = 98,
     title: str | None = None,
@@ -196,8 +196,10 @@ def plot_band_array(
         Matplotlib colormap.
     figsize : tuple of int, default (8, 8)
         Figure size in inches.
-    stretch : bool, default False
-        If True, apply percentile contrast stretching to each band.
+    stretch : bool, default True
+        If True, apply percentile contrast stretching to each band. On by
+        default because the ``pmin``-``pmax`` (2-98) stretch renders most
+        rasters best; pass ``stretch=False`` to display raw values.
     pmin : float, default 2
         Lower percentile for the stretch (used only when ``stretch=True``).
     pmax : float, default 98
@@ -232,7 +234,8 @@ def plot_band_array(
 
     Examples
     --------
-    >>> ds.plot_band_array(bands=[1, 2, 3], stretch=True)
+    >>> ds.plot_band_array(bands=[1, 2, 3])                # 2-98 stretch on by default
+    >>> ds.plot_band_array(bands=[1, 2, 3], stretch=False)  # raw values
     """
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
@@ -268,7 +271,7 @@ def plot_raster(
     *,
     cmap: str = "gray",
     figsize: tuple[int, int] = (10, 5),
-    stretch: bool = False,
+    stretch: bool = True,
     pmin: float = 2,
     pmax: float = 98,
     title: str | None = None,
@@ -292,8 +295,10 @@ def plot_raster(
         Matplotlib colormap.
     figsize : tuple of int, default (10, 5)
         Figure size in inches.
-    stretch : bool, default False
-        If True, apply percentile contrast stretching to each band.
+    stretch : bool, default True
+        If True, apply percentile contrast stretching to each band. On by
+        default because the ``pmin``-``pmax`` (2-98) stretch renders most
+        rasters best; pass ``stretch=False`` to display raw values.
     pmin : float, default 2
         Lower percentile for the stretch (used only when ``stretch=True``).
     pmax : float, default 98
@@ -328,7 +333,8 @@ def plot_raster(
 
     Examples
     --------
-    >>> ds.plot_raster(bands=1, stretch=True)
+    >>> ds.plot_raster(bands=1)                 # 2-98 stretch on by default
+    >>> ds.plot_raster(bands=1, stretch=False)  # raw values
     """
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
@@ -544,7 +550,7 @@ def plot_composite(
     ds: EEORasterDataset,
     bands: Sequence[int | str],
     *,
-    stretch: bool = False,
+    stretch: bool = True,
     figsize: tuple[int, int] = (8, 8),
     pmin: float = 2,
     pmax: float = 98,
@@ -563,8 +569,11 @@ def plot_composite(
     bands : sequence of (int or str)
         Exactly three bands, each a 1-based index or a band name, mapped to
         R, G, B in order.
-    stretch : bool, default False
-        If True, apply percentile contrast stretching to each channel.
+    stretch : bool, default True
+        If True, apply percentile contrast stretching to each channel. On by
+        default because the ``pmin``-``pmax`` (2-98) stretch renders most
+        composites best (and integer rasters such as Sentinel-2 reflectance
+        display as black without it); pass ``stretch=False`` for raw values.
     figsize : tuple of int, default (8, 8)
         Figure size in inches.
     pmin : float, default 2
