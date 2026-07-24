@@ -2,7 +2,7 @@ Datasets Module
 ===============
 
 .. automodule:: eeo.datasets
-    :members: fetch, load, info, available, cache_dir, DatasetError
+    :members: cache_dir, DatasetError
     :show-inheritance:
 
 .. autofunction:: eeo.datasets.load_sample_dataset

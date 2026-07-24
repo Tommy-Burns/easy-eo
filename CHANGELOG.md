@@ -71,33 +71,23 @@ are called out under a **Breaking** heading.
 
 ### Added
 
-- **Sample-data helper (`eeo.datasets`).** `eeo.datasets.load(name)` fetches a
-  small curated Sentinel-2 / Copernicus-DEM sample and returns it ready to use
-  (band names and acquisition timestamp already set for rasters; the cached
-  path for vectors); `eeo.datasets.fetch(name)` returns the cached file path(s)
-  without opening them. Files download on first use to `~/.cache/easy-eo`
-  (override with `EEO_DATA_DIR`, or `XDG_CACHE_HOME`) and are verified against a
-  checksum shipped inside the package, so fetches are instant after the first
-  call and never return corrupt data. `available()` lists the datasets and
-  `info(name)` prints the description and required Copernicus attribution.
-  Downloading uses only the standard library — no new dependency. Registered
-  datasets: `sentinel2_small` (a single pre-stacked 4-band GeoTIFF),
-  `sentinel2_small_cog` (its COG variant), `sentinel2_small_bands` (the same
-  four bands as separate single-band files), `dem_small`, `dem_small_cog`, and
-  `sentinel2_small_boundary`.
-- **Dotted sample access (`eeo.datasets.load_sample_dataset`).** Returns a
-  `SampleDataset` namespace whose attributes are the individual sample files, so
-  a file can be opened by readable, autocompletable name —
-  `load_raster(sd.copernicus_dem)`, `load_raster(sd.sentinel2_blue)`,
-  `load_raster(sd.sentinel2_cog_stacked)` — instead of a string key. Each
-  attribute is a lazy `SamplePath` (an `os.PathLike`): constructing the
-  namespace touches no network, and a file is downloaded and checksum-verified
-  only when it is actually opened. Pass `prefetch=True` to warm the whole cache
-  up front. Exposed attributes: `sentinel2_stacked`, `sentinel2_cog_stacked`,
+- **Sample-data helper (`eeo.datasets.load_sample_dataset`).** Returns a
+  `SampleDataset` namespace whose attributes are the individual bundled files, so
+  a curated Sentinel-2 / Copernicus-DEM sample is opened by readable,
+  autocompletable name — `load_raster(sd.copernicus_dem)`,
+  `load_raster(sd.sentinel2_blue)`, `load_raster(sd.sentinel2_cog_stacked)` —
+  never by a hard-coded string key. Each attribute is a lazy `SamplePath` (an
+  `os.PathLike`): constructing the namespace touches no network, and a file is
+  downloaded to `~/.cache/easy-eo` (override with `EEO_DATA_DIR`, or
+  `XDG_CACHE_HOME`) and checksum-verified only when it is actually opened, so a
+  fetch is instant after the first call and never returns corrupt data. Pass
+  `prefetch=True` to warm the whole cache up front. Provenance travels with each
+  handle: `sd.<name>.info()` and `sd.<name>.attribution` carry the required
+  Copernicus attribution; `sd.<name>.path` gives the raw cached path; the
+  namespace is iterable. Downloading uses only the standard library — no new
+  dependency. Exposed files: `sentinel2_stacked`, `sentinel2_cog_stacked`,
   `sentinel2_blue`/`green`/`red`/`nir`, `copernicus_dem`, `copernicus_dem_cog`,
-  and `boundary` (a vector, for GeoPandas). A thin convenience layer over the
-  existing `load`/`fetch` string API, which remains the way to get the
-  timestamped in-memory band stack.
+  and `boundary` (a vector, for GeoPandas).
 - **Band names on `EEORasterDataset`.** Datasets now carry an optional
   per-band name list (one entry per band, `None` for an unnamed band), seeded
   from the raster's GDAL band descriptions at load time. Read or replace them
