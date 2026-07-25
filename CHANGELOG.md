@@ -78,6 +78,17 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- **STAC search (`eeo.stac_search`).** Query any STAC API — Microsoft Planetary
+  Computer by default — by collection, bounding box (WGS 84 lon/lat), date or
+  date range, maximum cloud cover, and result limit:
+  `eeo.stac_search("sentinel-2-l2a", bbox=..., datetime="2023-06-01/2023-08-31",
+  cloud_cover=20, limit=5)`. Returns a `STACSearchResult`: a sequence of
+  `STACItem`s ordered oldest-first, each carrying its acquisition `timestamp`,
+  `assets`, `cloud_cover`, and STAC `properties`, with the raw `pystac.Item`
+  still reachable at `.item`. The result keeps the search `bbox` as its area of
+  interest. Planetary Computer asset URLs are signed automatically (override
+  with `sign=`). Searching is metadata-only — no pixel data is read and nothing
+  is downloaded. Needs the `stac` extra.
 - **Optional `stac` extra (`pip install "easy-eo[stac]"`).** Installs
   `pystac-client>=0.8,<1` and `planetary-computer>=1.0,<2`, the dependencies of
   the forthcoming STAC data access. Features behind an extra import their

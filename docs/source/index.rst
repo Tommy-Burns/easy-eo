@@ -93,6 +93,7 @@ arithmetic, computing indices, and visualizing results.
    modules/adapters
    modules/analysis
    modules/datasets
+   modules/io
    modules/ops
    modules/preprocessing
    modules/viz
