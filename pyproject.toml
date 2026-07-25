@@ -35,6 +35,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# STAC data access (eeo.io.stac). pystac-client drives the search; the
+# planetary-computer helper signs Microsoft Planetary Computer asset URLs.
+# Both are capped below their next major version: pystac-client is pre-1.0 and
+# still changes its client API between minors.
+stac = [
+    "pystac-client>=0.8,<1",
+    "planetary-computer>=1.0,<2",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",

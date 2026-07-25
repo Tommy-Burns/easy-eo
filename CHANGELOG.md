@@ -78,6 +78,15 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- **Optional `stac` extra (`pip install "easy-eo[stac]"`).** Installs
+  `pystac-client>=0.8,<1` and `planetary-computer>=1.0,<2`, the dependencies of
+  the forthcoming STAC data access. Features behind an extra import their
+  packages through a shared helper that raises the new
+  `MissingDependencyError` — an `EEOError` that is also an `ImportError`, so
+  `except ImportError` still catches it — whose message names the feature, the
+  missing package, and the exact `pip install 'easy-eo[stac]'` command. A
+  missing *transitive* dependency of an installed extra still surfaces as its
+  own `ModuleNotFoundError` rather than being reported as a missing extra.
 - **Sample-data helper (`eeo.datasets.load_sample_dataset`).** Returns a
   `SampleDataset` namespace whose attributes are the individual bundled files, so
   a curated Sentinel-2 / Copernicus-DEM sample is opened by readable,

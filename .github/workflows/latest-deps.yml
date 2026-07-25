@@ -31,7 +31,7 @@ jobs:
       # `--upgrade` re-resolves to the newest versions within our ranges,
       # ignoring uv.lock, so this tests against fresh upstream releases.
       - name: Install latest dependency versions
-        run: uv sync --upgrade --extra dev
+        run: uv sync --upgrade --extra dev --extra stac
 
       # Newer upstream releases may introduce their own deprecation warnings;
       # this canary tracks functional pass/fail, so they are not fatal here.

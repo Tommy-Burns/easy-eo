@@ -12,6 +12,7 @@ from .core import (
     BackendError,
     CRSMismatchError,
     EEOError,
+    MissingDependencyError,
     ValidationError,
     load_array,
     load_raster,
@@ -31,6 +32,7 @@ __all__ = [
     "CRSMismatchError",
     "AlignmentError",
     "BackendError",
+    "MissingDependencyError",
 ]
 
 __version__ = "0.1.0b1"
