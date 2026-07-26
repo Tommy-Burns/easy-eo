@@ -76,6 +76,7 @@ arithmetic, computing indices, and visualizing results.
    getting_started
    user_guide/core_dataset
    user_guide/sample_data
+   user_guide/loading_satellite_data
    user_guide/band_names
    user_guide/ops
    user_guide/spectral_indices
@@ -93,6 +94,7 @@ arithmetic, computing indices, and visualizing results.
    modules/adapters
    modules/analysis
    modules/datasets
+   modules/io
    modules/ops
    modules/preprocessing
    modules/viz

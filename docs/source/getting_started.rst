@@ -18,12 +18,51 @@ scientific libraries, including:
 - **NumPy** for numerical and array operations.
 - **Matplotlib** for visualization of rasters and histograms.
 
-Installing Easy-EO (this current version) automatically installs these dependencies with compatible versions:
+Installing Easy-EO automatically installs these dependencies within the tested
+version ranges:
 
-- `rasterio>=1.4,<1.5`
-- `geopandas>=1.1,<1.2`
-- `numpy>=1.26,<2.2`
-- `matplotlib>=3.10,<3.11`
+- ``rasterio>=1.4,<2``
+- ``geopandas>=1.1,<2``
+- ``numpy>=1.26,<3``
+- ``matplotlib>=3.8``
+
+----
+
+Optional extras
+^^^^^^^^^^^^^^^
+
+Heavier, feature-specific dependencies live behind optional extras so the base
+install stays small. Install an extra by name:
+
+.. code-block:: bash
+
+    pip install "easy-eo[stac]"
+
+.. list-table::
+    :header-rows: 1
+    :widths: 15 40 45
+
+    * - Extra
+      - Installs
+      - Enables
+    * - ``stac``
+      - ``pystac-client``, ``planetary-computer``
+      - Searching STAC catalogs and loading assets straight into an
+        :class:`~eeo.core.EEORasterDataset` — see
+        :doc:`user_guide/loading_satellite_data`
+
+Using a feature without its extra installed raises
+:class:`~eeo.MissingDependencyError` — an ``ImportError`` whose message names
+the exact install command:
+
+.. code-block:: text
+
+    MissingDependencyError: STAC search requires the optional 'pystac_client'
+    package, which is not installed. Install the 'stac' extra with:
+    pip install 'easy-eo[stac]'
+
+``eeo.show_versions()`` reports which extras are present, which is worth
+pasting into any bug report.
 
 ----
 

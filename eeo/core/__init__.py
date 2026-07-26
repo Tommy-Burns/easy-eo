@@ -6,6 +6,7 @@ from .exceptions import (
     BackendError,
     CRSMismatchError,
     EEOError,
+    MissingDependencyError,
     ValidationError,
 )
 from .loader import load_array, load_raster
@@ -22,4 +23,5 @@ __all__ = [
     "CRSMismatchError",
     "AlignmentError",
     "BackendError",
+    "MissingDependencyError",
 ]

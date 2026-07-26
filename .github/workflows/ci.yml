@@ -46,7 +46,7 @@ jobs:
         run: >
           uvx --from numpydoc numpydoc lint
           eeo/ops/*.py eeo/analysis/*.py eeo/preprocessing/*.py eeo/viz/*.py
-          eeo/core/loader.py eeo/_show_versions.py
+          eeo/io/*.py eeo/core/loader.py eeo/_show_versions.py
 
       - name: Core stub freshness
         run: uv run python scripts/generate_core_stub.py --check
@@ -68,8 +68,11 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
 
+      # The optional extras are installed here so their "installed" path is
+      # exercised; the "absent" path is covered by simulating the missing
+      # import, so both cases run in every environment.
       - name: Install locked environment
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --extra dev --extra stac
 
       - name: Run tests with coverage
         run: uv run pytest --cov-report=xml
@@ -104,7 +107,7 @@ jobs:
       - name: Install lowest supported dependency versions
         run: |
           uv venv --python 3.10 --clear
-          uv pip install --resolution lowest-direct -e ".[dev]"
+          uv pip install --resolution lowest-direct -e ".[dev,stac]"
 
       # Old dependency versions legitimately emit their own deprecation
       # warnings (e.g. matplotlib via pyparsing); this job checks functional

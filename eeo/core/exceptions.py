@@ -4,8 +4,9 @@ Every error Easy-EO raises for its own failure modes derives from
 :class:`EEOError`, so callers can catch any library-specific problem with a
 single ``except EEOError`` while letting unrelated exceptions propagate. Each
 subclass additionally derives from the built-in exception it historically
-replaced (``ValueError`` or ``RuntimeError``), so existing
-``except ValueError`` / ``except RuntimeError`` handlers keep working.
+replaced or stands in for (``ValueError``, ``RuntimeError``, or
+``ImportError``), so existing ``except ValueError`` / ``except RuntimeError`` /
+``except ImportError`` handlers keep working.
 
 Two failure modes intentionally keep their standard-library exceptions rather
 than joining this hierarchy, because remapping them would break universal
@@ -40,6 +41,15 @@ class AlignmentError(EEOError, ValueError):
     Signals a mismatch in shape and/or affine transform between rasters that an
     operation requires to share a grid. Subclasses :class:`ValueError` for
     backward compatibility.
+    """
+
+
+class MissingDependencyError(EEOError, ImportError):
+    """Raised when a feature's optional dependency is not installed.
+
+    Carries the exact ``pip install`` command for the extra that provides the
+    missing package. Subclasses :class:`ImportError` so ``except ImportError``
+    handlers around an optional feature keep working.
     """
 
 

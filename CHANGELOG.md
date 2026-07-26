@@ -78,6 +78,62 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- **"Loading satellite data" guide** (`docs/source/user_guide/loading_satellite_data.rst`).
+  Quickstart from a STAC archive to a plotted NDVI in under ten lines, then the
+  detail: what each search filter means, how to read a result, which asset keys
+  the common catalogs use for each Sentinel-2 and Landsat 8/9 band, how AOI
+  cropping and
+  multi-asset stacking behave, and the caveats worth knowing (signed URLs
+  expire, the cloud filter is the catalog's own, catalogs return reprocessed
+  duplicates).
+- **Search by shape (`stac_search(intersects=...)`).** Filter scenes by a real
+  area of interest instead of its bounding rectangle: a GeoDataFrame, GeoSeries,
+  shapely geometry, GeoJSON mapping (geometry, Feature, or FeatureCollection),
+  or a path to any vector file GeoPandas can read. Anything carrying a CRS is
+  reprojected to WGS 84 lon/lat automatically — a projected geometry submitted
+  as-is would match nothing, silently, so one whose coordinates cannot be
+  degrees is rejected with an actionable error instead. `bbox` and `intersects`
+  are mutually exclusive, as the STAC spec requires. The geometry is retained on
+  the result (`STACSearchResult.intersects`, `STACItem.search_intersects`), so
+  `load()` crops to its bounds by default and `load(..., mask=True)` sets the
+  pixels outside its outline to nodata — the asset's own nodata value where it
+  declares one, otherwise NaN for floating dtypes and 0 for integer ones,
+  recorded as the result's `nodata` either way so a masked area is never
+  mistaken for data by a later operation.
+- **STAC asset loading (`STACItem.load`).** Turns a search result into an
+  `EEORasterDataset`: `results[0].load(["B04", "B08"])`. **Only the area of
+  interest is read** — the assets are opened remotely and just the pixels
+  covering the AOI are fetched as HTTP range requests against the
+  cloud-optimized GeoTIFF, so a small AOI over a Sentinel-2 tile transfers a
+  fraction of the band and nothing is downloaded whole. The AOI defaults to the
+  `bbox` of the search that produced the item (exposed as
+  `STACItem.search_bbox`); pass `bbox=` to override it or `crop=False` to read
+  the entire scene. Several assets stack into one multi-band dataset with each
+  band named after its asset, ready for `ds.ndvi(red="B04", nir="B08")`; assets
+  that do not share the first one's grid — a 20 m band beside a 10 m one, or a
+  different UTM zone — are resampled onto it (`resampling=`, nearest by
+  default). The result carries the item's acquisition time as `timestamp` and
+  its id, collection, and asset list in `attrs`.
+- **STAC search (`eeo.stac_search`).** Query any STAC API — Microsoft Planetary
+  Computer by default — by collection, bounding box (WGS 84 lon/lat), date or
+  date range, maximum cloud cover, and result limit:
+  `eeo.stac_search("sentinel-2-l2a", bbox=..., datetime="2023-06-01/2023-08-31",
+  cloud_cover=20, limit=5)`. Returns a `STACSearchResult`: a sequence of
+  `STACItem`s ordered oldest-first, each carrying its acquisition `timestamp`,
+  `assets`, `cloud_cover`, and STAC `properties`, with the raw `pystac.Item`
+  still reachable at `.item`. The result keeps the search `bbox` as its area of
+  interest. Planetary Computer asset URLs are signed automatically (override
+  with `sign=`). Searching is metadata-only — no pixel data is read and nothing
+  is downloaded. Needs the `stac` extra.
+- **Optional `stac` extra (`pip install "easy-eo[stac]"`).** Installs
+  `pystac-client>=0.8,<1` and `planetary-computer>=1.0,<2`, the dependencies of
+  the forthcoming STAC data access. Features behind an extra import their
+  packages through a shared helper that raises the new
+  `MissingDependencyError` — an `EEOError` that is also an `ImportError`, so
+  `except ImportError` still catches it — whose message names the feature, the
+  missing package, and the exact `pip install 'easy-eo[stac]'` command. A
+  missing *transitive* dependency of an installed extra still surfaces as its
+  own `ModuleNotFoundError` rather than being reported as a missing extra.
 - **Sample-data helper (`eeo.datasets.load_sample_dataset`).** Returns a
   `SampleDataset` namespace whose attributes are the individual bundled files, so
   a curated Sentinel-2 / Copernicus-DEM sample is opened by readable,

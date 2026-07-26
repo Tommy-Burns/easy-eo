@@ -5,7 +5,7 @@ Core Module
     :members:
     :undoc-members:
     :show-inheritance:
-    :exclude-members: EEOError, ValidationError, CRSMismatchError, AlignmentError, BackendError
+    :exclude-members: EEOError, ValidationError, CRSMismatchError, AlignmentError, BackendError, MissingDependencyError
 
 Utilities
 ---------
@@ -37,7 +37,9 @@ propagate:
 For backward compatibility, each subclass also derives from the built-in
 exception it historically replaced: :class:`~eeo.ValidationError`,
 :class:`~eeo.CRSMismatchError`, and :class:`~eeo.AlignmentError` are
-``ValueError``\ s, and :class:`~eeo.BackendError` is a ``RuntimeError``. Two
+``ValueError``\ s, :class:`~eeo.BackendError` is a ``RuntimeError``, and
+:class:`~eeo.MissingDependencyError` — raised when a feature's optional extra
+is not installed — is an ``ImportError``. Two
 failure modes intentionally keep their standard-library exceptions rather than
 joining the hierarchy: a missing raster file raises ``FileNotFoundError``, and
 an out-of-range band index raises ``IndexError``.

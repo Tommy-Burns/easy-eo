@@ -35,6 +35,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# STAC data access (eeo.io.stac). pystac-client drives the search; the
+# planetary-computer helper signs Microsoft Planetary Computer asset URLs.
+# Both are capped below their next major version: pystac-client is pre-1.0 and
+# still changes its client API between minors.
+stac = [
+    "pystac-client>=0.8,<1",
+    "planetary-computer>=1.0,<2",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -144,14 +152,17 @@ warn_unused_ignores = true
 no_implicit_optional = true
 check_untyped_defs = true
 
-# The geospatial stack ships no type information (no py.typed, no stub
-# packages), so mypy cannot analyze it. Suppress the resulting
-# import-untyped noise rather than annotating third-party internals.
+# The geospatial stack ships no type information of its own, so mypy cannot
+# analyze it. Suppress the resulting import-untyped noise rather than
+# annotating third-party internals. (shapely has a community stub package,
+# types-shapely, which we deliberately do not adopt: it would type one corner
+# of a stack that is otherwise unanalyzable either way.)
 [[tool.mypy.overrides]]
 module = [
     "rasterio",
     "rasterio.*",
     "geopandas",
+    "shapely",
     "affine",
     "pyproj",
     "pyproj.*",
@@ -187,6 +198,10 @@ filterwarnings = [
     # numpy 2.5 deprecated that. Out of our control until rasterio ships a
     # fix — ignore the specific message rather than weakening the gate.
     "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
+    # planetary-computer (the [stac] extra) still declares its pydantic models
+    # with a class-based Config, which pydantic 2 deprecates on import. Out of
+    # our control until planetary-computer migrates.
+    "ignore:Support for class-based `config` is deprecated:DeprecationWarning",
 ]
 
 # ---------------------

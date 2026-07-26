@@ -1,0 +1,235 @@
+{
+  "type": "FeatureCollection",
+  "stac_version": "1.0.0",
+  "features": [
+    {
+      "type": "Feature",
+      "stac_version": "1.0.0",
+      "id": "S2B_MSIL2A_20260724T101559_R065_T32TPS_20260724T141313",
+      "collection": "sentinel-2-l2a",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.7522421,
+              46.8536513
+            ],
+            [
+              11.7402881,
+              46.8244969
+            ],
+            [
+              11.676864,
+              46.6793838
+            ],
+            [
+              11.6127394,
+              46.5345436
+            ],
+            [
+              11.5498542,
+              46.3894991
+            ],
+            [
+              11.4883187,
+              46.2441422
+            ],
+            [
+              11.4274416,
+              46.0986829
+            ],
+            [
+              11.3659159,
+              45.9533961
+            ],
+            [
+              11.3602957,
+              45.9395488
+            ],
+            [
+              10.2904841,
+              45.9582645
+            ],
+            [
+              10.3140353,
+              46.9461683
+            ],
+            [
+              11.7555849,
+              46.9205364
+            ],
+            [
+              11.7522421,
+              46.8536513
+            ]
+          ]
+        ]
+      },
+      "bbox": [
+        10.2904841,
+        45.9395488,
+        11.7555849,
+        46.9461683
+      ],
+      "properties": {
+        "datetime": "2026-07-24T10:15:59.024000Z",
+        "platform": "Sentinel-2B",
+        "proj:epsg": 32632,
+        "instruments": [
+          "msi"
+        ],
+        "constellation": "Sentinel 2",
+        "eo:cloud_cover": 0.236745
+      },
+      "assets": {
+        "B04": {
+          "href": "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/32/T/PS/2026/07/24/S2B_MSIL2A_20260724T101559_N0512_R065_T32TPS_20260724T141313.SAFE/GRANULE/L2A_T32TPS_A048997_20260724T101659/IMG_DATA/R10m/T32TPS_20260724T101559_B04_10m.tif",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "title": "Band 4 - Red - 10m"
+        },
+        "B08": {
+          "href": "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/32/T/PS/2026/07/24/S2B_MSIL2A_20260724T101559_N0512_R065_T32TPS_20260724T141313.SAFE/GRANULE/L2A_T32TPS_A048997_20260724T101659/IMG_DATA/R10m/T32TPS_20260724T101559_B08_10m.tif",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "title": "Band 8 - NIR - 10m"
+        },
+        "B11": {
+          "href": "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/32/T/PS/2026/07/24/S2B_MSIL2A_20260724T101559_N0512_R065_T32TPS_20260724T141313.SAFE/GRANULE/L2A_T32TPS_A048997_20260724T101659/IMG_DATA/R20m/T32TPS_20260724T101559_B11_20m.tif",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "title": "Band 11 - SWIR (1.6) - 20m"
+        },
+        "SCL": {
+          "href": "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/32/T/PS/2026/07/24/S2B_MSIL2A_20260724T101559_N0512_R065_T32TPS_20260724T141313.SAFE/GRANULE/L2A_T32TPS_A048997_20260724T101659/IMG_DATA/R20m/T32TPS_20260724T101559_SCL_20m.tif",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "title": "Scene classfication map (SCL)"
+        }
+      },
+      "links": []
+    },
+    {
+      "type": "Feature",
+      "stac_version": "1.0.0",
+      "id": "S2A_MSIL2A_20260721T102041_R065_T32TPS_20260721T170018",
+      "collection": "sentinel-2-l2a",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.7520578,
+              46.8499638
+            ],
+            [
+              11.7322141,
+              46.8023352
+            ],
+            [
+              11.6688017,
+              46.6570808
+            ],
+            [
+              11.6042266,
+              46.512161
+            ],
+            [
+              11.5412425,
+              46.3669454
+            ],
+            [
+              11.4782469,
+              46.2219063
+            ],
+            [
+              11.4189441,
+              46.0761062
+            ],
+            [
+              11.3613475,
+              45.9395304
+            ],
+            [
+              10.2904841,
+              45.9582645
+            ],
+            [
+              10.3140353,
+              46.9461683
+            ],
+            [
+              11.7555849,
+              46.9205364
+            ],
+            [
+              11.7520578,
+              46.8499638
+            ]
+          ]
+        ]
+      },
+      "bbox": [
+        10.2904841,
+        45.9395304,
+        11.7555849,
+        46.9461683
+      ],
+      "properties": {
+        "datetime": "2026-07-21T10:20:41.024000Z",
+        "platform": "Sentinel-2A",
+        "proj:epsg": 32632,
+        "instruments": [
+          "msi"
+        ],
+        "constellation": "Sentinel 2",
+        "eo:cloud_cover": 40.672112
+      },
+      "assets": {
+        "B04": {
+          "href": "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/32/T/PS/2026/07/21/S2A_MSIL2A_20260721T102041_N0512_R065_T32TPS_20260721T170018.SAFE/GRANULE/L2A_T32TPS_A057863_20260721T102042/IMG_DATA/R10m/T32TPS_20260721T102041_B04_10m.tif",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "title": "Band 4 - Red - 10m"
+        },
+        "B08": {
+          "href": "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/32/T/PS/2026/07/21/S2A_MSIL2A_20260721T102041_N0512_R065_T32TPS_20260721T170018.SAFE/GRANULE/L2A_T32TPS_A057863_20260721T102042/IMG_DATA/R10m/T32TPS_20260721T102041_B08_10m.tif",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "title": "Band 8 - NIR - 10m"
+        },
+        "B11": {
+          "href": "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/32/T/PS/2026/07/21/S2A_MSIL2A_20260721T102041_N0512_R065_T32TPS_20260721T170018.SAFE/GRANULE/L2A_T32TPS_A057863_20260721T102042/IMG_DATA/R20m/T32TPS_20260721T102041_B11_20m.tif",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "title": "Band 11 - SWIR (1.6) - 20m"
+        },
+        "SCL": {
+          "href": "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/32/T/PS/2026/07/21/S2A_MSIL2A_20260721T102041_N0512_R065_T32TPS_20260721T170018.SAFE/GRANULE/L2A_T32TPS_A057863_20260721T102042/IMG_DATA/R20m/T32TPS_20260721T102041_SCL_20m.tif",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "title": "Scene classfication map (SCL)"
+        }
+      },
+      "links": []
+    }
+  ],
+  "links": []
+}
