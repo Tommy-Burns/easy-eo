@@ -10,8 +10,10 @@ the same algebra primitives you can use directly.
 .. seealso::
 
    :doc:`nodata_and_dtype` for how every index treats nodata pixels and why
-   the output is always float32, and :doc:`band_names` for addressing bands by
-   name and for why an index result is never auto-named after its operation.
+   the output is always float32, :doc:`band_names` for addressing bands by
+   name and for why an index result is never auto-named after its operation,
+   and :doc:`loading_satellite_data` for computing these straight off a
+   satellite archive.
 
 -----
 

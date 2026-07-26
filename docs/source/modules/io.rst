@@ -7,7 +7,9 @@ Data access beyond the local filesystem. STAC search needs the optional
 install command.
 
 :func:`eeo.stac_search` finds scenes and :meth:`eeo.io.STACItem.load` reads
-them. A load returns only the area of interest by default — the assets are read
+them. Searches go to Microsoft Planetary Computer
+(:data:`eeo.io.PLANETARY_COMPUTER_STAC_URL`) unless a different ``catalog=`` is
+given. A load returns only the area of interest by default — the assets are read
 remotely over HTTP range requests, so a small AOI over a Sentinel-2 tile
 transfers a fraction of the band instead of downloading the scene:
 

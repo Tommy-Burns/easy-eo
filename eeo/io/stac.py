@@ -48,7 +48,8 @@ from eeo.core.exceptions import ValidationError
 from eeo.core.loader import load_array
 from eeo.core.types import ResamplingMethod
 
-#: STAC API endpoint used when no ``catalog`` is given.
+#: Microsoft Planetary Computer's STAC API — the default ``catalog`` for
+#: :func:`stac_search`, and the only catalog contacted unless another is given.
 PLANETARY_COMPUTER_STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 
 # Catalogs whose asset URLs must be signed before they can be read. Signing is
@@ -763,7 +764,10 @@ def stac_search(
         Maximum number of items to return. None returns every match, which
         may be many pages of results.
     catalog : str, default :data:`PLANETARY_COMPUTER_STAC_URL`
-        STAC API endpoint to search. Any STAC API works, e.g. Earth Search.
+        STAC API endpoint to search. Defaults to Microsoft Planetary Computer
+        (``https://planetarycomputer.microsoft.com/api/stac/v1``), which is the
+        only catalog contacted unless another endpoint is given here. Any STAC
+        API works, e.g. Earth Search.
     sign : bool or None, default None
         Whether to sign asset URLs with ``planetary-computer``. None signs
         automatically when ``catalog`` is a Planetary Computer endpoint and

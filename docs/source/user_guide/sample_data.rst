@@ -11,8 +11,10 @@ corrupt data. Downloading uses only the Python standard library, so it adds
 
 .. seealso::
 
-   :doc:`band_names` for how the loaded bands are addressed by name, and
-   :doc:`spectral_indices` for computing NDVI and friends on the sample.
+   :doc:`band_names` for how the loaded bands are addressed by name,
+   :doc:`spectral_indices` for computing NDVI and friends on the sample, and
+   :doc:`loading_satellite_data` for pulling your own scenes from a satellite
+   archive instead.
 
 -----
 

@@ -48,7 +48,8 @@ install stays small. Install an extra by name:
     * - ``stac``
       - ``pystac-client``, ``planetary-computer``
       - Searching STAC catalogs and loading assets straight into an
-        :class:`~eeo.core.EEORasterDataset`
+        :class:`~eeo.core.EEORasterDataset` — see
+        :doc:`user_guide/loading_satellite_data`
 
 Using a feature without its extra installed raises
 :class:`~eeo.MissingDependencyError` — an ``ImportError`` whose message names
