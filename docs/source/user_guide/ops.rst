@@ -29,7 +29,7 @@ This library exposes algebraic primitives instead of predefined indices.
 Most vegetation and water indices can be expressed directly using
 normalized_difference or raster arithmetic.
 
-.. function:: normalized_difference(ds, other, *, auto_align=True, method="bilinear", return_as_ndarray=False)
+.. function:: normalized_difference(ds, other, *, auto_align=True, method="bilinear", name=None)
 
    Compute a normalized difference index using the formula:
 
@@ -49,23 +49,24 @@ normalized_difference or raster arithmetic.
      and extent of ``ds`` if needed.
    - **method** (str, default="bilinear")
      Resampling method used during alignment.
-   - **return_as_ndarray** (bool, default=False)
-     If ``True``, returns a NumPy array instead of an ``EEORasterDataset``.
+   - **name** (str or None, default=None)
+     Optional name for the output band of a single-band result.
 
    **Returns**
 
-   - ``numpy.ndarray`` or ``EEORasterDataset``
+   - ``EEORasterDataset``
 
    **Example**
 
    .. code-block:: python
 
       ndvi = ds_nir.normalized_difference(ds_red)
-      ndvi_ds = ds_nir.normalized_difference(ds_red, return_as_ndarray=False) # Return as EEORasterDataset
 
-      # Alternatively
+      # Alternatively, as a plain function call
       ndvi = normalized_difference(ds_nir, ds_red)
-      ndvi_ds = normalized_difference(ds_nir, ds_red, return_as_ndarray=True) # Return as Numpy ndarray
+
+      # The raw values, when that is what you need
+      ndvi_array = ds_nir.normalized_difference(ds_red).to_array()
 
 -----
 

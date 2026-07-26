@@ -176,11 +176,12 @@ Easy-EO allows computing **normalized or custom indices**:
     # NDVI-like computation
     ndvi = normalized_difference(ds_nir, ds_red)
 
-    # Return as EEORasterDataset
-    ndvi_ds = ds_nir.normalized_difference(ds_red, return_as_ndarray=False)
+    # The same thing as a bound method
+    ndvi = ds_nir.normalized_difference(ds_red)
 
 .. note::
-    Supports chaining with other operations and can return either **NumPy arrays** or **EEORasterDataset**.
+    Returns a new **EEORasterDataset**, so it chains with any other operation.
+    Call ``.to_array()`` on the result when you need the raw **NumPy array**.
 
 Clipping, Mosaicking, and Stacking
 ----------------------------------

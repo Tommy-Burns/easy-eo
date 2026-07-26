@@ -37,42 +37,42 @@ def _nd(a, b):
 # Value correctness (hand-computed reference arrays)
 # ---------------------------------------------------------------------------
 def test_ndvi_matches_reference():
-    result = _band(NIR).ndvi(_band(RED), return_as_ndarray=True)
+    result = _band(NIR).ndvi(_band(RED)).get_band(1)
     assert np.allclose(result, _nd(NIR, RED))
 
 
 def test_ndwi_matches_reference():
     # McFeeters water NDWI: (Green - NIR) / (Green + NIR), called on Green.
-    result = _band(GREEN).ndwi(_band(NIR), return_as_ndarray=True)
+    result = _band(GREEN).ndwi(_band(NIR)).get_band(1)
     assert np.allclose(result, _nd(GREEN, NIR))
 
 
 def test_ndmi_matches_reference():
-    result = _band(NIR).ndmi(_band(SWIR), return_as_ndarray=True)
+    result = _band(NIR).ndmi(_band(SWIR)).get_band(1)
     assert np.allclose(result, _nd(NIR, SWIR))
 
 
 def test_ndbi_matches_reference():
     # Built-up NDBI: (SWIR1 - NIR) / (SWIR1 + NIR), called on SWIR1.
-    result = _band(SWIR).ndbi(_band(NIR), return_as_ndarray=True)
+    result = _band(SWIR).ndbi(_band(NIR)).get_band(1)
     assert np.allclose(result, _nd(SWIR, NIR))
 
 
 def test_evi_matches_reference():
-    result = _band(NIR).evi(_band(RED), _band(BLUE), return_as_ndarray=True)
+    result = _band(NIR).evi(_band(RED), _band(BLUE)).get_band(1)
     expected = 2.5 * (NIR - RED) / (NIR + 6.0 * RED - 7.5 * BLUE + 1.0)
     assert np.allclose(result, expected)
 
 
 def test_savi_matches_reference():
-    result = _band(NIR).savi(_band(RED), soil_factor=0.5, return_as_ndarray=True)
+    result = _band(NIR).savi(_band(RED), soil_factor=0.5).get_band(1)
     expected = (1.0 + 0.5) * (NIR - RED) / (NIR + RED + 0.5)
     assert np.allclose(result, expected)
 
 
 def test_savi_with_zero_soil_factor_equals_ndvi():
-    savi = _band(NIR).savi(_band(RED), soil_factor=0.0, return_as_ndarray=True)
-    ndvi = _band(NIR).ndvi(_band(RED), return_as_ndarray=True)
+    savi = _band(NIR).savi(_band(RED), soil_factor=0.0).get_band(1)
+    ndvi = _band(NIR).ndvi(_band(RED)).get_band(1)
     assert np.allclose(savi, ndvi)
 
 
@@ -81,14 +81,14 @@ def test_savi_with_zero_soil_factor_equals_ndvi():
 # ---------------------------------------------------------------------------
 def test_band_index_selection_matches_separate_datasets():
     scene = _band(np.stack([NIR, RED]))  # 2-band stack: band 1 NIR, band 2 Red
-    from_indices = scene.ndvi(red=2, nir=1, return_as_ndarray=True)
-    from_datasets = _band(NIR).ndvi(_band(RED), return_as_ndarray=True)
+    from_indices = scene.ndvi(red=2, nir=1).get_band(1)
+    from_datasets = _band(NIR).ndvi(_band(RED)).get_band(1)
     assert np.allclose(from_indices, from_datasets)
 
 
 def test_evi_band_index_selection():
     scene = _band(np.stack([NIR, RED, BLUE]))
-    result = scene.evi(red=2, blue=3, nir=1, return_as_ndarray=True)
+    result = scene.evi(red=2, blue=3, nir=1).get_band(1)
     expected = 2.5 * (NIR - RED) / (NIR + 6.0 * RED - 7.5 * BLUE + 1.0)
     assert np.allclose(result, expected)
 
@@ -141,7 +141,7 @@ def test_nodata_is_contagious_and_output_nodata_is_nan():
 def test_nodata_in_second_band_propagates():
     red = RED.copy()
     red[1, 1] = -1.0
-    result = _band(NIR).ndvi(_band(red, nodata=-1.0), return_as_ndarray=True)
+    result = _band(NIR).ndvi(_band(red, nodata=-1.0)).get_band(1)
     assert np.isnan(result[1, 1])
     assert not np.isnan(result[0, 0])
 
@@ -156,7 +156,7 @@ def test_no_declared_nodata_yields_none_nodata():
 # ---------------------------------------------------------------------------
 def test_zero_denominator_maps_to_zero():
     zeros = np.zeros((2, 2), dtype=np.float32)
-    result = _band(zeros).ndvi(_band(zeros), return_as_ndarray=True)
+    result = _band(zeros).ndvi(_band(zeros)).get_band(1)
     assert np.all(result == 0)
     assert not np.any(np.isnan(result))
 

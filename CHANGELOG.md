@@ -11,6 +11,16 @@ are called out under a **Breaking** heading.
 
 ### Breaking
 
+- **`return_as_ndarray` removed from the spectral indices and
+  `normalized_difference`.** `ndvi`, `ndwi`, `ndmi`, `ndbi`, `evi`, `savi`, and
+  `normalized_difference` now always return an `EEORasterDataset`. The flag made
+  their return type `numpy.ndarray | EEORasterDataset`, which meant chaining off
+  a result — `ds.ndvi(...).save_raster(...)`, exactly what the docs show — failed
+  static type checking for anyone running mypy or pyright against the package,
+  since easy-eo ships type information. Read the values off the result instead:
+  `.get_band(1)` for the 2D band (what `return_as_ndarray=True` used to give the
+  indices) or `.to_array()` for the `(bands, height, width)` array (what it gave
+  `normalized_difference`). Runtime behaviour is otherwise unchanged.
 - **Default values corrected to conventional choices.**
   - `normalize_percentile` now defaults to `lower_percentile=2`,
     `upper_percentile=98` (previously `0.0` / `1.0`). Callers relying on the

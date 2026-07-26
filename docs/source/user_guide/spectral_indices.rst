@@ -49,7 +49,9 @@ receiver's grid automatically (``auto_align=True``, the default); pass
 ``auto_align=False`` to require an exact match instead.
 
 Each method returns a new single-band ``EEORasterDataset`` and is fully
-chainable; pass ``return_as_ndarray=True`` to get the raw 2D array instead.
+chainable. When you want the raw values, read them off the result:
+``.get_band(1)`` for the 2D band, or ``.to_array()`` for the
+``(bands, height, width)`` array.
 
 .. code-block:: python
 
@@ -180,12 +182,12 @@ vegetation patch (top-left), open water (top-right), and a built-up area
    ds = {n: load_array(a, transform=transform, crs=4326) for n, a in bands.items()}
 
    panels = [
-       ("NDVI", ds["nir"].ndvi(ds["red"], return_as_ndarray=True), "RdYlGn", -1, 1),
-       ("NDWI", ds["green"].ndwi(ds["nir"], return_as_ndarray=True), "BrBG_r", -1, 1),
-       ("NDMI", ds["nir"].ndmi(ds["swir"], return_as_ndarray=True), "BrBG", -1, 1),
-       ("NDBI", ds["swir"].ndbi(ds["nir"], return_as_ndarray=True), "pink", -1, 1),
-       ("EVI", ds["nir"].evi(ds["red"], ds["blue"], return_as_ndarray=True), "YlGn", -1, 1),
-       ("SAVI", ds["nir"].savi(ds["red"], return_as_ndarray=True), "YlGn", -1, 1),
+       ("NDVI", ds["nir"].ndvi(ds["red"]).get_band(1), "RdYlGn", -1, 1),
+       ("NDWI", ds["green"].ndwi(ds["nir"]).get_band(1), "BrBG_r", -1, 1),
+       ("NDMI", ds["nir"].ndmi(ds["swir"]).get_band(1), "BrBG", -1, 1),
+       ("NDBI", ds["swir"].ndbi(ds["nir"]).get_band(1), "pink", -1, 1),
+       ("EVI", ds["nir"].evi(ds["red"], ds["blue"]).get_band(1), "YlGn", -1, 1),
+       ("SAVI", ds["nir"].savi(ds["red"]).get_band(1), "YlGn", -1, 1),
    ]
 
    fig, axes = plt.subplots(2, 3, figsize=(9, 6))
