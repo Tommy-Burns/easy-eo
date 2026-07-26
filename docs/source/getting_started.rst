@@ -38,6 +38,8 @@ install stays small. Install an extra by name:
 
     pip install "easy-eo[stac]"
 
+Several extras can be installed at once: ``pip install "easy-eo[stac,xarray]"``.
+
 .. list-table::
     :header-rows: 1
     :widths: 15 40 45
@@ -50,6 +52,11 @@ install stays small. Install an extra by name:
       - Searching STAC catalogs and loading assets straight into an
         :class:`~eeo.core.EEORasterDataset` — see
         :doc:`user_guide/loading_satellite_data`
+    * - ``xarray``
+      - ``xarray``, ``rioxarray``
+      - Converting between an :class:`~eeo.core.EEORasterDataset` and a
+        georeferenced :class:`xarray.DataArray`, to hand data to the wider
+        xarray ecosystem and back
 
 Using a feature without its extra installed raises
 :class:`~eeo.MissingDependencyError` — an ``ImportError`` whose message names

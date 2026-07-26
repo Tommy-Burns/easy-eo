@@ -134,6 +134,13 @@ are called out under a **Breaking** heading.
   missing package, and the exact `pip install 'easy-eo[stac]'` command. A
   missing *transitive* dependency of an installed extra still surfaces as its
   own `ModuleNotFoundError` rather than being reported as a missing extra.
+- **Optional `xarray` extra (`pip install "easy-eo[xarray]"`).** Installs
+  `xarray>=2024.7` and `rioxarray>=0.17,<1`, the dependencies of the
+  forthcoming xarray interop (`EEORasterDataset.to_xarray()` /
+  `eeo.from_xarray()`). Nothing in the base install changes: `import eeo` still
+  needs neither package, and a feature that does raises
+  `MissingDependencyError` naming the exact install command. Extras compose —
+  `pip install "easy-eo[stac,xarray]"`.
 - **Sample-data helper (`eeo.datasets.load_sample_dataset`).** Returns a
   `SampleDataset` namespace whose attributes are the individual bundled files, so
   a curated Sentinel-2 / Copernicus-DEM sample is opened by readable,
