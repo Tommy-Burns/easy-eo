@@ -195,6 +195,10 @@ filterwarnings = [
     # numpy 2.5 deprecated that. Out of our control until rasterio ships a
     # fix — ignore the specific message rather than weakening the gate.
     "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
+    # planetary-computer (the [stac] extra) still declares its pydantic models
+    # with a class-based Config, which pydantic 2 deprecates on import. Out of
+    # our control until planetary-computer migrates.
+    "ignore:Support for class-based `config` is deprecated:DeprecationWarning",
 ]
 
 # ---------------------

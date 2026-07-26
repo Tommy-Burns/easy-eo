@@ -192,6 +192,31 @@ Coverage is enforced: the run fails if total coverage drops below the
 project threshold. Bug fixes must include a regression test, and new features
 must include tests (see `CODE_STYLE.md`).
 
+#### The default run is offline
+
+No test may reach the network by default — a suite that depends on someone
+else's uptime is a suite that fails for reasons you cannot fix. An autouse
+fixture blocks Python-level socket connections and fails any test that tries,
+so this is enforced rather than merely encouraged.
+
+Work from local files, fakes, or the recorded API responses in
+`tests/data/stac/` (refresh them with `python scripts/record_stac_responses.py`;
+see the README there). A test that genuinely needs the network is marked and
+opted into explicitly:
+
+```python
+@pytest.mark.network
+def test_real_download():
+    ...
+```
+
+```bash
+pytest --run-network          # include the marked tests
+```
+
+Note that GDAL's HTTP stack does not use Python sockets, so the fixture cannot
+catch a remote raster read; keep those out of the default suite by design.
+
 ### pre-commit — step by step
 
 `pre-commit` runs the whitespace, ruff, ruff-format, and mypy hooks so issues

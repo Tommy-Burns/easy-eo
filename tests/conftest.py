@@ -13,6 +13,7 @@ CRS-mismatch partner raster uses EPSG:4326. Pixel values are deterministic
 gradients (``0..n-1``) so tests can assert against hand-computed results.
 """
 
+import socket
 import warnings
 
 import matplotlib
@@ -55,6 +56,36 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "network" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _block_network(request, monkeypatch):
+    """Fail any unmarked test that opens a network connection.
+
+    The default run must be offline: STAC, sample-data, and remote-raster
+    tests all work from recordings, fakes, or local files. This turns a test
+    that quietly starts reaching a real service into an immediate, obvious
+    failure rather than a slow or flaky one.
+
+    Tests marked ``@pytest.mark.network`` are exempt (they only run under
+    ``--run-network``). The guard covers Python-level sockets, which is what
+    ``requests`` and ``urllib`` use; GDAL's own HTTP stack does not go through
+    them, so a remote raster read is kept out of the default suite by review
+    rather than by this fixture.
+    """
+    if request.node.get_closest_marker("network"):
+        return
+
+    def blocked(*args, **kwargs):
+        raise RuntimeError(
+            "this test tried to open a network connection, which the default "
+            "test run forbids; use a recorded response or a local file, or "
+            "mark the test with @pytest.mark.network"
+        )
+
+    monkeypatch.setattr(socket.socket, "connect", blocked)
+    monkeypatch.setattr(socket.socket, "connect_ex", blocked)
+    monkeypatch.setattr(socket, "create_connection", blocked)
 
 
 @pytest.fixture(autouse=True)

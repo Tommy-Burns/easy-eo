@@ -752,7 +752,8 @@ def stac_search(
     datetime : str or datetime.datetime or tuple, default None
         Time filter, passed through to the catalog: a single instant, an
         interval string such as ``"2023-06-01/2023-08-31"`` (``".."`` leaves an
-        end open), or a ``(start, end)`` pair. None searches all times.
+        end open), or a ``(start, end)`` pair. A bare date covers its whole
+        day, so a closing date is inclusive. None searches all times.
     cloud_cover : float or None, default None
         Maximum scene cloud cover in percent (0-100), applied by the catalog
         against each scene's ``eo:cloud_cover``. None applies no cloud filter.
