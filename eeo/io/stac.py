@@ -30,11 +30,23 @@ Examples
 from __future__ import annotations
 
 import datetime as dt
+import math
 from collections.abc import Mapping, Sequence
-from typing import Any, overload
+from typing import Any, NamedTuple, overload
+
+import numpy as np
+import rasterio as rio
+from rasterio import windows as rio_windows
+from rasterio.transform import array_bounds
+from rasterio.vrt import WarpedVRT
+from rasterio.warp import transform_bounds
 
 from eeo._optional import import_optional
+from eeo.common import normalize_resampling_method
+from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import ValidationError
+from eeo.core.loader import load_array
+from eeo.core.types import ResamplingMethod
 
 #: STAC API endpoint used when no ``catalog`` is given.
 PLANETARY_COMPUTER_STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
@@ -84,6 +96,131 @@ def _sort_key(item: STACItem) -> tuple[bool, dt.datetime]:
     return (False, timestamp)
 
 
+# GDAL settings for reading a remote COG efficiently. Object stores answer a
+# directory probe by listing the whole container, which costs far more than the
+# read itself; HTTP/2 multiplexing and the VSI cache keep the range requests for
+# the tiles we actually want.
+_GDAL_HTTP_ENV = {
+    "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+    "GDAL_HTTP_MULTIPLEX": "YES",
+    "GDAL_HTTP_VERSION": "2",
+    "VSI_CACHE": "TRUE",
+}
+
+
+class _Grid(NamedTuple):
+    """The output grid every asset of one load is read onto."""
+
+    crs: Any
+    transform: Any
+    width: int
+    height: int
+
+
+def _crop_window(src: Any, bbox: Sequence[float]) -> Any:
+    """Return the pixel window of ``src`` covering a WGS 84 lon/lat bbox."""
+    if src.crs is None:
+        raise ValidationError(
+            "cropping needs a georeferenced asset; this asset declares no CRS. "
+            "Pass crop=False to read it whole."
+        )
+
+    bounds = transform_bounds("EPSG:4326", src.crs, *bbox, densify_pts=21)
+    window = rio_windows.from_bounds(*bounds, transform=src.transform)
+
+    # Round outward to whole pixels so the AOI is fully covered.
+    col_off = math.floor(window.col_off)
+    row_off = math.floor(window.row_off)
+    requested = rio_windows.Window(
+        col_off,
+        row_off,
+        max(math.ceil(window.col_off + window.width) - col_off, 1),
+        max(math.ceil(window.row_off + window.height) - row_off, 1),
+    )
+
+    scene = rio_windows.Window(0, 0, src.width, src.height)
+    if not rio_windows.intersect(requested, scene):
+        raise ValidationError(
+            f"the requested area does not overlap this scene; got bbox {tuple(bbox)!r} "
+            f"in WGS 84 lon/lat, while the scene covers "
+            f"{transform_bounds(src.crs, 'EPSG:4326', *src.bounds, densify_pts=21)!r}"
+        )
+    return rio_windows.intersection(requested, scene)
+
+
+def _aligned_window(src: Any, grid: _Grid) -> Any | None:
+    """Return an exact pixel window onto ``grid``, or None if a warp is needed.
+
+    An asset sharing the target grid's CRS and resolution can be read directly,
+    which is both cheaper and exact; anything else goes through a warp.
+    """
+    if src.crs is None or src.crs != grid.crs:
+        return None
+    bounds = array_bounds(grid.height, grid.width, grid.transform)
+    window = rio_windows.from_bounds(*bounds, transform=src.transform)
+
+    tol = 1e-6
+    if abs(window.width - grid.width) > tol or abs(window.height - grid.height) > tol:
+        return None
+    if abs(window.col_off - round(window.col_off)) > tol:
+        return None
+    if abs(window.row_off - round(window.row_off)) > tol:
+        return None
+
+    col_off, row_off = round(window.col_off), round(window.row_off)
+    # A window running off the edge would come back short and break the grid;
+    # let the warp path fill those pixels with nodata instead.
+    if col_off < 0 or row_off < 0:
+        return None
+    if col_off + grid.width > src.width or row_off + grid.height > src.height:
+        return None
+    return rio_windows.Window(col_off, row_off, grid.width, grid.height)
+
+
+def _asset_band_names(src: Any, asset: str) -> list[str | None]:
+    """Name a single-band asset after itself; number the bands of a stack."""
+    if src.count == 1:
+        return [asset]
+    descriptions = list(src.descriptions or ())
+    names: list[str | None] = []
+    for index in range(src.count):
+        description = descriptions[index] if index < len(descriptions) else None
+        names.append(description or f"{asset}_{index + 1}")
+    return names
+
+
+def _read_first_asset(href: str, asset: str, bbox: Sequence[float] | None) -> tuple:
+    """Read the leading asset, which defines the grid the rest are read onto."""
+    with rio.Env(**_GDAL_HTTP_ENV), rio.open(href) as src:
+        window = None if bbox is None else _crop_window(src, bbox)
+        array = src.read(window=window)
+        transform = src.transform if window is None else src.window_transform(window)
+        grid = _Grid(src.crs, transform, array.shape[-1], array.shape[-2])
+        return array, grid, src.nodata, _asset_band_names(src, asset)
+
+
+def _read_onto_grid(href: str, asset: str, grid: _Grid, resampling: Any) -> tuple:
+    """Read a further asset onto ``grid``, warping only when it does not fit."""
+    with rio.Env(**_GDAL_HTTP_ENV), rio.open(href) as src:
+        window = _aligned_window(src, grid)
+        if window is not None:
+            return src.read(window=window), _asset_band_names(src, asset)
+
+        # Different CRS, resolution, or sub-pixel offset: let GDAL resample
+        # straight onto the target grid rather than reading and fixing up after.
+        with WarpedVRT(
+            src,
+            crs=grid.crs,
+            transform=grid.transform,
+            width=grid.width,
+            height=grid.height,
+            resampling=resampling,
+            src_nodata=src.nodata,
+            nodata=src.nodata,
+        ) as vrt:
+            return vrt.read(), _asset_band_names(src, asset)
+
+
 class STACItem:
     """One scene from a STAC search, with its acquisition time.
 
@@ -95,11 +232,15 @@ class STACItem:
     ----------
     item : pystac.Item
         The item returned by the STAC client.
+    search_bbox : sequence of float or None, default None
+        Area of interest of the search that produced the item, in WGS 84
+        lon/lat. :meth:`load` crops to it by default.
     """
 
-    def __init__(self, item: Any) -> None:
+    def __init__(self, item: Any, *, search_bbox: Sequence[float] | None = None) -> None:
         self._item = item
         self._timestamp = _item_timestamp(item)
+        self._search_bbox = None if search_bbox is None else tuple(float(v) for v in search_bbox)
 
     @property
     def item(self) -> Any:
@@ -208,6 +349,155 @@ class STACItem:
         """
         value = self.properties.get("eo:cloud_cover")
         return None if value is None else float(value)
+
+    @property
+    def search_bbox(self) -> tuple[float, ...] | None:
+        """Return the area of interest :meth:`load` crops to by default.
+
+        Returns
+        -------
+        tuple of float or None
+            ``(minx, miny, maxx, maxy)`` in WGS 84 lon/lat degrees, taken from
+            the search that produced this item, or None if the search set no
+            spatial filter.
+        """
+        return self._search_bbox
+
+    def load(
+        self,
+        assets: str | Sequence[str],
+        *,
+        bbox: Sequence[float] | None = None,
+        crop: bool = True,
+        resampling: ResamplingMethod | Any = "nearest",
+    ) -> EEORasterDataset:
+        """Read one or more of the item's assets into a raster dataset.
+
+        Reads only the area of interest by default: the asset is opened
+        remotely and only the pixels covering the AOI are fetched, as HTTP
+        range requests against the cloud-optimized GeoTIFF, so a small AOI over
+        a full Sentinel-2 tile transfers a fraction of the band. Several assets
+        are stacked into one multi-band dataset, each band named after the
+        asset it came from.
+
+        Parameters
+        ----------
+        assets : str or sequence of str
+            Asset key (e.g. ``"B04"``, ``"nir08"``) or several keys to stack,
+            in the order they should become bands. See
+            :attr:`STACItem.asset_names` for what this item offers.
+        bbox : sequence of float or None, default None
+            Area to read, as ``(minx, miny, maxx, maxy)`` in **WGS 84 lon/lat
+            degrees**. None uses :attr:`search_bbox`, the AOI of the search
+            that produced this item; if that is also None, the whole scene is
+            read.
+        crop : bool, default True
+            Whether to crop at all. False reads the entire scene and cannot be
+            combined with ``bbox``.
+        resampling : str or rasterio.enums.Resampling, default "nearest"
+            Method used when an asset has to be resampled onto the first
+            asset's grid — a Sentinel-2 20 m band stacked with a 10 m one, for
+            instance. Nearest neighbour by default so values are never blended.
+
+        Returns
+        -------
+        EEORasterDataset
+            Rasterio-backed dataset holding the requested window, with the
+            asset's CRS, a transform matching the cropped window, the first
+            asset's nodata value, band names taken from the asset keys, the
+            item's acquisition time as ``timestamp``, and the item id,
+            collection, and asset list in ``attrs``. The dtype is the asset's
+            own; stacking assets of different dtypes promotes to their common
+            NumPy dtype.
+
+        Raises
+        ------
+        ValidationError
+            If ``assets`` is empty or names an asset the item does not have,
+            if ``bbox`` is not four ordered lon/lat values, if ``bbox`` is
+            combined with ``crop=False``, or if the AOI does not overlap the
+            scene.
+
+        Notes
+        -----
+        Holds the requested window in memory — the AOI crop is what keeps that
+        small, so reading a full scene with ``crop=False`` costs a full band in
+        RAM. Assets after the first are read onto the first asset's grid, by a
+        plain windowed read when they already share it and a warp otherwise.
+
+        Reading a signed Planetary Computer URL must happen while the signature
+        is still valid; search, then load, rather than storing items for later.
+
+        Examples
+        --------
+        >>> results = eeo.stac_search(
+        ...     "sentinel-2-l2a", bbox=(11.0, 46.5, 11.2, 46.7), limit=1
+        ... )  # doctest: +SKIP
+        >>> scene = results[0].load(["B04", "B08"])  # doctest: +SKIP
+        >>> ndvi = scene.ndvi(red="B04", nir="B08")  # doctest: +SKIP
+        """
+        keys = self._resolve_assets(assets)
+
+        if crop is False and bbox is not None:
+            raise ValidationError(
+                "crop=False reads the whole scene and cannot be combined with a bbox; "
+                "pass one or the other"
+            )
+        aoi: Sequence[float] | None = None
+        if crop:
+            aoi = _validate_bbox(bbox) if bbox is not None else self._search_bbox
+
+        resampling_enum = normalize_resampling_method(resampling)
+
+        array, grid, nodata, band_names = _read_first_asset(self._href(keys[0]), keys[0], aoi)
+        arrays = [array]
+        for key in keys[1:]:
+            other, other_names = _read_onto_grid(self._href(key), key, grid, resampling_enum)
+            arrays.append(other)
+            band_names.extend(other_names)
+
+        stacked = arrays[0] if len(arrays) == 1 else np.concatenate(arrays, axis=0)
+
+        dataset = load_array(
+            stacked,
+            transform=grid.transform,
+            crs=grid.crs,
+            nodata=nodata,
+            timestamp=self._timestamp,
+            attrs={
+                "stac_item": self.id,
+                "stac_collection": self.collection,
+                "stac_assets": list(keys),
+            },
+            band_names=band_names,
+        )
+        return dataset.to_rasterio()
+
+    def _resolve_assets(self, assets: str | Sequence[str]) -> list[str]:
+        """Normalize the asset argument to a list of keys this item has."""
+        if isinstance(assets, str):
+            keys = [assets]
+        elif isinstance(assets, Sequence):
+            keys = [str(key) for key in assets]
+        else:
+            raise ValidationError(
+                f"assets must be an asset key or a sequence of keys; got {assets!r}"
+            )
+        if not keys:
+            raise ValidationError("name at least one asset to load; got an empty sequence")
+
+        available = self.asset_names
+        missing = [key for key in keys if key not in available]
+        if missing:
+            raise ValidationError(
+                f"item {self.id!r} has no asset {missing[0]!r}; "
+                f"available assets are {', '.join(available) or 'none'}"
+            )
+        return keys
+
+    def _href(self, asset: str) -> str:
+        """Return the URL or path of one of the item's assets."""
+        return str(self.assets[asset].href)
 
     def __repr__(self) -> str:
         """Return a one-line summary: id, acquisition time, and asset count."""
@@ -538,7 +828,7 @@ def stac_search(
     found = client.search(**params)
 
     return STACSearchResult(
-        [STACItem(item) for item in found.items()],
+        [STACItem(item, search_bbox=params.get("bbox")) for item in found.items()],
         collections=collections,
         catalog=catalog,
         bbox=params.get("bbox"),

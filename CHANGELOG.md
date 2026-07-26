@@ -78,6 +78,20 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- **STAC asset loading (`STACItem.load`).** Turns a search result into an
+  `EEORasterDataset`: `results[0].load(["B04", "B08"])`. **Only the area of
+  interest is read** — the assets are opened remotely and just the pixels
+  covering the AOI are fetched as HTTP range requests against the
+  cloud-optimized GeoTIFF, so a small AOI over a Sentinel-2 tile transfers a
+  fraction of the band and nothing is downloaded whole. The AOI defaults to the
+  `bbox` of the search that produced the item (exposed as
+  `STACItem.search_bbox`); pass `bbox=` to override it or `crop=False` to read
+  the entire scene. Several assets stack into one multi-band dataset with each
+  band named after its asset, ready for `ds.ndvi(red="B04", nir="B08")`; assets
+  that do not share the first one's grid — a 20 m band beside a 10 m one, or a
+  different UTM zone — are resampled onto it (`resampling=`, nearest by
+  default). The result carries the item's acquisition time as `timestamp` and
+  its id, collection, and asset list in `attrs`.
 - **STAC search (`eeo.stac_search`).** Query any STAC API — Microsoft Planetary
   Computer by default — by collection, bounding box (WGS 84 lon/lat), date or
   date range, maximum cloud cover, and result limit:
