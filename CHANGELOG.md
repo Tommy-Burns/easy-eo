@@ -134,6 +134,19 @@ are called out under a **Breaking** heading.
   missing package, and the exact `pip install 'easy-eo[stac]'` command. A
   missing *transitive* dependency of an installed extra still surfaces as its
   own `ModuleNotFoundError` rather than being reported as a missing extra.
+- **`EEORasterDataset.to_xarray()`.** Converts a dataset into a georeferenced
+  `xarray.DataArray` laid out exactly like one `rioxarray.open_rasterio` would
+  return: dimensions `("band", "y", "x")` (always three, even for a single
+  band), a 1-based `band` coordinate, pixel-centre `y`/`x` coordinates, and the
+  CRS, geotransform, and nodata value readable from `da.rio.crs`,
+  `da.rio.transform()`, and `da.rio.nodata` — so the result can be handed to the
+  xarray ecosystem and written back with `da.rio.to_raster()`. Provenance
+  travels too: band names become rioxarray's `long_name` attribute (which
+  `to_raster` writes back as GDAL band descriptions), a `timestamp` becomes a
+  scalar `time` coordinate in UTC, and `attrs` are copied onto the DataArray.
+  Values, dtype, and nodata pixels are carried through unchanged, and the
+  returned array never shares memory with the dataset. Reads the whole raster
+  into memory. Needs the `xarray` extra.
 - **Optional `xarray` extra (`pip install "easy-eo[xarray]"`).** Installs
   `xarray>=2024.7` and `rioxarray>=0.17,<1`, the dependencies of the
   forthcoming xarray interop (`EEORasterDataset.to_xarray()` /

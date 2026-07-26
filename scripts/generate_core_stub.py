@@ -61,6 +61,7 @@ HEADER = """\
 #     python scripts/generate_core_stub.py
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from typing import Any
 
 import geopandas as gpd
 import numpy as np

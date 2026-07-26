@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from datetime import datetime
+from typing import Any
 
 import numpy as np
 import rasterio as rio
@@ -431,6 +432,64 @@ class EEORasterDataset:
             attrs=self.attrs,
             band_names=self.band_names,
         )
+
+    def to_xarray(self) -> Any:
+        """Convert the raster to a georeferenced xarray DataArray.
+
+        The result carries the raster's CRS, geotransform, and nodata value on
+        rioxarray's ``.rio`` accessor, so it can be handed straight to the
+        xarray ecosystem and written back out with ``da.rio.to_raster()``.
+        Needs the optional ``xarray`` extra
+        (``pip install "easy-eo[xarray]"``).
+
+        Returns
+        -------
+        xarray.DataArray
+            Array with dimensions ``("band", "y", "x")`` — always three, even
+            for a single-band raster — holding the raster's own values and
+            dtype, nodata pixels included as stored (``NaN`` for a float
+            raster under the nodata contract). A 1-based ``band`` coordinate
+            labels the bands, ``y``/``x`` hold pixel-centre coordinates in CRS
+            units, and ``spatial_ref`` carries the CRS, so ``da.rio.crs``,
+            ``da.rio.transform()``, and ``da.rio.nodata`` return exactly what
+            :meth:`get_crs`, :meth:`get_transform`, and the dataset's nodata
+            report.
+
+        Raises
+        ------
+        MissingDependencyError
+            If the ``xarray`` extra is not installed.
+
+        Notes
+        -----
+        Reads the whole raster into memory rather than streaming it, so clip or
+        resample a full scene before converting. The DataArray never shares its
+        buffer with this dataset, whichever backend the dataset uses: writing
+        into it is safe and leaves the raster untouched.
+
+        Band names are exported as rioxarray's ``long_name`` attribute (a
+        plain string for a single band, a tuple otherwise), so
+        ``da.rio.to_raster()`` writes them back as GDAL band descriptions. A
+        :attr:`timestamp` becomes a scalar ``time`` coordinate, converted to
+        UTC and stored without a timezone because xarray datetimes carry none.
+        :attr:`attrs` entries are copied onto the DataArray's ``attrs``, except
+        for the keys filled from the raster's own metadata (``long_name``,
+        ``_FillValue``, ``grid_mapping``).
+
+        A rotated or sheared geotransform cannot be described by 1-D axes: as
+        in :func:`rioxarray.open_rasterio`, such a raster gets 2-D ``xc``/``yc``
+        coordinates in place of ``x``/``y``, while ``da.rio.transform()`` still
+        returns the exact affine.
+
+        Examples
+        --------
+        >>> da = ds.to_xarray()
+        >>> smoothed = da.rolling(x=3, center=True).mean()
+        >>> smoothed.rio.to_raster("smoothed.tif")
+        """
+        from eeo.io.xarray import _to_dataarray
+
+        return _to_dataarray(self)
 
     def to_array(self) -> np.ndarray:
         """Read the raster into a NumPy array.
