@@ -263,6 +263,22 @@ def _aligned_window(src: Any, grid: _Grid) -> Any | None:
     return rio_windows.Window(col_off, row_off, grid.width, grid.height)
 
 
+def _mask_fill(dataset: EEORasterDataset, nodata: float | None) -> float:
+    """Choose the value masked-out pixels take, and that gets recorded as nodata.
+
+    An asset's own nodata value is used when it declares one. Many STAC assets
+    declare none, and masking must still write *something* outside the
+    geometry — so it falls back to the library's representation for the dtype
+    (NaN for floats, 0 for integers) and records it, rather than filling with a
+    value that reads back as valid data.
+    """
+    if nodata is not None:
+        return float(nodata)
+    if np.issubdtype(np.dtype(dataset.get_metadata()["dtype"]), np.floating):
+        return float("nan")
+    return 0.0
+
+
 def _asset_band_names(src: Any, asset: str) -> list[str | None]:
     """Name a single-band asset after itself; number the bands of a stack."""
     if src.count == 1:
@@ -511,7 +527,10 @@ class STACItem:
             the result follows the geometry's outline rather than its bounding
             rectangle. Requires a search made with ``intersects``. Cropping
             decides what is transferred; masking is a separate analytical
-            choice, which is why it is off by default.
+            choice, which is why it is off by default. Masked pixels take the
+            asset's nodata value, or — for the many assets that declare none —
+            NaN for floating dtypes and 0 for integer ones, recorded as the
+            result's ``nodata`` either way so they are not mistaken for data.
         resampling : str or rasterio.enums.Resampling, default "nearest"
             Method used when an asset has to be resampled onto the first
             asset's grid — a Sentinel-2 20 m band stacked with a 10 m one, for
@@ -618,11 +637,11 @@ class STACItem:
 
         if mask:
             # Reuse the vector clip, which reprojects the geometry onto the
-            # raster's CRS and fills outside pixels with its nodata value.
+            # raster's CRS and fills outside pixels with a nodata value.
             geometry = gpd.GeoDataFrame(
                 geometry=[shapely.geometry.shape(self._search_intersects)], crs="EPSG:4326"
             )
-            dataset = dataset.clip_raster_with_vector(geometry)
+            dataset = dataset.clip_raster_with_vector(geometry, nodata=_mask_fill(dataset, nodata))
         return dataset
 
     def _resolve_assets(self, assets: str | Sequence[str]) -> list[str]:

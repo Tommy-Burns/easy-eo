@@ -96,7 +96,10 @@ are called out under a **Breaking** heading.
   are mutually exclusive, as the STAC spec requires. The geometry is retained on
   the result (`STACSearchResult.intersects`, `STACItem.search_intersects`), so
   `load()` crops to its bounds by default and `load(..., mask=True)` sets the
-  pixels outside its outline to nodata.
+  pixels outside its outline to nodata — the asset's own nodata value where it
+  declares one, otherwise NaN for floating dtypes and 0 for integer ones,
+  recorded as the result's `nodata` either way so a masked area is never
+  mistaken for data by a later operation.
 - **STAC asset loading (`STACItem.load`).** Turns a search result into an
   `EEORasterDataset`: `results[0].load(["B04", "B08"])`. **Only the area of
   interest is read** — the assets are opened remotely and just the pixels

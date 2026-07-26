@@ -309,6 +309,53 @@ def test_load_with_mask_follows_the_geometry_outline(fake_stac, scene_asset, tri
     assert 0.35 < inside / values.size < 0.65
 
 
+def test_mask_records_the_assets_own_nodata(fake_stac, scene_asset, triangle_utm):
+    triangle = gpd.GeoDataFrame(geometry=[triangle_utm], crs=SCENE_CRS).to_crs(4326)
+    fake_stac.items_to_return = [FakeItem({"B04": scene_asset})]
+
+    ds = eeo.stac_search("sentinel-2-l2a", intersects=triangle)[0].load("B04", mask=True)
+
+    assert ds.get_metadata()["nodata"] == 0  # the asset declares nodata=0
+    assert (ds.to_array() == 0).any()
+
+
+@pytest.mark.parametrize(("dtype", "expected"), [("uint16", 0), ("float32", float("nan"))])
+def test_mask_records_a_fill_when_the_asset_declares_no_nodata(
+    fake_stac, tmp_path, triangle_utm, dtype, expected
+):
+    # Many STAC assets declare no nodata; the masked-out pixels must still be
+    # marked, or they read back as ordinary values.
+    path = tmp_path / f"no_nodata_{dtype}.tif"
+    with rio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=SCENE_SIZE,
+        width=SCENE_SIZE,
+        count=1,
+        dtype=dtype,
+        crs=SCENE_CRS,
+        transform=from_origin(SCENE_ORIGIN[0], SCENE_ORIGIN[1], SCENE_RES, SCENE_RES),
+    ) as dst:  # note: no nodata=
+        dst.write(np.full((1, SCENE_SIZE, SCENE_SIZE), 500, dtype=dtype))
+
+    triangle = gpd.GeoDataFrame(geometry=[triangle_utm], crs=SCENE_CRS).to_crs(4326)
+    fake_stac.items_to_return = [FakeItem({"B04": path})]
+
+    ds = eeo.stac_search("sentinel-2-l2a", intersects=triangle)[0].load("B04", mask=True)
+
+    recorded = ds.get_metadata()["nodata"]
+    values = ds.to_array()
+    if np.isnan(expected):
+        assert np.isnan(recorded)
+        assert np.isnan(values).any()
+    else:
+        assert recorded == expected
+        assert (values == expected).any()
+    # Whatever the fill, it is declared - not silently mixed in with the data.
+    assert recorded is not None
+
+
 def test_mask_without_a_search_geometry_raises_validation_error(fake_stac, scene_asset):
     fake_stac.items_to_return = [FakeItem({"B04": scene_asset})]
 
