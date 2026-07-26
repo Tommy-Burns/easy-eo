@@ -88,6 +88,23 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- **Tutorial notebooks** (`examples/`), restructured from five flat notebooks
+  into sixteen grouped ones with an `examples/README.md` index:
+  `00_getting_started/` (install and verify, quickstart NDVI),
+  `01_fundamentals/` (reading and inspecting, clip and mosaic, reproject and
+  resample, band algebra and indices, stacking bands, statistics and
+  extraction, visualization), `02_data_access/` (sample data, STAC search and
+  load, xarray interop), and `03_real_world/` (flood mapping with NDWI,
+  vegetation health and drought, urban footprint and land cover, terrain
+  analysis with a DEM). Every notebook now gets its data from
+  `eeo.datasets.load_sample_dataset()` or from a STAC catalog rather than from
+  local `./data/` paths, so none depends on files outside the package or on a
+  working directory. The twelve sample-data notebooks are committed with
+  executed outputs; the four that query a live STAC catalog need network and
+  the `stac` extra, and ship with outputs cleared. `ndbi` and `ndmi` are
+  demonstrated only in the STAC notebooks, because the bundled sample carries
+  no SWIR band; flood mapping likewise uses a real flood (Pakistan, 2022)
+  rather than the sample scene, which contains essentially no surface water.
 - **"Loading satellite data" guide** (`docs/source/user_guide/loading_satellite_data.rst`).
   Quickstart from a STAC archive to a plotted NDVI in under ten lines, then the
   detail: what each search filter means, how to read a result, which asset keys
