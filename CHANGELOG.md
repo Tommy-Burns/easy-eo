@@ -134,6 +134,21 @@ are called out under a **Breaking** heading.
   missing package, and the exact `pip install 'easy-eo[stac]'` command. A
   missing *transitive* dependency of an installed extra still surfaces as its
   own `ModuleNotFoundError` rather than being reported as a missing extra.
+- **`eeo.from_xarray(da)`.** The reverse of `to_xarray()`: wraps a georeferenced
+  `xarray.DataArray` as an `EEORasterDataset`, reading the CRS, geotransform, and
+  nodata value from rioxarray's `.rio` accessor, plus band names from
+  `long_name`, a `timestamp` from a scalar `time` coordinate, and the remaining
+  `attrs`. Dimensions may be `(band, y, x)` in any order or `(y, x)` for a single
+  band, spare length-1 dimensions are collapsed, and the spatial dimensions are
+  whichever rioxarray identifies (so `da.rio.set_spatial_dims()` is honoured).
+  The geotransform is taken from the coordinate axes where they can give it, so a
+  sliced, sorted, or reversed DataArray is placed where its coordinates actually
+  are rather than where its stored geotransform used to be. Values and dtype are
+  passed through untouched and the array is wrapped without an extra copy.
+  Raises `ValidationError` for a Dataset, an unidentifiable spatial dimension, an
+  unevenly spaced axis, more than one band-like dimension, or a `time` dimension
+  longer than one step (a time series, not a band stack). Needs the `xarray`
+  extra.
 - **`EEORasterDataset.to_xarray()`.** Converts a dataset into a georeferenced
   `xarray.DataArray` laid out exactly like one `rioxarray.open_rasterio` would
   return: dimensions `("band", "y", "x")` (always three, even for a single

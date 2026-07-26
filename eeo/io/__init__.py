@@ -7,10 +7,12 @@ features actually runs.
 """
 
 from .stac import PLANETARY_COMPUTER_STAC_URL, STACItem, STACSearchResult, stac_search
+from .xarray import from_xarray
 
 __all__ = [
     "stac_search",
     "STACItem",
     "STACSearchResult",
     "PLANETARY_COMPUTER_STAC_URL",
+    "from_xarray",
 ]

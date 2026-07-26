@@ -28,9 +28,11 @@ import datetime as dt
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from affine import Affine
 
 from eeo._optional import import_optional
 from eeo.common import get_nodata, is_rasterio_backed
+from eeo.core.exceptions import ValidationError
 
 if TYPE_CHECKING:
     from eeo.core.core import EEORasterDataset
@@ -166,3 +168,254 @@ def _to_dataarray(ds: EEORasterDataset) -> Any:
         da = da.rio.write_nodata(nodata)
 
     return da
+
+
+# --------------------------------------------------------------------------
+# DataArray -> EEORasterDataset
+# --------------------------------------------------------------------------
+
+
+def _require_dataarray(obj: Any, xr: Any) -> None:
+    """Reject anything that is not a DataArray, pointing at the right entry point."""
+    if isinstance(obj, xr.DataArray):
+        return
+    if isinstance(obj, xr.Dataset):
+        first = next(iter(obj.data_vars), None)
+        hint = "one of its variables" if first is None else f"dataset[{first!r}]"
+        raise ValidationError(
+            f"from_xarray expects an xarray.DataArray; got a Dataset. Select a variable "
+            f"({hint}) or merge them into an array with dataset.to_dataarray()."
+        )
+    raise ValidationError(
+        f"from_xarray expects an xarray.DataArray; got {type(obj).__name__}. "
+        "Use eeo.load_array() for a plain NumPy array, or eeo.load_raster() for a file."
+    )
+
+
+def _spatial_dims(da: Any) -> tuple[str, str]:
+    """Return the DataArray's ``(y_dim, x_dim)`` names, as rioxarray identifies them."""
+    exceptions = import_optional("rioxarray.exceptions", extra="xarray", purpose=_PURPOSE)
+    try:
+        return da.rio.y_dim, da.rio.x_dim
+    except exceptions.DimensionError as err:
+        raise ValidationError(
+            "could not identify the spatial dimensions of the DataArray; got dimensions "
+            f"{tuple(da.dims)}. Rename them to 'y' and 'x', or declare them with "
+            "da.rio.set_spatial_dims(x_dim=..., y_dim=...)."
+        ) from err
+
+
+def _as_band_first(da: Any, y_dim: str, x_dim: str) -> Any:
+    """Reduce a DataArray to ``(band, y, x)`` order, collapsing spare length-1 dims."""
+    extra = [dim for dim in da.dims if dim not in (y_dim, x_dim)]
+
+    if len(extra) > 1:
+        # A single scene often arrives with spare length-1 dims (e.g. after
+        # expand_dims); those collapse cleanly, anything longer cannot.
+        collapsible = {dim: 0 for dim in extra if da.sizes[dim] == 1}
+        da = da.isel(collapsible)
+        extra = [dim for dim in da.dims if dim not in (y_dim, x_dim)]
+
+    # Checked before the generic complaint below, since it is the more specific
+    # mistake: bands and timesteps are different things, and silently loading
+    # timesteps as bands would mislabel the data.
+    if "time" in extra and da.sizes["time"] > 1:
+        raise ValidationError(
+            f"a 'time' dimension of length {da.sizes['time']} is a time series, not a band "
+            "stack. Select a step with da.isel(time=0), or reduce it with da.mean('time')."
+        )
+
+    if len(extra) > 1:
+        sizes = ", ".join(f"{dim}={da.sizes[dim]}" for dim in extra)
+        raise ValidationError(
+            f"a raster has one band dimension besides {y_dim!r} and {x_dim!r}; got {sizes}. "
+            "Select or reduce the extra dimension(s) first, e.g. da.isel(time=0)."
+        )
+
+    if extra:
+        return da.transpose(extra[0], y_dim, x_dim)
+    return da.transpose(y_dim, x_dim)
+
+
+def _axis_step(values: np.ndarray, dim: str) -> float:
+    """Return an axis's constant spacing, rejecting an axis that has none."""
+    steps = np.diff(values)
+    step = float(steps[0])
+    if step == 0 or not np.allclose(steps, step, rtol=1e-3, atol=0):
+        raise ValidationError(
+            f"the {dim!r} coordinate must be evenly spaced to describe a raster grid; got "
+            f"spacing between {float(steps.min())} and {float(steps.max())}. Reindex or "
+            "interpolate onto a regular grid first."
+        )
+    return step
+
+
+def _axis_geometry(da: Any, dim: str) -> tuple[float, float] | None:
+    """Return ``(resolution, origin)`` for one axis, or None if its coordinate cannot give it.
+
+    The origin is the outer edge of the first pixel, half a pixel before its
+    centre. Needs a 1-D coordinate with at least two values, since a single
+    value carries no spacing.
+    """
+    if dim not in da.coords:
+        return None
+    values = np.asarray(da[dim].values, dtype="float64")
+    if values.ndim != 1 or values.size < 2:
+        return None
+    step = _axis_step(values, dim)
+    return step, float(values[0]) - step / 2
+
+
+def _transform_from(da: Any, y_dim: str, x_dim: str) -> Affine:
+    """Determine the geotransform of a DataArray from its axes, or its stored affine.
+
+    The coordinates are the authority: slicing, sorting, or reversing a
+    DataArray moves the pixels while the stored geotransform stays behind, and
+    reading that stale affine would misplace the raster. The stored affine is
+    used where the coordinates cannot speak — a rotated grid (described by 2-D
+    coordinates), a single-pixel axis, or no coordinates at all — and is
+    preferred whenever it already agrees with them, so an untouched DataArray
+    round-trips exactly.
+    """
+    stored = da.rio.transform()
+    if not stored.is_rectilinear:
+        return stored
+
+    x_geometry = _axis_geometry(da, x_dim)
+    y_geometry = _axis_geometry(da, y_dim)
+    x_res, x_origin = (stored.a, stored.c) if x_geometry is None else x_geometry
+    y_res, y_origin = (stored.e, stored.f) if y_geometry is None else y_geometry
+    derived = Affine.translation(x_origin, y_origin) * Affine.scale(x_res, y_res)
+
+    if np.allclose(tuple(derived)[:6], tuple(stored)[:6], rtol=1e-9, atol=0):
+        return stored
+    return derived
+
+
+def _band_names_from(da: Any, count: int) -> list[str | None] | None:
+    """Read band names from rioxarray's ``long_name`` attribute, or None if unusable."""
+    long_name = da.attrs.get("long_name")
+    if isinstance(long_name, str):
+        names: list[Any] = [long_name]
+    elif isinstance(long_name, (list, tuple)):
+        names = list(long_name)
+    else:
+        return None
+
+    if len(names) != count:
+        # Selecting one band of a stack leaves the whole stack's long_name
+        # behind; a list that no longer fits the data would mislabel it.
+        return None
+    return [name if isinstance(name, str) else None for name in names]
+
+
+def _timestamp_from(da: Any) -> dt.datetime | None:
+    """Read an acquisition time from a scalar ``time`` coordinate, if there is one."""
+    coord = da.coords.get("time")
+    if coord is None or coord.ndim != 0:
+        return None
+    value = coord.values
+    if not np.issubdtype(value.dtype, np.datetime64):
+        return None
+    # Microseconds match datetime's own resolution; .item() on NaT gives None.
+    return value.astype("datetime64[us]").item()
+
+
+def from_xarray(da: Any) -> EEORasterDataset:
+    """Wrap a georeferenced xarray DataArray as an Easy-EO dataset.
+
+    Reads the CRS, geotransform, and nodata value from rioxarray's ``.rio``
+    accessor, so a DataArray from ``rioxarray.open_rasterio`` — or from
+    :meth:`~eeo.core.core.EEORasterDataset.to_xarray` — comes back as a fully
+    georeferenced dataset ready to chain. Needs the optional ``xarray`` extra
+    (``pip install "easy-eo[xarray]"``).
+
+    Parameters
+    ----------
+    da : xarray.DataArray
+        Raster to wrap. Dimensions may be ``(band, y, x)`` in any order, or
+        ``(y, x)`` for a single band; the spatial dimensions are the ones
+        rioxarray identifies (``y``/``x`` by name, or whatever
+        ``da.rio.set_spatial_dims()`` declared), and any remaining dimension is
+        the band dimension. Spare length-1 dimensions are collapsed. Pixel
+        values are taken as laid out, so the pixel order of the DataArray is
+        the pixel order of the raster.
+
+    Returns
+    -------
+    EEORasterDataset
+        NumPy-backed dataset with the DataArray's own values and dtype —
+        neither is converted — carrying its CRS, geotransform, and nodata
+        value. Nodata pixels keep whatever marks them in the array
+        (``NaN`` for a DataArray read with ``mask_and_scale=True``, the
+        sentinel otherwise), and ``da.rio.nodata`` is recorded as the dataset's
+        nodata so later operations mask on it.
+
+    Raises
+    ------
+    ValidationError
+        If ``da`` is not a DataArray, if its spatial dimensions cannot be
+        identified, if more than one non-spatial dimension remains after
+        length-1 dimensions are collapsed (including a ``time`` dimension,
+        which is a time series rather than a band stack), or if a coordinate
+        axis is not evenly spaced and so cannot describe a raster grid.
+    MissingDependencyError
+        If the ``xarray`` extra is not installed.
+
+    See Also
+    --------
+    eeo.core.core.EEORasterDataset.to_xarray : The reverse conversion.
+
+    Notes
+    -----
+    Nothing is copied on top of the DataArray's values, exactly as
+    :func:`eeo.load_array` wraps an array as it is, so converting a large scene
+    does not double its memory: the dataset wraps whatever buffer the DataArray
+    hands over, and a lazily opened or dask-backed one is materialised as it is
+    read. Treat the conversion as handing that buffer to Easy-EO — a later write
+    to either side may show up on the other — and pass ``da.copy()`` if the two
+    must stay fully separate.
+
+    The geotransform comes from the coordinate axes when they can give it, so a
+    sliced, sorted, or reversed DataArray is placed where its coordinates
+    actually are rather than where its stored geotransform used to be. A
+    DataArray whose ``y`` axis ascends therefore yields a south-up raster
+    (a positive north-south term) rather than being flipped silently.
+
+    Band names are read from rioxarray's ``long_name`` attribute, and are
+    dropped rather than guessed at when the attribute no longer matches the
+    band count. A scalar ``time`` coordinate becomes the dataset's
+    ``timestamp`` (naive, in UTC, as xarray stores it), and the remaining
+    ``attrs`` are copied across. A DataArray carrying no georeferencing yields
+    an unreferenced dataset rather than an error.
+
+    Examples
+    --------
+    >>> import eeo
+    >>> import rioxarray
+    >>> da = rioxarray.open_rasterio("scene.tif")
+    >>> ds = eeo.from_xarray(da)
+    >>> ndvi = ds.ndvi(red=1, nir=4)
+    """
+    from eeo.core.loader import load_array
+
+    xr = _import_xarray()
+    _require_dataarray(da, xr)
+
+    y_dim, x_dim = _spatial_dims(da)
+    ordered = _as_band_first(da, y_dim, x_dim)
+    transform = _transform_from(ordered, y_dim, x_dim)
+
+    array = ordered.values
+    if array.ndim == 2:
+        array = array[np.newaxis, ...]
+
+    return load_array(
+        array,
+        transform=transform,
+        crs=ordered.rio.crs,
+        nodata=ordered.rio.nodata,
+        timestamp=_timestamp_from(ordered),
+        attrs={key: value for key, value in ordered.attrs.items() if key not in _MANAGED_ATTRS},
+        band_names=_band_names_from(ordered, array.shape[0]),
+    )

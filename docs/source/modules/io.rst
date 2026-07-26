@@ -1,10 +1,10 @@
 IO Module
 =========
 
-Data access beyond the local filesystem. STAC search needs the optional
-``stac`` extra (``pip install "easy-eo[stac]"``); without it, calling
-:func:`eeo.stac_search` raises :class:`~eeo.MissingDependencyError` with the
-install command.
+Data access and exchange beyond the local filesystem: STAC search and xarray
+interop. Each needs its optional extra (``pip install "easy-eo[stac]"`` /
+``pip install "easy-eo[xarray]"``); without it, the call raises
+:class:`~eeo.MissingDependencyError` with the install command.
 
 :func:`eeo.stac_search` finds scenes and :meth:`eeo.io.STACItem.load` reads
 them. Searches go to Microsoft Planetary Computer
@@ -39,3 +39,23 @@ STAC search
     :members:
 
 .. autodata:: eeo.io.PLANETARY_COMPUTER_STAC_URL
+
+xarray interop
+--------------
+
+:func:`eeo.from_xarray` wraps a georeferenced :class:`xarray.DataArray` as a
+dataset, and :meth:`eeo.core.core.EEORasterDataset.to_xarray` converts one back,
+so data can cross into the xarray ecosystem and return:
+
+.. code-block:: python
+
+    import eeo
+    import rioxarray
+
+    ds = eeo.from_xarray(rioxarray.open_rasterio("scene.tif"))
+    ndvi = ds.ndvi(red=1, nir=4)
+
+    da = ndvi.to_xarray()          # back out, CRS and nodata intact
+    da.rio.to_raster("ndvi.tif")
+
+.. autofunction:: eeo.from_xarray
