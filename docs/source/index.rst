@@ -67,13 +67,15 @@ Getting Started
 ---------------
 
 See :doc:`getting_started` for step-by-step instructions on loading rasters, performing
-arithmetic, computing indices, and visualizing results.
+arithmetic, computing indices, and visualizing results, or :doc:`tutorials` for sixteen
+runnable notebooks — each one openable in Colab with nothing to install.
 
 .. toctree::
    :maxdepth: 2
    :caption: User Guide
 
    getting_started
+   tutorials
    user_guide/core_dataset
    user_guide/sample_data
    user_guide/loading_satellite_data
