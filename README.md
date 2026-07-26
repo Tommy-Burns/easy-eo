@@ -48,6 +48,24 @@ result = (
 )
 ```
 
+## Tutorials
+
+Sixteen runnable notebooks live in [`examples/`](examples/README.md), from first
+install through to complete analyses (flood mapping, drought stress, land cover,
+terrain). Each one opens in Colab with no local setup — the first cell installs
+Easy-EO when it detects Colab:
+
+| | |
+| --- | --- |
+| [Quickstart: NDVI](examples/00_getting_started/02_quickstart_ndvi.ipynb) — open a scene, compute an index, plot it | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/00_getting_started/02_quickstart_ndvi.ipynb) |
+| [Search and load from STAC](examples/02_data_access/02_stac_search_and_load.ipynb) — find real scenes, read them over HTTP | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/02_data_access/02_stac_search_and_load.ipynb) |
+| [Flood mapping with NDWI](examples/03_real_world/01_flood_mapping_ndwi.ipynb) — Pakistan 2022, before/after, area affected | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/03_real_world/01_flood_mapping_ndwi.ipynb) |
+
+The full index, including what each notebook covers, is in
+[`examples/README.md`](examples/README.md) and in the
+[tutorials page](https://easy-eo.readthedocs.io/en/latest/tutorials.html) of the
+documentation.
+
 ## Supported Backends
 | Backend  | Description                                          |
 |----------|------------------------------------------------------|

@@ -105,6 +105,14 @@ are called out under a **Breaking** heading.
   demonstrated only in the STAC notebooks, because the bundled sample carries
   no SWIR band; flood mapping likewise uses a real flood (Pakistan, 2022)
   rather than the sample scene, which contains essentially no surface water.
+  Every notebook opens in Google Colab from a badge at its top: the first cell
+  installs easy-eo with the extras that notebook needs when it detects Colab,
+  and is a silent no-op anywhere else, so the badges work from a fresh
+  environment with nothing installed.
+- **"Tutorials" documentation page** (`docs/source/tutorials.rst`), indexing all
+  sixteen notebooks with a description, a source link and a Colab badge each,
+  plus how to run them locally and which ones need network. Linked from the
+  README and the documentation landing page.
 - **"Loading satellite data" guide** (`docs/source/user_guide/loading_satellite_data.rst`).
   Quickstart from a STAC archive to a plotted NDVI in under ten lines, then the
   detail: what each search filter means, how to read a result, which asset keys
