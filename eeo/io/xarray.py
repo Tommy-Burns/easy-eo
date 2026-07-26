@@ -309,6 +309,19 @@ def _band_names_from(da: Any, count: int) -> list[str | None] | None:
     return [name if isinstance(name, str) else None for name in names]
 
 
+def _nodata_from(da: Any) -> float | int | None:
+    """Read the nodata value as a plain Python scalar.
+
+    rioxarray reports it in the array's own dtype (``np.float32(-9999.0)``);
+    the rest of Easy-EO records nodata as a Python scalar, so a value that
+    makes a round trip keeps the type it started with.
+    """
+    nodata = da.rio.nodata
+    if nodata is None:
+        return None
+    return nodata.item() if hasattr(nodata, "item") else nodata
+
+
 def _timestamp_from(da: Any) -> dt.datetime | None:
     """Read an acquisition time from a scalar ``time`` coordinate, if there is one."""
     coord = da.coords.get("time")
@@ -414,7 +427,7 @@ def from_xarray(da: Any) -> EEORasterDataset:
         array,
         transform=transform,
         crs=ordered.rio.crs,
-        nodata=ordered.rio.nodata,
+        nodata=_nodata_from(ordered),
         timestamp=_timestamp_from(ordered),
         attrs={key: value for key, value in ordered.attrs.items() if key not in _MANAGED_ATTRS},
         band_names=_band_names_from(ordered, array.shape[0]),

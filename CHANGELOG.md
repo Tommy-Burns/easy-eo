@@ -144,7 +144,9 @@ are called out under a **Breaking** heading.
   The geotransform is taken from the coordinate axes where they can give it, so a
   sliced, sorted, or reversed DataArray is placed where its coordinates actually
   are rather than where its stored geotransform used to be. Values and dtype are
-  passed through untouched and the array is wrapped without an extra copy.
+  passed through untouched, the nodata value is recorded as a plain Python scalar
+  (rioxarray reports it in the array's own dtype), and the array is wrapped
+  without an extra copy.
   Raises `ValidationError` for a Dataset, an unidentifiable spatial dimension, an
   unevenly spaced axis, more than one band-like dimension, or a `time` dimension
   longer than one step (a time series, not a band stack). Needs the `xarray`
