@@ -56,7 +56,7 @@ Several extras can be installed at once: ``pip install "easy-eo[stac,xarray]"``.
       - ``xarray``, ``rioxarray``
       - Converting between an :class:`~eeo.core.EEORasterDataset` and a
         georeferenced :class:`xarray.DataArray`, to hand data to the wider
-        xarray ecosystem and back
+        xarray ecosystem and back — see :doc:`user_guide/xarray_interop`
 
 Using a feature without its extra installed raises
 :class:`~eeo.MissingDependencyError` — an ``ImportError`` whose message names

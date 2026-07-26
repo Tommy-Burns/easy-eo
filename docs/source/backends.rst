@@ -14,6 +14,14 @@ The backend is transparent by default (meaning users normally do not need to kno
 or care whether the data is backed by Rasterio or NumPy, as all public methods
 behave the same), but advanced users can access or convert it explicitly when needed.
 
+.. note::
+
+   An xarray *backend* — a dataset whose pixels stay lazy and chunked — is a
+   future addition, and is a different thing from the xarray *interop* that
+   exists today. :doc:`user_guide/xarray_interop` converts a dataset to a
+   :class:`xarray.DataArray` and back at the boundary; both sides are read into
+   memory, and the backend is unchanged.
+
 ------
 
 Conceptual Overview

@@ -134,6 +134,15 @@ are called out under a **Breaking** heading.
   missing package, and the exact `pip install 'easy-eo[stac]'` command. A
   missing *transitive* dependency of an installed extra still surfaces as its
   own `ModuleNotFoundError` rather than being reported as a missing extra.
+- **"Working with the xarray ecosystem" guide**
+  (`docs/source/user_guide/xarray_interop.rst`). The round trip in six lines,
+  then the detail: a table of what travels and where it lives on the DataArray,
+  the layout `to_xarray()` produces (and why a rotated grid gets 2-D
+  coordinates), which layouts `from_xarray()` accepts, why the coordinate axes
+  rather than the stored affine decide the geotransform, what is rejected and
+  what to do instead, the round-trip guarantees and the three normalisations
+  applied on the way, the memory behaviour of each direction, and an honest
+  "when to use rioxarray instead" section.
 - **`eeo.from_xarray(da)`.** The reverse of `to_xarray()`: wraps a georeferenced
   `xarray.DataArray` as an `EEORasterDataset`, reading the CRS, geotransform, and
   nodata value from rioxarray's `.rio` accessor, plus band names from

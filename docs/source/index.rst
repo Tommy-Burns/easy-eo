@@ -84,6 +84,7 @@ arithmetic, computing indices, and visualizing results.
    user_guide/nodata_and_dtype
    user_guide/visualization
    user_guide/statistical_locations
+   user_guide/xarray_interop
    backends
 
 .. toctree::
