@@ -316,8 +316,8 @@ def test_extract_value_at_coordinate_accepts_a_band_name(raster_3x3):
 
 def test_index_band_specs_accept_names(multiband_uint16):
     ds = _named(multiband_uint16, ["blue", "green", "red", "nir"])
-    by_name = ds.ndvi(red="red", nir="nir", return_as_ndarray=True)
-    by_index = ds.ndvi(red=3, nir=4, return_as_ndarray=True)
+    by_name = ds.ndvi(red="red", nir="nir").get_band(1)
+    by_index = ds.ndvi(red=3, nir=4).get_band(1)
     np.testing.assert_array_equal(by_name, by_index)
 
 

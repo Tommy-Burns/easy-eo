@@ -6,6 +6,7 @@
 #     python scripts/generate_core_stub.py
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from typing import Any
 
 import geopandas as gpd
 import numpy as np
@@ -57,6 +58,7 @@ class EEORasterDataset:
         band_names: list[str | None] | None = ...,
     ) -> EEORasterDataset: ...
     def to_rasterio(self) -> EEORasterDataset: ...
+    def to_xarray(self) -> Any: ...
     def to_array(self) -> np.ndarray: ...
     def read(self, *args, **kwargs) -> np.ndarray: ...
     def get_crs(self) -> CRS: ...
@@ -125,9 +127,8 @@ class EEORasterDataset:
         nir: BandSpec = ...,
         auto_align: bool = ...,
         method: str = ...,
-        return_as_ndarray: bool = ...,
         name: str | None = ...,
-    ) -> np.ndarray | EEORasterDataset: ...
+    ) -> EEORasterDataset: ...
     def extract_value_at_coordinate(
         self, coordinates: Coordinate, band_idx: int | str = ...
     ) -> int | float: ...
@@ -168,9 +169,8 @@ class EEORasterDataset:
         swir: BandSpec = ...,
         auto_align: bool = ...,
         method: str = ...,
-        return_as_ndarray: bool = ...,
         name: str | None = ...,
-    ) -> np.ndarray | EEORasterDataset: ...
+    ) -> EEORasterDataset: ...
     def ndmi(
         self,
         swir: BandSpec,
@@ -178,9 +178,8 @@ class EEORasterDataset:
         nir: BandSpec = ...,
         auto_align: bool = ...,
         method: str = ...,
-        return_as_ndarray: bool = ...,
         name: str | None = ...,
-    ) -> np.ndarray | EEORasterDataset: ...
+    ) -> EEORasterDataset: ...
     def ndvi(
         self,
         red: BandSpec,
@@ -188,9 +187,8 @@ class EEORasterDataset:
         nir: BandSpec = ...,
         auto_align: bool = ...,
         method: str = ...,
-        return_as_ndarray: bool = ...,
         name: str | None = ...,
-    ) -> np.ndarray | EEORasterDataset: ...
+    ) -> EEORasterDataset: ...
     def ndwi(
         self,
         nir: BandSpec,
@@ -198,9 +196,8 @@ class EEORasterDataset:
         green: BandSpec = ...,
         auto_align: bool = ...,
         method: str = ...,
-        return_as_ndarray: bool = ...,
         name: str | None = ...,
-    ) -> np.ndarray | EEORasterDataset: ...
+    ) -> EEORasterDataset: ...
     def normalize_min_max(
         self, *, new_min: float | int = ..., new_max: float | int = ...
     ) -> EEORasterDataset: ...
@@ -213,9 +210,8 @@ class EEORasterDataset:
         *,
         auto_align: bool = ...,
         method: str = ...,
-        return_as_ndarray: bool = ...,
         name: str | None = ...,
-    ) -> np.ndarray | EEORasterDataset: ...
+    ) -> EEORasterDataset: ...
     def plot_band_array(
         self,
         bands: int | str | Sequence[int | str] | None = ...,
@@ -300,9 +296,8 @@ class EEORasterDataset:
         soil_factor: float = ...,
         auto_align: bool = ...,
         method: str = ...,
-        return_as_ndarray: bool = ...,
         name: str | None = ...,
-    ) -> np.ndarray | EEORasterDataset: ...
+    ) -> EEORasterDataset: ...
     def sqrt(self) -> EEORasterDataset: ...
     def stack(
         self,

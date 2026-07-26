@@ -11,6 +11,16 @@ are called out under a **Breaking** heading.
 
 ### Breaking
 
+- **`return_as_ndarray` removed from the spectral indices and
+  `normalized_difference`.** `ndvi`, `ndwi`, `ndmi`, `ndbi`, `evi`, `savi`, and
+  `normalized_difference` now always return an `EEORasterDataset`. The flag made
+  their return type `numpy.ndarray | EEORasterDataset`, which meant chaining off
+  a result — `ds.ndvi(...).save_raster(...)`, exactly what the docs show — failed
+  static type checking for anyone running mypy or pyright against the package,
+  since easy-eo ships type information. Read the values off the result instead:
+  `.get_band(1)` for the 2D band (what `return_as_ndarray=True` used to give the
+  indices) or `.to_array()` for the `(bands, height, width)` array (what it gave
+  `normalized_difference`). Runtime behaviour is otherwise unchanged.
 - **Default values corrected to conventional choices.**
   - `normalize_percentile` now defaults to `lower_percentile=2`,
     `upper_percentile=98` (previously `0.0` / `1.0`). Callers relying on the
@@ -134,6 +144,52 @@ are called out under a **Breaking** heading.
   missing package, and the exact `pip install 'easy-eo[stac]'` command. A
   missing *transitive* dependency of an installed extra still surfaces as its
   own `ModuleNotFoundError` rather than being reported as a missing extra.
+- **"Working with the xarray ecosystem" guide**
+  (`docs/source/user_guide/xarray_interop.rst`). The round trip in six lines,
+  then the detail: a table of what travels and where it lives on the DataArray,
+  the layout `to_xarray()` produces (and why a rotated grid gets 2-D
+  coordinates), which layouts `from_xarray()` accepts, why the coordinate axes
+  rather than the stored affine decide the geotransform, what is rejected and
+  what to do instead, the round-trip guarantees and the three normalisations
+  applied on the way, the memory behaviour of each direction, and an honest
+  "when to use rioxarray instead" section.
+- **`eeo.from_xarray(da)`.** The reverse of `to_xarray()`: wraps a georeferenced
+  `xarray.DataArray` as an `EEORasterDataset`, reading the CRS, geotransform, and
+  nodata value from rioxarray's `.rio` accessor, plus band names from
+  `long_name`, a `timestamp` from a scalar `time` coordinate, and the remaining
+  `attrs`. Dimensions may be `(band, y, x)` in any order or `(y, x)` for a single
+  band, spare length-1 dimensions are collapsed, and the spatial dimensions are
+  whichever rioxarray identifies (so `da.rio.set_spatial_dims()` is honoured).
+  The geotransform is taken from the coordinate axes where they can give it, so a
+  sliced, sorted, or reversed DataArray is placed where its coordinates actually
+  are rather than where its stored geotransform used to be. Values and dtype are
+  passed through untouched, the nodata value is recorded as a plain Python scalar
+  (rioxarray reports it in the array's own dtype), and the array is wrapped
+  without an extra copy.
+  Raises `ValidationError` for a Dataset, an unidentifiable spatial dimension, an
+  unevenly spaced axis, more than one band-like dimension, or a `time` dimension
+  longer than one step (a time series, not a band stack). Needs the `xarray`
+  extra.
+- **`EEORasterDataset.to_xarray()`.** Converts a dataset into a georeferenced
+  `xarray.DataArray` laid out exactly like one `rioxarray.open_rasterio` would
+  return: dimensions `("band", "y", "x")` (always three, even for a single
+  band), a 1-based `band` coordinate, pixel-centre `y`/`x` coordinates, and the
+  CRS, geotransform, and nodata value readable from `da.rio.crs`,
+  `da.rio.transform()`, and `da.rio.nodata` — so the result can be handed to the
+  xarray ecosystem and written back with `da.rio.to_raster()`. Provenance
+  travels too: band names become rioxarray's `long_name` attribute (which
+  `to_raster` writes back as GDAL band descriptions), a `timestamp` becomes a
+  scalar `time` coordinate in UTC, and `attrs` are copied onto the DataArray.
+  Values, dtype, and nodata pixels are carried through unchanged, and the
+  returned array never shares memory with the dataset. Reads the whole raster
+  into memory. Needs the `xarray` extra.
+- **Optional `xarray` extra (`pip install "easy-eo[xarray]"`).** Installs
+  `xarray>=2024.7` and `rioxarray>=0.17,<1`, the dependencies of the
+  forthcoming xarray interop (`EEORasterDataset.to_xarray()` /
+  `eeo.from_xarray()`). Nothing in the base install changes: `import eeo` still
+  needs neither package, and a feature that does raises
+  `MissingDependencyError` naming the exact install command. Extras compose —
+  `pip install "easy-eo[stac,xarray]"`.
 - **Sample-data helper (`eeo.datasets.load_sample_dataset`).** Returns a
   `SampleDataset` namespace whose attributes are the individual bundled files, so
   a curated Sentinel-2 / Copernicus-DEM sample is opened by readable,

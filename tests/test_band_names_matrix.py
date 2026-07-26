@@ -182,8 +182,8 @@ def test_index_by_name_matches_by_index(index):
     scene = _scene()
     by_name, by_index = INDEX_SPECS[index]
     np.testing.assert_array_equal(
-        getattr(scene, index)(**by_name, return_as_ndarray=True),
-        getattr(scene, index)(**by_index, return_as_ndarray=True),
+        getattr(scene, index)(**by_name).get_band(1),
+        getattr(scene, index)(**by_index).get_band(1),
     )
 
 
@@ -215,8 +215,8 @@ def test_index_resolves_names_on_the_numpy_backend(index):
     scene = _scene(backend="numpy")
     by_name, by_index = INDEX_SPECS[index]
     np.testing.assert_array_equal(
-        getattr(scene, index)(**by_name, return_as_ndarray=True),
-        getattr(scene, index)(**by_index, return_as_ndarray=True),
+        getattr(scene, index)(**by_name).get_band(1),
+        getattr(scene, index)(**by_index).get_band(1),
     )
 
 

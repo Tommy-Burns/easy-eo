@@ -56,6 +56,7 @@ intersphinx_mapping = {
     "rasterio": ("https://rasterio.readthedocs.io/en/stable/", None),
     "geopandas": ("https://geopandas.org/en/stable/", None),
     "pyproj": ("https://pyproj4.github.io/pyproj/stable/", None),
+    "xarray": ("https://docs.xarray.dev/en/stable/", None),
 }
 
 templates_path = ["_templates"]

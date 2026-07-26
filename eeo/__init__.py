@@ -18,7 +18,7 @@ from .core import (
     load_raster,
 )
 from .core.adapters import *
-from .io import stac_search
+from .io import from_xarray, stac_search
 from .ops import *
 from .preprocessing import *
 from .viz import *
@@ -28,6 +28,7 @@ __all__ = [
     "load_raster",
     "load_array",
     "stac_search",
+    "from_xarray",
     "show_versions",
     "EEOError",
     "ValidationError",

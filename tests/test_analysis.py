@@ -22,7 +22,7 @@ def test_normalized_difference_basic(raster_3x3):
 
 # ndarray returns
 def test_normalized_difference_returns_ndarray(raster_3x3):
-    nd = raster_3x3.normalized_difference(raster_3x3, return_as_ndarray=True)
+    nd = raster_3x3.normalized_difference(raster_3x3).read()
 
     assert isinstance(nd, np.ndarray)
     assert nd.shape == raster_3x3.read().shape
@@ -37,7 +37,7 @@ def test_normalized_difference_divide_by_zero():
     ds1 = load_array(zeros, transform=transform, crs=crs)
     ds2 = load_array(zeros, transform=transform, crs=crs)
 
-    nd = ds1.normalized_difference(ds2, return_as_ndarray=True)
+    nd = ds1.normalized_difference(ds2).read()
 
     assert np.all(nd == 0)
 
@@ -213,7 +213,7 @@ def test_normalized_difference_nodata_is_contagious():
     ds_a = load_array(a, transform=transform, crs=crs, nodata=-9999.0).to_rasterio()
     ds_b = load_array(b, transform=transform, crs=crs, nodata=-9999.0).to_rasterio()
 
-    out = ds_a.normalized_difference(ds_b, return_as_ndarray=True)[0]
+    out = ds_a.normalized_difference(ds_b).read()[0]
 
     assert np.isnan(out[:2, :2]).all()  # nodata from a
     assert np.isnan(out[4:, 4:]).all()  # nodata from b

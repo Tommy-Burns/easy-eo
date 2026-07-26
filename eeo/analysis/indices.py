@@ -15,6 +15,11 @@ An index band is a new measurement that maps to no input band, so it is never
 named after the operation: the output band is unnamed unless the caller passes
 ``name=``.
 
+Every index returns a new single-band ``EEORasterDataset``, so a result always
+keeps chaining. When the raw values are what you want, read them off the
+result: ``.get_band(1)`` for the 2D band, or ``.to_array()`` for the
+``(bands, height, width)`` array.
+
 The general two-operand primitive, :func:`normalized_difference`, is also kept
 here: any normalized-difference index can be expressed with it directly.
 """
@@ -84,14 +89,14 @@ def _resolve_band(ds, spec, *, auto_align, method):
     return raw.astype(rio.float32), raw, nodata
 
 
-def _compute_index(ds, band_specs, formula, *, auto_align, method, return_as_ndarray, name=None):
+def _compute_index(ds, band_specs, formula, *, auto_align, method, name=None):
     """Resolve band specs, apply ``formula``, and package the float32 result.
 
     ``band_specs`` is the ordered list of band specs; the first is the primary
     band. ``formula`` maps the list of float32 band arrays to a 2D result. The
     result is masked per the nodata contract (contagious across every band) and
-    returned as a raw array or a single-band float32 ``EEORasterDataset`` whose
-    band carries ``name`` (unnamed when ``name`` is None).
+    returned as a single-band float32 ``EEORasterDataset`` whose band carries
+    ``name`` (unnamed when ``name`` is None).
     """
     ds = ds.to_rasterio()
     resolved = [
@@ -106,9 +111,6 @@ def _compute_index(ds, band_specs, formula, *, auto_align, method, return_as_nda
     index, out_nodata = apply_nodata_contract(
         result, operands, fractional=True, ds_nodata=primary_nodata
     )
-
-    if return_as_ndarray:
-        return index
 
     data = index[np.newaxis, ...] if index.ndim == 2 else index
     meta = ds.get_metadata().copy()
@@ -142,9 +144,8 @@ def normalized_difference(
     *,
     auto_align: bool = True,
     method: str = "bilinear",
-    return_as_ndarray: bool = False,
     name: str | None = None,
-) -> np.ndarray | EEORasterDataset:
+) -> EEORasterDataset:
     """Compute the normalized difference ``(ds - other) / (ds + other)``.
 
     This is the general primitive underlying the normalized-difference indices
@@ -166,9 +167,6 @@ def normalized_difference(
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
-    return_as_ndarray : bool, default False
-        If True, return the raw NumPy array instead of an
-        ``EEORasterDataset``.
     name : str or None, default None
         Optional name for the output band. The result is never named
         automatically; ``name`` applies only to a single-band result — for a
@@ -176,11 +174,9 @@ def normalized_difference(
 
     Returns
     -------
-    EEORasterDataset or numpy.ndarray
-        Float32 result in ``[-1, 1]`` — an ``EEORasterDataset`` by default,
-        or the raw ``(bands, height, width)`` array when
-        ``return_as_ndarray=True``. Pixels where ``ds + other == 0`` are set
-        to 0. A pixel that is nodata in either operand is nodata (NaN) in the
+    EEORasterDataset
+        Float32 result in ``[-1, 1]``, one band per input band. Pixels where
+        ``ds + other == 0`` are set to 0. A pixel that is nodata in either operand is nodata (NaN) in the
         output; the output nodata value is NaN when either input declares
         nodata, otherwise None.
 
@@ -200,7 +196,7 @@ def normalized_difference(
     Examples
     --------
     >>> ndvi = ds_nir.normalized_difference(ds_red)
-    >>> ndvi_array = ds_nir.normalized_difference(ds_red, return_as_ndarray=True)
+    >>> ndvi_array = ds_nir.normalized_difference(ds_red).to_array()
     """
     ds = ds.to_rasterio()
     if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
@@ -225,9 +221,6 @@ def normalized_difference(
         fractional=True,
         ds_nodata=ds_nodata,
     )
-
-    if return_as_ndarray:
-        return nd
 
     meta = ds.get_metadata().copy()
     meta.update(
@@ -262,9 +255,8 @@ def ndvi(
     nir: BandSpec = 1,
     auto_align: bool = True,
     method: str = "bilinear",
-    return_as_ndarray: bool = False,
     name: str | None = None,
-) -> np.ndarray | EEORasterDataset:
+) -> EEORasterDataset:
     """Compute the Normalized Difference Vegetation Index.
 
     ``NDVI = (NIR - Red) / (NIR + Red)``. Higher values indicate denser, more
@@ -293,9 +285,6 @@ def ndvi(
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
-    return_as_ndarray : bool, default False
-        If True, return the raw 2D ``(height, width)`` NumPy array instead of
-        an ``EEORasterDataset``.
     name : str or None, default None
         Optional name for the output band. An index band maps to no input
         band, so it is never named automatically: it stays unnamed unless a
@@ -304,9 +293,8 @@ def ndvi(
 
     Returns
     -------
-    EEORasterDataset or numpy.ndarray
-        Single-band float32 NDVI in ``[-1, 1]`` — an ``EEORasterDataset`` by
-        default, or the raw 2D array when ``return_as_ndarray=True``. Pixels
+    EEORasterDataset
+        Single-band float32 NDVI in ``[-1, 1]``. Pixels
         where ``NIR + Red == 0`` are set to 0. A pixel that is nodata in any
         input band is nodata (NaN) in the output; the output nodata value is
         NaN when any input band declares nodata, otherwise None.
@@ -337,7 +325,6 @@ def ndvi(
         _normalized_difference,
         auto_align=auto_align,
         method=method,
-        return_as_ndarray=return_as_ndarray,
         name=name,
     )
 
@@ -350,9 +337,8 @@ def ndwi(
     green: BandSpec = 1,
     auto_align: bool = True,
     method: str = "bilinear",
-    return_as_ndarray: bool = False,
     name: str | None = None,
-) -> np.ndarray | EEORasterDataset:
+) -> EEORasterDataset:
     """Compute the Normalized Difference Water Index (McFeeters, 1996).
 
     ``NDWI = (Green - NIR) / (Green + NIR)``. Highlights open water, which
@@ -381,9 +367,6 @@ def ndwi(
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
-    return_as_ndarray : bool, default False
-        If True, return the raw 2D ``(height, width)`` NumPy array instead of
-        an ``EEORasterDataset``.
     name : str or None, default None
         Optional name for the output band. An index band maps to no input
         band, so it is never named automatically: it stays unnamed unless a
@@ -392,9 +375,8 @@ def ndwi(
 
     Returns
     -------
-    EEORasterDataset or numpy.ndarray
-        Single-band float32 NDWI in ``[-1, 1]`` — an ``EEORasterDataset`` by
-        default, or the raw 2D array when ``return_as_ndarray=True``. Pixels
+    EEORasterDataset
+        Single-band float32 NDWI in ``[-1, 1]``. Pixels
         where ``Green + NIR == 0`` are set to 0. A pixel that is nodata in any
         input band is nodata (NaN) in the output; the output nodata value is
         NaN when any input band declares nodata, otherwise None.
@@ -426,7 +408,6 @@ def ndwi(
         _normalized_difference,
         auto_align=auto_align,
         method=method,
-        return_as_ndarray=return_as_ndarray,
         name=name,
     )
 
@@ -439,9 +420,8 @@ def ndmi(
     nir: BandSpec = 1,
     auto_align: bool = True,
     method: str = "bilinear",
-    return_as_ndarray: bool = False,
     name: str | None = None,
-) -> np.ndarray | EEORasterDataset:
+) -> EEORasterDataset:
     """Compute the Normalized Difference Moisture Index.
 
     ``NDMI = (NIR - SWIR1) / (NIR + SWIR1)``. Tracks vegetation water content;
@@ -469,9 +449,6 @@ def ndmi(
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
-    return_as_ndarray : bool, default False
-        If True, return the raw 2D ``(height, width)`` NumPy array instead of
-        an ``EEORasterDataset``.
     name : str or None, default None
         Optional name for the output band. An index band maps to no input
         band, so it is never named automatically: it stays unnamed unless a
@@ -480,9 +457,8 @@ def ndmi(
 
     Returns
     -------
-    EEORasterDataset or numpy.ndarray
-        Single-band float32 NDMI in ``[-1, 1]`` — an ``EEORasterDataset`` by
-        default, or the raw 2D array when ``return_as_ndarray=True``. Pixels
+    EEORasterDataset
+        Single-band float32 NDMI in ``[-1, 1]``. Pixels
         where ``NIR + SWIR1 == 0`` are set to 0. A pixel that is nodata in any
         input band is nodata (NaN) in the output; the output nodata value is
         NaN when any input band declares nodata, otherwise None.
@@ -514,7 +490,6 @@ def ndmi(
         _normalized_difference,
         auto_align=auto_align,
         method=method,
-        return_as_ndarray=return_as_ndarray,
         name=name,
     )
 
@@ -527,9 +502,8 @@ def ndbi(
     swir: BandSpec = 1,
     auto_align: bool = True,
     method: str = "bilinear",
-    return_as_ndarray: bool = False,
     name: str | None = None,
-) -> np.ndarray | EEORasterDataset:
+) -> EEORasterDataset:
     """Compute the Normalized Difference Built-up Index.
 
     ``NDBI = (SWIR1 - NIR) / (SWIR1 + NIR)``. Highlights built-up and
@@ -558,9 +532,6 @@ def ndbi(
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
-    return_as_ndarray : bool, default False
-        If True, return the raw 2D ``(height, width)`` NumPy array instead of
-        an ``EEORasterDataset``.
     name : str or None, default None
         Optional name for the output band. An index band maps to no input
         band, so it is never named automatically: it stays unnamed unless a
@@ -569,9 +540,8 @@ def ndbi(
 
     Returns
     -------
-    EEORasterDataset or numpy.ndarray
-        Single-band float32 NDBI in ``[-1, 1]`` — an ``EEORasterDataset`` by
-        default, or the raw 2D array when ``return_as_ndarray=True``. Pixels
+    EEORasterDataset
+        Single-band float32 NDBI in ``[-1, 1]``. Pixels
         where ``SWIR1 + NIR == 0`` are set to 0. A pixel that is nodata in any
         input band is nodata (NaN) in the output; the output nodata value is
         NaN when any input band declares nodata, otherwise None.
@@ -603,7 +573,6 @@ def ndbi(
         _normalized_difference,
         auto_align=auto_align,
         method=method,
-        return_as_ndarray=return_as_ndarray,
         name=name,
     )
 
@@ -617,9 +586,8 @@ def evi(
     nir: BandSpec = 1,
     auto_align: bool = True,
     method: str = "bilinear",
-    return_as_ndarray: bool = False,
     name: str | None = None,
-) -> np.ndarray | EEORasterDataset:
+) -> EEORasterDataset:
     """Compute the Enhanced Vegetation Index.
 
     ``EVI = 2.5 * (NIR - Red) / (NIR + 6*Red - 7.5*Blue + 1)`` using the
@@ -655,9 +623,6 @@ def evi(
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
-    return_as_ndarray : bool, default False
-        If True, return the raw 2D ``(height, width)`` NumPy array instead of
-        an ``EEORasterDataset``.
     name : str or None, default None
         Optional name for the output band. An index band maps to no input
         band, so it is never named automatically: it stays unnamed unless a
@@ -666,10 +631,9 @@ def evi(
 
     Returns
     -------
-    EEORasterDataset or numpy.ndarray
-        Single-band float32 EVI (typically ``[-1, 1]`` for valid reflectance) —
-        an ``EEORasterDataset`` by default, or the raw 2D array when
-        ``return_as_ndarray=True``. Pixels where the denominator is 0 are set
+    EEORasterDataset
+        Single-band float32 EVI (typically ``[-1, 1]`` for valid reflectance).
+        Pixels where the denominator is 0 are set
         to 0. A pixel that is nodata in any input band is nodata (NaN) in the
         output; the output nodata value is NaN when any input band declares
         nodata, otherwise None.
@@ -700,7 +664,6 @@ def evi(
         _evi_formula,
         auto_align=auto_align,
         method=method,
-        return_as_ndarray=return_as_ndarray,
         name=name,
     )
 
@@ -720,9 +683,8 @@ def savi(
     soil_factor: float = 0.5,
     auto_align: bool = True,
     method: str = "bilinear",
-    return_as_ndarray: bool = False,
     name: str | None = None,
-) -> np.ndarray | EEORasterDataset:
+) -> EEORasterDataset:
     """Compute the Soil-Adjusted Vegetation Index.
 
     ``SAVI = (1 + L) * (NIR - Red) / (NIR + Red + L)`` where ``L`` is the soil
@@ -754,9 +716,6 @@ def savi(
     method : str, default "bilinear"
         Resampling method used when ``auto_align`` triggers alignment; one of
         rasterio's resampling names (e.g. ``"nearest"``, ``"bilinear"``).
-    return_as_ndarray : bool, default False
-        If True, return the raw 2D ``(height, width)`` NumPy array instead of
-        an ``EEORasterDataset``.
     name : str or None, default None
         Optional name for the output band. An index band maps to no input
         band, so it is never named automatically: it stays unnamed unless a
@@ -765,9 +724,8 @@ def savi(
 
     Returns
     -------
-    EEORasterDataset or numpy.ndarray
-        Single-band float32 SAVI in ``[-1, 1]`` — an ``EEORasterDataset`` by
-        default, or the raw 2D array when ``return_as_ndarray=True``. Pixels
+    EEORasterDataset
+        Single-band float32 SAVI in ``[-1, 1]``. Pixels
         where ``NIR + Red + L == 0`` are set to 0. A pixel that is nodata in
         any input band is nodata (NaN) in the output; the output nodata value
         is NaN when any input band declares nodata, otherwise None.
@@ -798,7 +756,6 @@ def savi(
         lambda bands: _savi_formula(bands, soil_factor),
         auto_align=auto_align,
         method=method,
-        return_as_ndarray=return_as_ndarray,
         name=name,
     )
 

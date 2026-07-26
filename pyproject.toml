@@ -43,6 +43,15 @@ stac = [
     "pystac-client>=0.8,<1",
     "planetary-computer>=1.0,<2",
 ]
+# xarray interop (EEORasterDataset.to_xarray / eeo.from_xarray). xarray builds
+# the labelled array; rioxarray carries the georeferencing (CRS, transform,
+# nodata) on it. rioxarray is capped below its next major version because it is
+# pre-1.0 and still changes its accessor API between minors; xarray uses
+# CalVer, breaks rarely, and is left uncapped.
+xarray = [
+    "xarray>=2024.7",
+    "rioxarray>=0.17,<1",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",

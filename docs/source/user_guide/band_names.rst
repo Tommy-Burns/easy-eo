@@ -22,8 +22,9 @@ before.
 
 .. seealso::
 
-   :doc:`spectral_indices` for the index methods and their band arguments, and
-   :doc:`visualization` for band selection in the plotting functions.
+   :doc:`spectral_indices` for the index methods and their band arguments,
+   :doc:`visualization` for band selection in the plotting functions, and
+   :doc:`xarray_interop` for how names cross into xarray and back.
 
 -----
 

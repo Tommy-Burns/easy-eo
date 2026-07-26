@@ -38,6 +38,8 @@ install stays small. Install an extra by name:
 
     pip install "easy-eo[stac]"
 
+Several extras can be installed at once: ``pip install "easy-eo[stac,xarray]"``.
+
 .. list-table::
     :header-rows: 1
     :widths: 15 40 45
@@ -50,6 +52,11 @@ install stays small. Install an extra by name:
       - Searching STAC catalogs and loading assets straight into an
         :class:`~eeo.core.EEORasterDataset` — see
         :doc:`user_guide/loading_satellite_data`
+    * - ``xarray``
+      - ``xarray``, ``rioxarray``
+      - Converting between an :class:`~eeo.core.EEORasterDataset` and a
+        georeferenced :class:`xarray.DataArray`, to hand data to the wider
+        xarray ecosystem and back — see :doc:`user_guide/xarray_interop`
 
 Using a feature without its extra installed raises
 :class:`~eeo.MissingDependencyError` — an ``ImportError`` whose message names
@@ -169,11 +176,12 @@ Easy-EO allows computing **normalized or custom indices**:
     # NDVI-like computation
     ndvi = normalized_difference(ds_nir, ds_red)
 
-    # Return as EEORasterDataset
-    ndvi_ds = ds_nir.normalized_difference(ds_red, return_as_ndarray=False)
+    # The same thing as a bound method
+    ndvi = ds_nir.normalized_difference(ds_red)
 
 .. note::
-    Supports chaining with other operations and can return either **NumPy arrays** or **EEORasterDataset**.
+    Returns a new **EEORasterDataset**, so it chains with any other operation.
+    Call ``.to_array()`` on the result when you need the raw **NumPy array**.
 
 Clipping, Mosaicking, and Stacking
 ----------------------------------
