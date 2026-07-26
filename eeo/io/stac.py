@@ -31,11 +31,14 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import os
 from collections.abc import Mapping, Sequence
 from typing import Any, NamedTuple, overload
 
+import geopandas as gpd
 import numpy as np
 import rasterio as rio
+import shapely
 from rasterio import windows as rio_windows
 from rasterio.transform import array_bounds
 from rasterio.vrt import WarpedVRT
@@ -61,7 +64,89 @@ _SIGNED_CATALOG_HOSTS = ("planetarycomputer.microsoft.com",)
 # (start, end) pair. Passed through to pystac-client unchanged.
 DatetimeSpec = str | dt.datetime | tuple[str | dt.datetime | None, str | dt.datetime | None] | list
 
+# Accepted forms for the ``intersects`` argument. Anything with a CRS is
+# reprojected to WGS 84 lon/lat; anything without one is assumed to be in it.
+IntersectsSpec = Any
+
 _EPOCH = dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc)
+
+# STAC's spatial filters are lon/lat degrees, so a geometry whose coordinates
+# fall outside these bounds is projected and would silently match nothing.
+_LON_LIMIT, _LAT_LIMIT = 180.0, 90.0
+
+
+def _geometry_from_mapping(value: Mapping[str, Any]) -> Any:
+    """Build a shapely geometry from a GeoJSON geometry, Feature, or collection."""
+    kind = value.get("type")
+    try:
+        if kind == "FeatureCollection":
+            features = [feature["geometry"] for feature in value.get("features", [])]
+            return shapely.union_all([shapely.geometry.shape(part) for part in features])
+        if kind == "Feature":
+            return shapely.geometry.shape(value["geometry"])
+        return shapely.geometry.shape(value)
+    # shapely.errors.ShapelyError covers an unknown geometry type; the built-ins
+    # cover a mapping missing the keys shapely expects.
+    except (shapely.errors.ShapelyError, AttributeError, KeyError, ValueError, TypeError) as err:
+        raise ValidationError(
+            f"intersects must be a GeoJSON geometry, Feature, or FeatureCollection; "
+            f"got a mapping of type {kind!r}"
+        ) from err
+
+
+def _geometry_from_geopandas(value: gpd.GeoDataFrame | gpd.GeoSeries) -> Any:
+    """Merge a GeoDataFrame/GeoSeries into one geometry in WGS 84 lon/lat."""
+    if value.crs is not None and value.crs.to_epsg() != 4326:
+        # The CRS travels with the data, so the reprojection needs no guesswork.
+        value = value.to_crs(4326)
+    return value.union_all()
+
+
+def _normalize_intersects(value: IntersectsSpec) -> dict[str, Any]:
+    """Normalize an area of interest to a GeoJSON mapping in WGS 84 lon/lat.
+
+    Accepts a GeoDataFrame, GeoSeries, shapely geometry, GeoJSON mapping, or a
+    path to any vector file GeoPandas can read.
+    """
+    if isinstance(value, (str, os.PathLike)):
+        try:
+            value = gpd.read_file(value)
+        except Exception as err:
+            raise ValidationError(
+                f"intersects could not be read as a vector file; got {value!r}"
+            ) from err
+
+    # GeoDataFrame/GeoSeries first: they also expose __geo_interface__, but only
+    # they carry the CRS that makes reprojection possible.
+    if isinstance(value, (gpd.GeoDataFrame, gpd.GeoSeries)):
+        geometry = _geometry_from_geopandas(value)
+    elif isinstance(value, Mapping):
+        geometry = _geometry_from_mapping(value)
+    elif hasattr(value, "__geo_interface__"):
+        geometry = _geometry_from_mapping(value.__geo_interface__)
+    else:
+        raise ValidationError(
+            "intersects must be a GeoDataFrame, GeoSeries, shapely geometry, GeoJSON "
+            f"mapping, or a path to a vector file; got {type(value).__name__}"
+        )
+
+    if geometry is None or geometry.is_empty:
+        raise ValidationError("intersects must contain at least one geometry; got an empty one")
+
+    minx, miny, maxx, maxy = geometry.bounds
+    if minx < -_LON_LIMIT or maxx > _LON_LIMIT:
+        raise ValidationError(
+            "intersects must be in WGS 84 lon/lat degrees; got longitudes "
+            f"{minx:.1f}..{maxx:.1f}. Pass a GeoDataFrame carrying its CRS, or "
+            "reproject the geometry with .to_crs(4326) first."
+        )
+    if miny < -_LAT_LIMIT or maxy > _LAT_LIMIT:
+        raise ValidationError(
+            "intersects must be in WGS 84 lon/lat degrees; got latitudes "
+            f"{miny:.1f}..{maxy:.1f}. Pass a GeoDataFrame carrying its CRS, or "
+            "reproject the geometry with .to_crs(4326) first."
+        )
+    return dict(shapely.geometry.mapping(geometry))
 
 
 def _parse_timestamp(value: Any) -> dt.datetime | None:
@@ -236,12 +321,23 @@ class STACItem:
     search_bbox : sequence of float or None, default None
         Area of interest of the search that produced the item, in WGS 84
         lon/lat. :meth:`load` crops to it by default.
+    search_intersects : mapping or None, default None
+        Area of interest as a GeoJSON geometry in WGS 84 lon/lat, when the
+        search used ``intersects``. :meth:`load` crops to its bounds by
+        default, and can mask to its outline.
     """
 
-    def __init__(self, item: Any, *, search_bbox: Sequence[float] | None = None) -> None:
+    def __init__(
+        self,
+        item: Any,
+        *,
+        search_bbox: Sequence[float] | None = None,
+        search_intersects: Mapping[str, Any] | None = None,
+    ) -> None:
         self._item = item
         self._timestamp = _item_timestamp(item)
         self._search_bbox = None if search_bbox is None else tuple(float(v) for v in search_bbox)
+        self._search_intersects = None if search_intersects is None else dict(search_intersects)
 
     @property
     def item(self) -> Any:
@@ -360,9 +456,22 @@ class STACItem:
         tuple of float or None
             ``(minx, miny, maxx, maxy)`` in WGS 84 lon/lat degrees, taken from
             the search that produced this item, or None if the search set no
-            spatial filter.
+            bounding box.
         """
         return self._search_bbox
+
+    @property
+    def search_intersects(self) -> dict[str, Any] | None:
+        """Return the search geometry :meth:`load` crops to by default.
+
+        Returns
+        -------
+        dict or None
+            GeoJSON geometry mapping in WGS 84 lon/lat, taken from the search
+            that produced this item, or None if the search used a bounding box
+            or no spatial filter at all.
+        """
+        return None if self._search_intersects is None else dict(self._search_intersects)
 
     def load(
         self,
@@ -370,6 +479,7 @@ class STACItem:
         *,
         bbox: Sequence[float] | None = None,
         crop: bool = True,
+        mask: bool = False,
         resampling: ResamplingMethod | Any = "nearest",
     ) -> EEORasterDataset:
         """Read one or more of the item's assets into a raster dataset.
@@ -389,12 +499,19 @@ class STACItem:
             :attr:`STACItem.asset_names` for what this item offers.
         bbox : sequence of float or None, default None
             Area to read, as ``(minx, miny, maxx, maxy)`` in **WGS 84 lon/lat
-            degrees**. None uses :attr:`search_bbox`, the AOI of the search
-            that produced this item; if that is also None, the whole scene is
-            read.
+            degrees**. None uses the AOI of the search that produced this item
+            — :attr:`search_bbox`, or the bounds of :attr:`search_intersects`
+            when the search used a geometry; if there is none, the whole scene
+            is read.
         crop : bool, default True
             Whether to crop at all. False reads the entire scene and cannot be
             combined with ``bbox``.
+        mask : bool, default False
+            If True, set pixels outside :attr:`search_intersects` to nodata, so
+            the result follows the geometry's outline rather than its bounding
+            rectangle. Requires a search made with ``intersects``. Cropping
+            decides what is transferred; masking is a separate analytical
+            choice, which is why it is off by default.
         resampling : str or rasterio.enums.Resampling, default "nearest"
             Method used when an asset has to be resampled onto the first
             asset's grid — a Sentinel-2 20 m band stacked with a 10 m one, for
@@ -416,8 +533,8 @@ class STACItem:
         ValidationError
             If ``assets`` is empty or names an asset the item does not have,
             if ``bbox`` is not four ordered lon/lat values, if ``bbox`` is
-            combined with ``crop=False``, or if the AOI does not overlap the
-            scene.
+            combined with ``crop=False``, if ``mask=True`` without a search
+            geometry, or if the AOI does not overlap the scene.
 
         Notes
         -----
@@ -436,6 +553,17 @@ class STACItem:
         ... )  # doctest: +SKIP
         >>> scene = results[0].load(["B04", "B08"])  # doctest: +SKIP
         >>> ndvi = scene.ndvi(red="B04", nir="B08")  # doctest: +SKIP
+
+        Follow an area's outline rather than its bounding box:
+
+        >>> import geopandas as gpd
+        >>> from eeo.datasets import load_sample_dataset
+        >>> sd = load_sample_dataset()
+        >>> boundary = gpd.read_file(sd.boundary)  # doctest: +SKIP
+        >>> results = eeo.stac_search(
+        ...     "sentinel-2-l2a", intersects=boundary, limit=1
+        ... )  # doctest: +SKIP
+        >>> scene = results[0].load("B04", mask=True)  # doctest: +SKIP
         """
         keys = self._resolve_assets(assets)
 
@@ -444,9 +572,23 @@ class STACItem:
                 "crop=False reads the whole scene and cannot be combined with a bbox; "
                 "pass one or the other"
             )
+        if mask and self._search_intersects is None:
+            raise ValidationError(
+                "mask=True needs the geometry to mask with; this item came from a "
+                "search without intersects. Search with intersects=<geometry>, or "
+                "clip the result yourself with .clip_raster_with_vector(...)"
+            )
+
         aoi: Sequence[float] | None = None
         if crop:
-            aoi = _validate_bbox(bbox) if bbox is not None else self._search_bbox
+            if bbox is not None:
+                aoi = _validate_bbox(bbox)
+            elif self._search_bbox is not None:
+                aoi = self._search_bbox
+            elif self._search_intersects is not None:
+                # Crop to the geometry's bounding window; `mask` decides whether
+                # the pixels outside its outline are then blanked.
+                aoi = shapely.geometry.shape(self._search_intersects).bounds
 
         resampling_enum = normalize_resampling_method(resampling)
 
@@ -472,7 +614,16 @@ class STACItem:
             },
             band_names=band_names,
         )
-        return dataset.to_rasterio()
+        dataset = dataset.to_rasterio()
+
+        if mask:
+            # Reuse the vector clip, which reprojects the geometry onto the
+            # raster's CRS and fills outside pixels with its nodata value.
+            geometry = gpd.GeoDataFrame(
+                geometry=[shapely.geometry.shape(self._search_intersects)], crs="EPSG:4326"
+            )
+            dataset = dataset.clip_raster_with_vector(geometry)
+        return dataset
 
     def _resolve_assets(self, assets: str | Sequence[str]) -> list[str]:
         """Normalize the asset argument to a list of keys this item has."""
@@ -525,6 +676,9 @@ class STACSearchResult(Sequence[STACItem]):
     bbox : sequence of float or None, default None
         The area of interest the search was restricted to, in WGS 84 lon/lat.
         Retained so that loading an asset can crop to it.
+    intersects : mapping or None, default None
+        The search geometry, as a GeoJSON mapping in WGS 84 lon/lat, when the
+        search used ``intersects`` instead of a bounding box.
     """
 
     def __init__(
@@ -534,11 +688,13 @@ class STACSearchResult(Sequence[STACItem]):
         collections: Sequence[str],
         catalog: str,
         bbox: Sequence[float] | None = None,
+        intersects: Mapping[str, Any] | None = None,
     ) -> None:
         self._items: list[STACItem] = sorted(items, key=_sort_key)
         self._collections = list(collections)
         self._catalog = catalog
         self._bbox = None if bbox is None else tuple(float(value) for value in bbox)
+        self._intersects = None if intersects is None else dict(intersects)
 
     @property
     def bbox(self) -> tuple[float, ...] | None:
@@ -548,9 +704,21 @@ class STACSearchResult(Sequence[STACItem]):
         -------
         tuple of float or None
             ``(minx, miny, maxx, maxy)`` in WGS 84 lon/lat degrees, or None if
-            the search set no spatial filter.
+            the search used a geometry or set no spatial filter.
         """
         return self._bbox
+
+    @property
+    def intersects(self) -> dict[str, Any] | None:
+        """Return the geometry the search was restricted to.
+
+        Returns
+        -------
+        dict or None
+            GeoJSON geometry mapping in WGS 84 lon/lat degrees, or None if the
+            search used a bounding box or set no spatial filter.
+        """
+        return None if self._intersects is None else dict(self._intersects)
 
     @property
     def collections(self) -> list[str]:
@@ -621,6 +789,7 @@ class STACSearchResult(Sequence[STACItem]):
                 collections=self._collections,
                 catalog=self._catalog,
                 bbox=self._bbox,
+                intersects=self._intersects,
             )
         return self._items[index]
 
@@ -676,6 +845,7 @@ def _validate_bbox(bbox: Sequence[float]) -> list[float]:
 def _search_parameters(
     collections: list[str],
     bbox: Sequence[float] | None,
+    intersects: IntersectsSpec | None,
     datetime: DatetimeSpec | None,
     cloud_cover: float | None,
     limit: int | None,
@@ -683,8 +853,19 @@ def _search_parameters(
     """Validate the query arguments and build the pystac-client parameters."""
     params: dict[str, Any] = {"collections": collections}
 
+    # STAC declares the two spatial filters mutually exclusive, and servers
+    # differ on which one they honour when both arrive - so refuse both here.
+    if bbox is not None and intersects is not None:
+        raise ValidationError(
+            "pass either bbox or intersects, not both; to search their overlap, "
+            "intersect the two yourself and pass the result as intersects"
+        )
+
     if bbox is not None:
         params["bbox"] = _validate_bbox(bbox)
+
+    if intersects is not None:
+        params["intersects"] = _normalize_intersects(intersects)
 
     if datetime is not None:
         params["datetime"] = datetime
@@ -729,6 +910,7 @@ def stac_search(
     collection: str | Sequence[str],
     *,
     bbox: Sequence[float] | None = None,
+    intersects: IntersectsSpec | None = None,
     datetime: DatetimeSpec | None = None,
     cloud_cover: float | None = None,
     limit: int | None = None,
@@ -749,7 +931,16 @@ def stac_search(
     bbox : sequence of float or None, default None
         Area of interest as ``(minx, miny, maxx, maxy)`` in **WGS 84 lon/lat
         degrees** (EPSG:4326), which is what the STAC API expects regardless of
-        the imagery's own CRS. None searches the whole catalog extent.
+        the imagery's own CRS. None searches the whole catalog extent. Cannot
+        be combined with ``intersects``.
+    intersects : geometry or None, default None
+        Area of interest as a shape rather than a rectangle: a GeoDataFrame,
+        GeoSeries, shapely geometry, GeoJSON mapping (geometry, Feature, or
+        FeatureCollection), or a path to any vector file GeoPandas can read.
+        Scenes whose footprint intersects it are returned. A GeoDataFrame or
+        GeoSeries is reprojected to WGS 84 lon/lat automatically; anything
+        without a CRS is assumed to be in it already. Cannot be combined with
+        ``bbox``.
     datetime : str or datetime.datetime or tuple, default None
         Time filter, passed through to the catalog: a single instant, an
         interval string such as ``"2023-06-01/2023-08-31"`` (``".."`` leaves an
@@ -778,8 +969,8 @@ def stac_search(
     STACSearchResult
         Matching items, ordered oldest to newest (undated items last), each
         exposing its ``timestamp``, ``assets``, and STAC ``properties``. The
-        result also retains the search's ``bbox`` as its area of interest.
-        Empty when nothing matches — that is not an error.
+        result also retains the search's ``bbox`` or ``intersects`` as its
+        area of interest. Empty when nothing matches — that is not an error.
 
     Raises
     ------
@@ -787,8 +978,9 @@ def stac_search(
         If the ``stac`` extra is not installed.
     ValidationError
         If ``collection`` is empty, ``bbox`` is not four ordered lon/lat
-        values, ``cloud_cover`` is outside 0-100, or ``limit`` is not a
-        positive integer.
+        values, ``intersects`` is not a usable geometry or is not in lon/lat
+        degrees, both ``bbox`` and ``intersects`` are given, ``cloud_cover`` is
+        outside 0-100, or ``limit`` is not a positive integer.
 
     Notes
     -----
@@ -813,6 +1005,17 @@ def stac_search(
     (the same tile reprocessed under different baselines); they share a
     timestamp and are kept as separate items.
 
+    A spatial filter matches every scene whose footprint *touches* the area, so
+    results include tiles that merely graze it and would load as a sliver.
+    Keep only the scenes that cover the area when that matters::
+
+        area = shapely.geometry.shape(results.intersects)
+        covering = [
+            item
+            for item in results
+            if shapely.geometry.shape(item.item.geometry).contains(area)
+        ]
+
     Examples
     --------
     >>> import eeo
@@ -825,16 +1028,34 @@ def stac_search(
     ... )  # doctest: +SKIP
     >>> len(results), results[0].id  # doctest: +SKIP
     (5, 'S2A_MSIL2A_20230605T100031_R122_T32TPS_20230605T173940')
+
+    Search by shape instead of by rectangle:
+
+    >>> import geopandas as gpd
+    >>> from eeo.datasets import load_sample_dataset
+    >>> sd = load_sample_dataset()
+    >>> boundary = gpd.read_file(sd.boundary)  # doctest: +SKIP
+    >>> results = eeo.stac_search(
+    ...     "sentinel-2-l2a", intersects=boundary, datetime="2023-06-01/.."
+    ... )  # doctest: +SKIP
     """
     collections = _validate_collection(collection)
-    params = _search_parameters(collections, bbox, datetime, cloud_cover, limit)
+    params = _search_parameters(collections, bbox, intersects, datetime, cloud_cover, limit)
 
     client = _open_catalog(catalog, sign)
     found = client.search(**params)
 
     return STACSearchResult(
-        [STACItem(item, search_bbox=params.get("bbox")) for item in found.items()],
+        [
+            STACItem(
+                item,
+                search_bbox=params.get("bbox"),
+                search_intersects=params.get("intersects"),
+            )
+            for item in found.items()
+        ],
         collections=collections,
         catalog=catalog,
         bbox=params.get("bbox"),
+        intersects=params.get("intersects"),
     )

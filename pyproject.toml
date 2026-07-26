@@ -152,14 +152,17 @@ warn_unused_ignores = true
 no_implicit_optional = true
 check_untyped_defs = true
 
-# The geospatial stack ships no type information (no py.typed, no stub
-# packages), so mypy cannot analyze it. Suppress the resulting
-# import-untyped noise rather than annotating third-party internals.
+# The geospatial stack ships no type information of its own, so mypy cannot
+# analyze it. Suppress the resulting import-untyped noise rather than
+# annotating third-party internals. (shapely has a community stub package,
+# types-shapely, which we deliberately do not adopt: it would type one corner
+# of a stack that is otherwise unanalyzable either way.)
 [[tool.mypy.overrides]]
 module = [
     "rasterio",
     "rasterio.*",
     "geopandas",
+    "shapely",
     "affine",
     "pyproj",
     "pyproj.*",

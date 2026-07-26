@@ -80,6 +80,11 @@ Searching a catalog
    Your area of interest, ``(minx, miny, maxx, maxy)`` in **WGS 84 lon/lat
    degrees** — the STAC API expects degrees regardless of the imagery's own
    projection. It is also remembered as the default crop for loading (below).
+   Mutually exclusive with ``intersects``.
+
+``intersects``
+   The same idea, but as a shape rather than a rectangle — see
+   :ref:`searching-by-shape` below. Mutually exclusive with ``bbox``.
 
 ``datetime``
    A single instant, an interval string such as ``"2023-06-01/2023-08-31"``, or
@@ -328,6 +333,75 @@ follows:
 
 -----
 
+.. _searching-by-shape:
+
+Searching by shape
+------------------
+
+Real areas of interest are rarely rectangles. A catchment, a coastline, a
+national boundary, a set of field parcels — the bounding box around any of
+these covers far more ground than the shape itself, and every extra tile it
+pulls in is a scene you search, sort, and possibly load for nothing.
+
+Pass the shape instead. ``intersects`` accepts a GeoDataFrame, a GeoSeries, a
+shapely geometry, a GeoJSON mapping, or a path to any vector file GeoPandas can
+read. This example runs as-is — it uses the boundary from the bundled
+:doc:`sample dataset <sample_data>`:
+
+.. code-block:: python
+
+   import geopandas as gpd
+   import eeo
+   from eeo.datasets import load_sample_dataset
+
+   sd = load_sample_dataset()
+   catchment = gpd.read_file(sd.boundary)
+
+   results = eeo.stac_search("sentinel-2-l2a", intersects=catchment, cloud_cover=20)
+   shaped = results[0].load("B04", mask=True)
+
+Scenes whose footprint touches the shape are returned. A path works directly
+too, so the file you clip with is the file you search with — and since the
+sample handles are path-like, they can be passed straight in:
+
+.. code-block:: python
+
+   results = eeo.stac_search("sentinel-2-l2a", intersects="catchment.geojson")
+   results = eeo.stac_search("sentinel-2-l2a", intersects=sd.boundary)
+
+**Your CRS is handled for you.** STAC expects lon/lat degrees, and a
+GeoDataFrame in a projected CRS submitted as-is matches *nothing* — with no
+error, because the coordinates are perfectly valid numbers in the wrong units.
+Easy-EO reprojects anything that carries a CRS, and rejects a geometry whose
+coordinates cannot be degrees rather than letting you wonder why your search
+came back empty. A geometry with no CRS attached (a bare shapely object, for
+example) is taken to be lon/lat already.
+
+``bbox`` and ``intersects`` are mutually exclusive — the STAC spec treats them
+that way and servers disagree about which wins — so passing both raises
+``ValidationError``. To search the overlap of two areas, intersect them
+yourself and pass the result.
+
+Cropping to a shape
+^^^^^^^^^^^^^^^^^^^
+
+Loading crops to the geometry's **bounding window**, which is what keeps the
+transfer small. To follow the outline itself, and set the pixels outside it to
+nodata, ask for a mask:
+
+.. code-block:: python
+
+   rectangle = results[0].load("B04")              # cropped to the bounds
+   shaped = results[0].load("B04", mask=True)      # ...and outside pixels blanked
+
+The two steps are separate on purpose: cropping decides what crosses the
+network, masking is an analytical choice about what counts as data. ``mask=True``
+needs a search made with ``intersects`` — with only a bounding box there is no
+outline to follow. An already-loaded raster can be masked at any time with
+:meth:`~eeo.core.EEORasterDataset.clip_raster_with_vector`.
+
+-----
+
 Using a different catalog
 -------------------------
 
@@ -355,6 +429,22 @@ alone. Pass ``sign=False`` to skip signing, or ``sign=True`` to force it.
 
 Things worth knowing
 --------------------
+
+**A search returns every scene that *touches* your area, not every scene that
+covers it.** Tiles that graze the edge of your AOI match too, so
+``results[0]`` can be a scene overlapping it by a sliver — load that one and
+you get a handful of pixels rather than your area. When you need full
+coverage, say so:
+
+.. code-block:: python
+
+   import shapely
+
+   area = shapely.geometry.box(*results.bbox)     # or shape(results.intersects)
+   covering = [
+       item for item in results
+       if shapely.geometry.shape(item.item.geometry).contains(area)
+   ]
 
 **Signed URLs expire.** Planetary Computer signatures are short-lived, so
 search and load in the same session rather than storing search results for

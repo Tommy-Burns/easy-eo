@@ -86,6 +86,17 @@ are called out under a **Breaking** heading.
   multi-asset stacking behave, and the caveats worth knowing (signed URLs
   expire, the cloud filter is the catalog's own, catalogs return reprocessed
   duplicates).
+- **Search by shape (`stac_search(intersects=...)`).** Filter scenes by a real
+  area of interest instead of its bounding rectangle: a GeoDataFrame, GeoSeries,
+  shapely geometry, GeoJSON mapping (geometry, Feature, or FeatureCollection),
+  or a path to any vector file GeoPandas can read. Anything carrying a CRS is
+  reprojected to WGS 84 lon/lat automatically — a projected geometry submitted
+  as-is would match nothing, silently, so one whose coordinates cannot be
+  degrees is rejected with an actionable error instead. `bbox` and `intersects`
+  are mutually exclusive, as the STAC spec requires. The geometry is retained on
+  the result (`STACSearchResult.intersects`, `STACItem.search_intersects`), so
+  `load()` crops to its bounds by default and `load(..., mask=True)` sets the
+  pixels outside its outline to nodata.
 - **STAC asset loading (`STACItem.load`).** Turns a search result into an
   `EEORasterDataset`: `results[0].load(["B04", "B08"])`. **Only the area of
   interest is read** — the assets are opened remotely and just the pixels
