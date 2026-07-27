@@ -22,8 +22,18 @@ its source link:
    jupyter lab
 
 Notebooks marked |net| query a live STAC catalog: they need network access and
-the ``stac`` extra, and are stored without outputs. The rest run offline once
-the sample data is cached, and are stored with their outputs.
+the ``stac`` extra. The rest run offline once the sample data is cached. Every
+notebook is committed with its outputs, so the results are readable without
+running anything.
+
+Every offline notebook is executed top to bottom on each pull request, so a
+change that breaks a documented workflow fails CI rather than a reader's
+session. To run that check yourself:
+
+.. code-block:: bash
+
+   pip install nbmake
+   pytest --nbmake --no-cov examples/
 
 -----
 

@@ -99,9 +99,9 @@ are called out under a **Breaking** heading.
   analysis with a DEM). Every notebook now gets its data from
   `eeo.datasets.load_sample_dataset()` or from a STAC catalog rather than from
   local `./data/` paths, so none depends on files outside the package or on a
-  working directory. The twelve sample-data notebooks are committed with
-  executed outputs; the four that query a live STAC catalog need network and
-  the `stac` extra, and ship with outputs cleared. `ndbi` and `ndmi` are
+  working directory. All sixteen are committed with executed outputs, so the
+  results read on GitHub without running anything; the four that query a live
+  STAC catalog additionally need network and the `stac` extra. `ndbi` and `ndmi` are
   demonstrated only in the STAC notebooks, because the bundled sample carries
   no SWIR band; flood mapping likewise uses a real flood (Pakistan, 2022)
   rather than the sample scene, which contains essentially no surface water.
@@ -109,6 +109,17 @@ are called out under a **Breaking** heading.
   installs easy-eo with the extras that notebook needs when it detects Colab,
   and is a silent no-op anywhere else, so the badges work from a fresh
   environment with nothing installed.
+- **Notebook execution in CI** — a `notebooks` job in `ci.yml` runs every
+  offline tutorial top to bottom with `nbmake` (about 90 seconds, with the
+  sample data restored from the Actions cache), so a change that breaks a
+  documented workflow fails on the pull request rather than in a reader's
+  Colab session. The four STAC notebooks are excluded automatically: each
+  declares `"easy_eo": {"requires_network": true}` in its notebook metadata,
+  which `examples/conftest.py` turns into a collection rule, so flagging a new
+  notebook needs no CI change. `tests/test_notebooks.py` covers what execution
+  cannot — that every notebook opens with a Colab badge pointing at its own
+  path, carries the Colab setup cell, is committed with outputs, is listed in
+  both indexes, and that the network flag agrees with the notebook's own intro.
 - **"Tutorials" documentation page** (`docs/source/tutorials.rst`), indexing all
   sixteen notebooks with a description, a source link and a Colab badge each,
   plus how to run them locally and which ones need network. Linked from the
