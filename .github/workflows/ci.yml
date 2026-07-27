@@ -87,6 +87,62 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  # Executes the tutorial notebooks top to bottom, so a change that breaks a
+  # documented workflow fails here rather than in a reader's Colab session.
+  # The four STAC notebooks are excluded automatically: they query a live
+  # catalog, and declare that in their own metadata (see examples/conftest.py).
+  notebooks:
+    name: Tutorial notebooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      # The notebooks share one ~28 MB sample; cache it so only the first run
+      # on a given registry downloads anything. The key tracks the registry,
+      # which pins every asset's URL and checksum.
+      - name: Cache sample data
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.sample-cache
+          key: eeo-sample-${{ hashFiles('eeo/datasets/_registry.py') }}
+
+      # Both extras are installed so the notebooks run the same way a reader
+      # who followed examples/README.md would run them.
+      - name: Install locked environment
+        run: uv sync --frozen --extra dev --extra stac --extra xarray
+
+      # Fetch the sample in one explicit step, so a download failure reports as
+      # a download failure rather than as a notebook failure, and so the
+      # notebooks themselves execute entirely offline.
+      - name: Warm the sample cache
+        env:
+          EEO_DATA_DIR: ${{ github.workspace }}/.sample-cache
+        run: uv run --no-sync python -c "from eeo.datasets import load_sample_dataset; load_sample_dataset(prefetch=True)"
+
+      # nbmake and the Jupyter kernel it drives are needed only here, so they
+      # are layered on ephemerally rather than added to the locked dev
+      # environment (same reasoning as numpydoc in the lint job); --no-sync
+      # keeps that overlay from disturbing the extras installed above.
+      #
+      # Run serially: the whole set takes about 90 seconds, and running kernels
+      # in parallel mainly buys kernel-startup contention (a 60 s startup
+      # timeout that flakes) for the sake of half a minute.
+      #
+      # Coverage is off because the notebooks execute in a separate kernel
+      # process, where the suite's --cov-fail-under gate would measure nothing.
+      - name: Execute notebooks
+        env:
+          EEO_DATA_DIR: ${{ github.workspace }}/.sample-cache
+        run: >
+          uv run --no-sync --with nbmake
+          pytest --nbmake --no-cov --nbmake-timeout=900 examples/
+
   min-versions:
     name: Minimum supported versions
     runs-on: ubuntu-latest
