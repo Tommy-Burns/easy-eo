@@ -44,9 +44,9 @@ directory.
 | [03_real_world/04_terrain_analysis_with_dem](03_real_world/04_terrain_analysis_with_dem.ipynb) | slope, aspect, hillshade, hypsometry, terrain against land cover | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/03_real_world/04_terrain_analysis_with_dem.ipynb) |
 
 ⚠️ **needs network and `pip install "easy-eo[stac]"`.** These notebooks query a
-live STAC catalog, so their outputs are not stored here - run them yourself. The
-rest run offline once the sample data is cached, and are stored with their
-outputs.
+live STAC catalog. The rest run offline once the sample data is cached. Every
+notebook is committed with its outputs, so you can read the results on GitHub
+without running anything.
 
 ## Running them
 
@@ -74,6 +74,21 @@ from eeo.datasets import load_sample_dataset
 
 load_sample_dataset(prefetch=True)
 ```
+
+### Executing the whole set
+
+CI runs every offline notebook top to bottom on each pull request, and you can
+run the same check locally:
+
+```bash
+pip install nbmake
+pytest --nbmake --no-cov examples/
+```
+
+The ⚠️ notebooks are excluded automatically — each one declares
+`"easy_eo": {"requires_network": true}` in its notebook metadata, which
+[`conftest.py`](conftest.py) reads. Flag a new notebook the same way and it is
+skipped with no CI change.
 
 ## Data attribution
 
