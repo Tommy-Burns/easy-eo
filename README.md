@@ -20,9 +20,14 @@ It provides high-level abstractions over libraries such as Rasterio, NumPy, and 
 
 - Raster operations with spatial awareness
 - Algebraic operations (`add`, `subtract`, `multiply`, `divide`)
+- Spectral index library (`ndvi`, `ndwi`, `ndmi`, `ndbi`, `evi`, `savi`)
 - Resampling, reprojection, and alignment
 - Clip rasters using vectors or bounding boxes
 - Normalization (min-max, percentile, z-score)
+- Named bands — address bands by name anywhere an index is accepted
+- STAC data access — search and load Sentinel-2/Landsat scenes, reading only the area of interest
+- xarray interoperability (`to_xarray()` / `from_xarray()`)
+- Hosted sample dataset, one call away (`eeo.datasets.load_sample_dataset()`)
 - Visualization helpers (bands, composites, histograms)
 - Backend-aware design (NumPy ↔ Rasterio)
 
