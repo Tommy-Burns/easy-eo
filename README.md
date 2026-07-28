@@ -52,6 +52,19 @@ result = (
 )
 ```
 
+***Or try with a hosted sample data***
+```python
+from eeo.datasets import load_sample_dataset
+from eeo import load_raster
+
+sd = load_sample_dataset()
+
+scene = load_raster(sd.sentinel2_cog_stacked)  # red, green, blue, nir bands
+
+ndvi = scene.ndvi(red="red", nir="nir")
+ndvi.plot_raster()
+```
+
 ## Tutorials
 
 Sixteen runnable notebooks live in [`examples/`](examples/README.md), from first
