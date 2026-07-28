@@ -1,5 +1,9 @@
 # Easy-EO
 
+<p align="center">
+  <img src=".github/assets/eeo_logo.png" alt="Easy-EO logo" width="200">
+</p>
+
 [![CI](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/Tommy-Burns/easy-eo/branch/main/graph/badge.svg)](https://codecov.io/gh/Tommy-Burns/easy-eo)
 [![PyPI](https://img.shields.io/pypi/v/easy-eo.svg)](https://pypi.org/project/easy-eo/)
@@ -46,6 +50,19 @@ result = (
     .normalized_difference(ds_red)
     .multiply(100)
 )
+```
+
+***Or try with a hosted sample data***
+```python
+from eeo.datasets import load_sample_dataset
+from eeo import load_raster
+
+sd = load_sample_dataset()
+
+scene = load_raster(sd.sentinel2_cog_stacked)  # red, green, blue, nir bands
+
+ndvi = scene.ndvi(red="red", nir="nir")
+ndvi.plot_raster()
 ```
 
 ## Tutorials
