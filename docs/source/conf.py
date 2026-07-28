@@ -75,3 +75,5 @@ html_theme_options = {
     "navigation_depth": 4,
 }
 html_static_path = ["_static"]
+html_logo = "_static/eeo_logo.png"
+html_favicon = "_static/eeo_logo.png"

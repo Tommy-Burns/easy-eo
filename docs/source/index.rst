@@ -5,6 +5,12 @@
 
 Easy-EO documentation
 =====================
+
+.. image:: _static/eeo_logo.png
+   :align: center
+   :width: 200px
+   :alt: Easy-EO logo
+
 Easy-EO is a Python package for **chainable raster processing, algebra, and visualization**.
 It provides high-level abstractions over libraries such as `Rasterio <https://rasterio.readthedocs.io/en/stable/>`_,
 `NumPy <https://numpy.org/>`_, and `Matplotlib <https://matplotlib.org/>`_, enabling users to perform common earth-observation analyses and
