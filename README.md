@@ -1,5 +1,9 @@
 # Easy-EO
 
+<p align="center">
+  <img src=".github/assets/eeo_logo.png" alt="Easy-EO logo" width="200">
+</p>
+
 [![CI](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/Tommy-Burns/easy-eo/branch/main/graph/badge.svg)](https://codecov.io/gh/Tommy-Burns/easy-eo)
 [![PyPI](https://img.shields.io/pypi/v/easy-eo.svg)](https://pypi.org/project/easy-eo/)
