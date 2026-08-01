@@ -107,7 +107,7 @@ jobs:
       # on a given registry downloads anything. The key tracks the registry,
       # which pins every asset's URL and checksum.
       - name: Cache sample data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.sample-cache
           key: eeo-sample-${{ hashFiles('eeo/datasets/_registry.py') }}
