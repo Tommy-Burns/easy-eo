@@ -27,6 +27,9 @@ are called out under a **Breaking** heading.
 
 - README now opens with a runnable hero example — STAC search, NDVI, plot —
   so the library is visible working before any prose.
+- README gained a gallery of six figures - composites, an index map, a DEM,
+  and histograms - each rendered by an Easy-EO call on the sample dataset and
+  regenerable with `scripts/build_gallery.py`.
 - README gained a "Before and after" section comparing the same
   clip-to-vector-AOI → NDVI → save task in raw Rasterio/GeoPandas/NumPy and in
   Easy-EO; both versions were executed and produce byte-identical output.
