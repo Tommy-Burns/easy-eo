@@ -7,6 +7,7 @@ from rasterio.transform import Affine
 
 from eeo.core.adapters.base import BaseRasterAdapter
 from eeo.core.adapters.rasterio import RasterioAdapter
+from eeo.core.types import StrPath
 
 
 class NumpyRasterioAdapter(BaseRasterAdapter):
@@ -93,7 +94,7 @@ class NumpyRasterioAdapter(BaseRasterAdapter):
     # Persistence
     # ========================
     def write(
-        self, path: str, driver: str = "GTiff", band_names: list[str | None] | None = None
+        self, path: StrPath, driver: str = "GTiff", band_names: list[str | None] | None = None
     ) -> None:
         adapter = RasterioAdapter.from_array(
             array=self._array,

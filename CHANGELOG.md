@@ -9,6 +9,40 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Fixed
+
+- `clip_raster_with_vector` now accepts any `os.PathLike` for `vector_file`,
+  not just `str`. It previously raised `ValidationError` for a `pathlib.Path`
+  or a `eeo.datasets` sample handle, so
+  `ds.clip_raster_with_vector(sd.boundary)` failed.
+
+### Changed
+
+- Added the `Programming Language :: Python :: 3.13` classifier. CI has tested
+  3.13 since it was added to the matrix, but the metadata stopped at 3.12, so
+  PyPI (and the README's version badge) under-reported supported versions.
+- README rewritten for positioning: a feature matrix with per-topic guide
+  links replaces the bullet list, and installation now covers the optional
+  extras and the conda-forge status.
+- Every public path parameter is now typed `str | os.PathLike` (`load_raster`,
+  `save_raster`, `from_path`, `mosaic(save_path=...)`, and the `save_path` of
+  each plotting function), exported as `eeo.core.types.StrPath`. These already
+  accepted path-like values at runtime but were annotated `str`, so passing a
+  `pathlib.Path` was a type error for users type-checking against the shipped
+  stubs.
+
+- README now opens with a runnable hero example — STAC search, NDVI, plot —
+  so the library is visible working before any prose.
+- README gained a "What's next" section covering block-wise execution, the lazy
+  backend, time series, conda-forge, and citable releases, plus the xarray
+  interop route for work that exceeds one machine's memory today.
+- README gained a gallery of six figures - composites, an index map, a DEM,
+  and histograms - each rendered by an Easy-EO call on the sample dataset and
+  regenerable with `scripts/build_gallery.py`.
+- README gained a "Before and after" section comparing the same
+  clip-to-vector-AOI → NDVI → save task in raw Rasterio/GeoPandas/NumPy and in
+  Easy-EO; both versions were executed and produce byte-identical output.
+
 ## [0.2.0] - 2026-07-29
 
 ### Breaking

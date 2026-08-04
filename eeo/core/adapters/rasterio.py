@@ -7,6 +7,7 @@ import rasterio as rio
 from rasterio.io import DatasetReader, MemoryFile
 
 from eeo.core.exceptions import BackendError
+from eeo.core.types import StrPath
 
 from .base import BaseRasterAdapter
 
@@ -27,7 +28,7 @@ class RasterioAdapter(BaseRasterAdapter):
     # Factories
     # ========================
     @classmethod
-    def from_path(cls, path: str) -> RasterioAdapter:
+    def from_path(cls, path: StrPath) -> RasterioAdapter:
         try:
             dataset = rio.open(path)
         except Exception as e:
@@ -117,7 +118,7 @@ class RasterioAdapter(BaseRasterAdapter):
     # Persistence
     # ========================
     def write(
-        self, path: str, driver: str = "GTiff", band_names: list[str | None] | None = None
+        self, path: StrPath, driver: str = "GTiff", band_names: list[str | None] | None = None
     ) -> None:
         meta = self._ds.meta.copy()
         meta.update(driver=driver)

@@ -11,10 +11,11 @@ from rasterio.transform import Affine
 
 from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import BackendError, ValidationError
+from eeo.core.types import StrPath
 
 
 def load_raster(
-    path: str,
+    path: StrPath,
     *,
     timestamp: datetime | None = None,
     attrs: dict | None = None,
@@ -27,7 +28,7 @@ def load_raster(
 
     Parameters
     ----------
-    path : str
+    path : str or path-like
         Path to a GDAL-readable raster file.
     timestamp : datetime.datetime or None, default None
         Optional acquisition time carried with the dataset and preserved

@@ -13,6 +13,7 @@ from eeo.common import is_rasterio_backed, resolve_band_index
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_viz
 from eeo.core.exceptions import ValidationError
+from eeo.core.types import StrPath
 
 # Reads for display are capped at the figure's pixel resolution times this
 # oversampling factor, so moderate zooming stays sharp without ever pulling
@@ -176,7 +177,7 @@ def plot_band_array(
     pmin: float = 2,
     pmax: float = 98,
     title: str | None = None,
-    save_path: str | None = None,
+    save_path: StrPath | None = None,
     **imshow_kwargs,
 ) -> None:
     """Plot raster bands as arrays in row/column (pixel) space.
@@ -206,7 +207,7 @@ def plot_band_array(
         Upper percentile for the stretch (used only when ``stretch=True``).
     title : str or None, default None
         Optional figure title.
-    save_path : str or None, default None
+    save_path : str or path-like or None, default None
         If given, save the figure to this path at 300 dpi.
     **imshow_kwargs
         Extra keyword arguments forwarded to ``matplotlib.pyplot.imshow``.
@@ -275,7 +276,7 @@ def plot_raster(
     pmin: float = 2,
     pmax: float = 98,
     title: str | None = None,
-    save_path: str | None = None,
+    save_path: StrPath | None = None,
     **show_kwargs,
 ) -> None:
     """Plot raster bands in spatial (CRS-aware) coordinates.
@@ -305,7 +306,7 @@ def plot_raster(
         Upper percentile for the stretch (used only when ``stretch=True``).
     title : str or None, default None
         Optional figure title.
-    save_path : str or None, default None
+    save_path : str or path-like or None, default None
         If given, save the figure to this path at 300 dpi.
     **show_kwargs
         Extra keyword arguments forwarded to ``rasterio.plot.show``.
@@ -370,7 +371,7 @@ def plot_histogram(
     figsize: tuple[int, int] = (10, 5),
     log: bool = False,
     title: str | None = None,
-    save_path: str | None = None,
+    save_path: StrPath | None = None,
     **hist_kwargs,
 ) -> None:
     """Plot per-band value histograms.
@@ -393,7 +394,7 @@ def plot_histogram(
         If True, use a logarithmic y-axis.
     title : str or None, default None
         Optional figure title.
-    save_path : str or None, default None
+    save_path : str or path-like or None, default None
         If given, save the figure to this path at 300 dpi.
     **hist_kwargs
         Extra keyword arguments forwarded to ``matplotlib.pyplot.hist``.
@@ -458,7 +459,7 @@ def plot_raster_with_histogram(
     pmax: float = 98,
     stretch: bool = False,
     sharey: bool = False,
-    save_path: str | None = None,
+    save_path: StrPath | None = None,
     title: str | None = None,
 ) -> None:
     """Plot each band alongside its value histogram.
@@ -487,7 +488,7 @@ def plot_raster_with_histogram(
         If True, apply percentile contrast stretching to the raster panel.
     sharey : bool, default False
         If True, share the y-axis across the histogram panels.
-    save_path : str or None, default None
+    save_path : str or path-like or None, default None
         If given, save the figure to this path at 300 dpi.
     title : str or None, default None
         Optional figure title.
@@ -555,7 +556,7 @@ def plot_composite(
     pmin: float = 2,
     pmax: float = 98,
     title: str | None = None,
-    save_path: str | None = None,
+    save_path: StrPath | None = None,
 ) -> None:
     """Plot a three-band RGB (or false-colour) composite.
 
@@ -582,7 +583,7 @@ def plot_composite(
         Upper percentile for the stretch (used only when ``stretch=True``).
     title : str or None, default None
         Optional figure title.
-    save_path : str or None, default None
+    save_path : str or path-like or None, default None
         If given, save the figure to this path at 300 dpi.
 
     Returns

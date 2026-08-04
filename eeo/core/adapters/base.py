@@ -10,6 +10,8 @@ from rasterio.coords import BoundingBox
 from rasterio.crs import CRS
 from rasterio.transform import Affine
 
+from eeo.core.types import StrPath
+
 
 class BaseRasterAdapter(ABC):
     """Backend-agnostic interface that every raster backend must implement.
@@ -97,7 +99,7 @@ class BaseRasterAdapter(ABC):
     ##########################
     @abstractmethod
     def write(
-        self, path: str, driver: str = "GTiff", band_names: list[str | None] | None = None
+        self, path: StrPath, driver: str = "GTiff", band_names: list[str | None] | None = None
     ) -> None:
         """Write the raster to ``path`` using the given GDAL driver.
 

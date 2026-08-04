@@ -20,11 +20,11 @@ from rasterio.enums import Resampling
 from eeo.analysis.indices import BandSpec
 from eeo.analysis.stats import Coordinate
 from eeo.core.adapters import BaseRasterAdapter
-from eeo.core.types import ResamplingMethod
+from eeo.core.types import ResamplingMethod, StrPath
 
 class EEORasterDataset:
     _adapter: BaseRasterAdapter
-    path: str | None
+    path: StrPath | None
     timestamp: datetime | None
     attrs: dict
     _band_names: list[str | None]
@@ -32,7 +32,7 @@ class EEORasterDataset:
     def __init__(
         self,
         adapter: BaseRasterAdapter,
-        path: str | None = ...,
+        path: StrPath | None = ...,
         *,
         timestamp: datetime | None = ...,
         attrs: dict | None = ...,
@@ -41,7 +41,7 @@ class EEORasterDataset:
     def __repr__(self) -> str: ...
     def _band_names_summary(self, limit: int = ...) -> str: ...
     @classmethod
-    def from_path(cls, path: str) -> EEORasterDataset: ...
+    def from_path(cls, path: StrPath) -> EEORasterDataset: ...
     @classmethod
     def from_rasterio(cls, dataset: rio.DatasetReader) -> EEORasterDataset: ...
     @classmethod
@@ -77,7 +77,7 @@ class EEORasterDataset:
     @band_names.setter
     def band_names(self, names: list[str | None] | None) -> None: ...
     def set_band_name(self, band: int, new_name: str | None) -> None: ...
-    def save_raster(self, path: str, driver: str = ...) -> None: ...
+    def save_raster(self, path: StrPath, driver: str = ...) -> None: ...
     def close(self) -> None: ...
     def __del__(self): ...
     def _bind(self, func): ...
@@ -101,7 +101,7 @@ class EEORasterDataset:
     ) -> EEORasterDataset: ...
     def clip_raster_with_vector(
         self,
-        vector_file: gpd.GeoDataFrame | str,
+        vector_file: gpd.GeoDataFrame | StrPath,
         *,
         crop: bool = ...,
         pad: bool = ...,
@@ -154,7 +154,7 @@ class EEORasterDataset:
         others: EEORasterDataset | Iterable[EEORasterDataset],
         *,
         resampling_method: str = ...,
-        save_path: str | None = ...,
+        save_path: StrPath | None = ...,
         auto_reproject: bool = ...,
         names: list[str | None] | None = ...,
         **kwargs,
@@ -222,7 +222,7 @@ class EEORasterDataset:
         pmin: float = ...,
         pmax: float = ...,
         title: str | None = ...,
-        save_path: str | None = ...,
+        save_path: StrPath | None = ...,
         **imshow_kwargs,
     ) -> None: ...
     def plot_composite(
@@ -234,7 +234,7 @@ class EEORasterDataset:
         pmin: float = ...,
         pmax: float = ...,
         title: str | None = ...,
-        save_path: str | None = ...,
+        save_path: StrPath | None = ...,
     ) -> None: ...
     def plot_histogram(
         self,
@@ -244,7 +244,7 @@ class EEORasterDataset:
         figsize: tuple[int, int] = ...,
         log: bool = ...,
         title: str | None = ...,
-        save_path: str | None = ...,
+        save_path: StrPath | None = ...,
         **hist_kwargs,
     ) -> None: ...
     def plot_raster(
@@ -257,7 +257,7 @@ class EEORasterDataset:
         pmin: float = ...,
         pmax: float = ...,
         title: str | None = ...,
-        save_path: str | None = ...,
+        save_path: StrPath | None = ...,
         **show_kwargs,
     ) -> None: ...
     def plot_raster_with_histogram(
@@ -271,7 +271,7 @@ class EEORasterDataset:
         pmax: float = ...,
         stretch: bool = ...,
         sharey: bool = ...,
-        save_path: str | None = ...,
+        save_path: StrPath | None = ...,
         title: str | None = ...,
     ) -> None: ...
     def power(self, exponent: int | float) -> EEORasterDataset: ...
