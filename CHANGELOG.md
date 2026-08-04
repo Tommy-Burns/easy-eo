@@ -18,6 +18,12 @@ are called out under a **Breaking** heading.
 
 ### Changed
 
+- Added the `Programming Language :: Python :: 3.13` classifier. CI has tested
+  3.13 since it was added to the matrix, but the metadata stopped at 3.12, so
+  PyPI (and the README's version badge) under-reported supported versions.
+- README rewritten for positioning: a feature matrix with per-topic guide
+  links replaces the bullet list, and installation now covers the optional
+  extras and the conda-forge status.
 - Every public path parameter is now typed `str | os.PathLike` (`load_raster`,
   `save_raster`, `from_path`, `mosaic(save_path=...)`, and the `save_path` of
   each plotting function), exported as `eeo.core.types.StrPath`. These already

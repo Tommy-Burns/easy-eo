@@ -43,18 +43,18 @@ The `stac_search` needs the STAC extra - `pip install "easy-eo[stac]"`. If you p
 
 ## Features
 
-- Raster operations with spatial awareness
-- Algebraic operations (`add`, `subtract`, `multiply`, `divide`)
-- Spectral index library (`ndvi`, `ndwi`, `ndmi`, `ndbi`, `evi`, `savi`)
-- Resampling, reprojection, and alignment
-- Clip rasters using vectors or bounding boxes
-- Normalization (min-max, percentile, z-score)
-- Named bands - address bands by name anywhere an index is accepted
-- STAC data access - search and load Sentinel-2/Landsat scenes, reading only the area of interest
-- xarray interoperability (`to_xarray()` / `from_xarray()`)
-- Hosted sample dataset, one call away (`eeo.datasets.load_sample_dataset()`)
-- Visualization helpers (bands, composites, histograms)
-- Backend-aware design (currently NumPy and Rasterio)
+| | What you get | Guide |
+| --- | --- | --- |
+| **Data access** | `stac_search()` over any STAC catalog, loading only your area of interest over HTTP; GeoTIFF/COG and anything else GDAL reads; a hosted sample dataset one call away | [Satellite data](https://easy-eo.readthedocs.io/en/latest/user_guide/loading_satellite_data.html) · [Sample data](https://easy-eo.readthedocs.io/en/latest/user_guide/sample_data.html) |
+| **Spectral indices** | `ndvi`, `ndwi`, `ndmi`, `ndbi`, `evi`, `savi`, plus `normalized_difference` for anything else - all chainable and float32 | [Spectral indices](https://easy-eo.readthedocs.io/en/latest/user_guide/spectral_indices.html) |
+| **Band algebra** | `add`, `subtract`, `multiply`, `divide`, `power`, `sqrt`, `log`, `absolute`, and the matching operators | [Operations](https://easy-eo.readthedocs.io/en/latest/user_guide/ops.html) |
+| **Preprocessing** | Clip to a bounding box or a vector, resample, reproject, mosaic, stack, normalize (min-max, percentile, z-score) | [Preprocessing](https://easy-eo.readthedocs.io/en/latest/user_guide/preprocessing.html) |
+| **Named bands** | Address any band as `"red"` or `"nir"` wherever a 1-based index works; names survive a GeoTIFF round-trip | [Naming bands](https://easy-eo.readthedocs.io/en/latest/user_guide/band_names.html) |
+| **Statistics** | Per-band min/max/mean/percentile with their pixel locations, and value extraction at a coordinate | [Statistical locations](https://easy-eo.readthedocs.io/en/latest/user_guide/statistical_locations.html) |
+| **Visualization** | Single bands, RGB composites, histograms, and map-plus-histogram views, read at display resolution | [Visualization](https://easy-eo.readthedocs.io/en/latest/user_guide/visualization.html) |
+| **Predictable nodata & dtype** | One written-down contract every operation follows: mask before compute, nodata stays contagious, fractional results are float32 | [Nodata & dtype](https://easy-eo.readthedocs.io/en/latest/user_guide/nodata_and_dtype.html) |
+| **Ecosystem interop** | `to_xarray()` / `from_xarray()` in both directions; NumPy and Rasterio backends behind one interface | [xarray interop](https://easy-eo.readthedocs.io/en/latest/user_guide/xarray_interop.html) · [Backends](https://easy-eo.readthedocs.io/en/latest/backends.html) |
+| **Typed and tested** | Ships `py.typed`, 830+ tests, ~95% coverage, checked on Python 3.10-3.13 across Linux, macOS and Windows | [Contributing](CONTRIBUTING.md) |
 
 ---
 
@@ -142,7 +142,7 @@ way today. These are the next capabilities, in the order they are being built:
 | **Block-wise execution** | Pixel-wise operations stream window by window instead of holding whole arrays, so a chain runs in a bounded memory footprint. Today, loading is read-free and clipping is windowed, but an operation like `ndvi()` materialises the bands it touches. |
 | **Lazy backend** (`easy-eo[lazy]`) | An xarray/dask-backed adapter behind the existing interface: chains on rasters larger than RAM, and COGs read straight over HTTP, with no change to your code beyond the loader call. |
 | **Time series** (`EEOTimeSeries`) | Multi-date stacks as a first-class object - map any existing operation across timesteps, reduce to cloud-free median composites, pull per-pixel trajectories. STAC search results are already ordered and timestamped, ready to become one. |
-| **conda-forge packaging** | `conda install -c conda-forge easy-eo` alongside the current `pip install`. |
+| **conda-forge packaging** | `conda install -c conda-forge easy-eo` alongside the current `pip install`. The recipe is submitted and under review. |
 | **Citable releases** | A JOSS paper and Zenodo DOI, so the library can be cited in published work. |
 
 **Already using xarray?** You do not have to choose. `to_xarray()` and `from_xarray()` convert in both directions, so you can clip and compute indices
@@ -153,9 +153,33 @@ See the [xarray interop guide](https://easy-eo.readthedocs.io/en/latest/user_gui
 
 ## Installation
 
+Python 3.10 or newer:
+
 ```bash
-conda create -n env_name python=3.10
-conda activate env_name
+pip install easy-eo
+```
+
+That is everything you need for the core: raster I/O, algebra, indices,
+preprocessing and plotting. Two optional extras add the heavier integrations,
+and they compose (`pip install "easy-eo[stac,xarray]"`):
+
+| Extra | Command | Adds |
+| --- | --- | --- |
+| `stac` | `pip install "easy-eo[stac]"` | `stac_search()` and loading scenes from STAC catalogs |
+| `xarray` | `pip install "easy-eo[xarray]"` | `to_xarray()` / `from_xarray()` |
+
+Without an extra installed, the features that need it raise a
+`MissingDependencyError` telling you exactly what to install - nothing fails
+silently at import time.
+
+Prefer conda? Easy-EO's recipe is
+[under review at conda-forge](https://github.com/conda-forge/staged-recipes),
+so `conda install` is not available yet. Until it lands, pip installs cleanly
+into a conda environment:
+
+```bash
+conda create -n eeo python=3.11
+conda activate eeo
 pip install easy-eo
 ```
 
