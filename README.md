@@ -58,6 +58,80 @@ The `stac_search` needs the STAC extra - `pip install "easy-eo[stac]"`. If you p
 
 ---
 
+## Before and after
+
+One ordinary task: clip a 4-band scene to an area of interest held in a vector
+file, compute NDVI, save it as a GeoTIFF. Both versions below run as written,
+against the same [hosted sample dataset](https://easy-eo.readthedocs.io/en/latest/user_guide/sample_data.html)
+- a 1024x1024 Sentinel-2 subset and a boundary polygon - so you can paste
+either one and watch it work.
+
+Here it is in raw Rasterio, GeoPandas and NumPy, with Easy-EO not installed at
+all -
+
+```python
+import geopandas as gpd
+import numpy as np
+import rasterio
+from rasterio.mask import mask
+
+BASE = "https://github.com/Tommy-Burns/easy-eo/releases/download/sample-data-v1/"
+
+with rasterio.open(BASE + "sentinel2_small_cog.tif") as src:
+    aoi = gpd.read_file(BASE + "roi.gpkg").to_crs(src.crs)
+    clipped, transform = mask(src, aoi.geometry.values, crop=True)
+    bands = {name: i for i, name in enumerate(src.descriptions)}
+    nodata = src.nodata
+    profile = src.profile
+
+red = clipped[bands["red"]].astype("float32")
+nir = clipped[bands["nir"]].astype("float32")
+
+valid = (red != nodata) & (nir != nodata)
+total = nir + red
+ndvi = np.where(valid & (total != 0), (nir - red) / np.where(total == 0, 1, total), 0.0)
+ndvi = np.where(valid, ndvi, np.nan).astype("float32")
+
+profile.update(
+    count=1, dtype="float32", nodata=np.nan,
+    height=ndvi.shape[0], width=ndvi.shape[1], transform=transform,
+)
+with rasterio.open("ndvi.tif", "w", **profile) as dst:
+    dst.write(ndvi, 1)
+```
+
+-- and in Easy-EO, where `load_sample_dataset()` fetches the same two files and
+caches them:
+
+```python
+import eeo
+from eeo.datasets import load_sample_dataset
+
+sd = load_sample_dataset()
+
+(
+    eeo.load_raster(sd.sentinel2_cog_stacked)
+    .clip_raster_with_vector(sd.boundary)
+    .ndvi(red="red", nir="nir")
+    .save_raster("ndvi.tif")
+)
+```
+
+Both blocks produce **byte-identical output** - same shape, CRS, transform,
+nodata, and every one of the pixel values, including all pixels the clip
+masks away (approx. a quarter of the image).
+So the point is not the line count. It is that Rasterio makes you take four decisions by hand, 
+each one a chance to be quietly wrong: reprojecting the AOI into the raster's CRS 
+(the sample boundary is lon/lat, the scene is UTM), mapping band names to indices, 
+masking nodata before the arithmetic, and rebuilding the output profile. Drop just the mask and NDVI comes out as `0.0` across the clipped-away quarter of the image - a value that looks like bare
+ground in your statistics and your plot, not like missing data.
+
+Easy-EO applies those same rules for you, consistently, on every operation. They
+are written down in the [nodata and dtype contract](https://easy-eo.readthedocs.io/en/latest/user_guide/nodata_and_dtype.html)
+and each one is backed by tests.
+
+---
+
 ## Installation
 
 ```bash

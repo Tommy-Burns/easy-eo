@@ -9,10 +9,27 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Fixed
+
+- `clip_raster_with_vector` now accepts any `os.PathLike` for `vector_file`,
+  not just `str`. It previously raised `ValidationError` for a `pathlib.Path`
+  or a `eeo.datasets` sample handle, so
+  `ds.clip_raster_with_vector(sd.boundary)` failed.
+
 ### Changed
+
+- Every public path parameter is now typed `str | os.PathLike` (`load_raster`,
+  `save_raster`, `from_path`, `mosaic(save_path=...)`, and the `save_path` of
+  each plotting function), exported as `eeo.core.types.StrPath`. These already
+  accepted path-like values at runtime but were annotated `str`, so passing a
+  `pathlib.Path` was a type error for users type-checking against the shipped
+  stubs.
 
 - README now opens with a runnable hero example — STAC search, NDVI, plot —
   so the library is visible working before any prose.
+- README gained a "Before and after" section comparing the same
+  clip-to-vector-AOI → NDVI → save task in raw Rasterio/GeoPandas/NumPy and in
+  Easy-EO; both versions were executed and produce byte-identical output.
 
 ## [0.2.0] - 2026-07-29
 
