@@ -11,8 +11,33 @@
 [![Documentation Status](https://readthedocs.org/projects/easy-eo/badge/?version=latest)](https://easy-eo.readthedocs.io/en/latest/?badge=latest)
 [![License: MIT](https://img.shields.io/github/license/Tommy-Burns/easy-eo)](https://github.com/Tommy-Burns/easy-eo/blob/main/LICENSE)
 
-Easy-EO is a lightweight, extensible Python library for raster-based Earth Observation (EO) analysis which allows for chainable raster processing, algebra, and visualization.
-It provides high-level abstractions over libraries such as Rasterio, NumPy, and Matplotlib, enabling users to perform common earth-observation analyses and visualization tasks efficiently, without dealing with the underlying complexity.
+Easy-EO is a lightweight, extensible Python library for raster-based Earth
+Observation (EO) analysis: chainable raster processing, band algebra, spectral indices, 
+and visualization, in a few readable lines instead of dealing with complex boilerplate code.
+
+## From satellite archive to NDVI map
+
+```python
+import eeo
+
+results = eeo.stac_search(
+    "sentinel-2-l2a",
+    bbox=(11.0, 46.5, 11.2, 46.7),        # area of interest, WGS 84 lon/lat
+    datetime="2023-06-01/2023-08-31",
+    cloud_cover=20,
+    limit=1,
+)
+scene = results[0].load(["B04", "B08"])   # reads only the area of interest
+ndvi = scene.ndvi(red="B04", nir="B08")
+ndvi.plot_raster()
+```
+
+That is the whole workflow - no scene downloads, no GDAL wrangling. The search
+queries [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/)
+(any STAC catalog works, you have to pass `catalog="your stac catalog"`), and the load streams just the window covering your
+bounding box over HTTP: 14 MB out of a 240 MB Sentinel-2 tile, in a few seconds.
+
+The `stac_search` needs the STAC extra - `pip install "easy-eo[stac]"`. If you prefer to start offline, jump to the [hosted sample dataset](#quick-example), which needs no network after the first call.
 
 ---
 

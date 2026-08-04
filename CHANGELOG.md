@@ -9,6 +9,11 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Changed
+
+- README now opens with a runnable hero example — STAC search, NDVI, plot —
+  so the library is visible working before any prose.
+
 ## [0.2.0] - 2026-07-29
 
 ### Breaking
