@@ -15,6 +15,7 @@ from rasterio.transform import Affine
 from eeo.common import is_rasterio_backed, mask_nodata, resolve_band_index
 from eeo.core.adapters import BaseRasterAdapter, NumpyRasterioAdapter, RasterioAdapter
 from eeo.core.exceptions import ValidationError
+from eeo.core.types import StrPath
 
 # Approximate (decimated) statistics never read more than this many pixels per
 # side; a larger raster is decimated to fit, served from overviews when present.
@@ -22,7 +23,7 @@ _STATS_DECIMATION_CAP = 1024
 
 
 # IO helper
-def _save_raster(dataset: rio.DatasetReader, path: str, driver: str = "GTiff") -> None:
+def _save_raster(dataset: rio.DatasetReader, path: StrPath, driver: str = "GTiff") -> None:
     """Write a rasterio dataset to ``path`` using its own profile."""
     profile = dataset.profile.copy()
     if driver != "GTiff":
@@ -242,7 +243,7 @@ class EEORasterDataset:
     def __init__(
         self,
         adapter: BaseRasterAdapter,
-        path: str | None = None,
+        path: StrPath | None = None,
         *,
         timestamp: datetime | None = None,
         attrs: dict | None = None,
@@ -256,7 +257,7 @@ class EEORasterDataset:
             Backend providing pixel access and metadata. Prefer the ``from_*``
             constructors or :func:`eeo.load_raster` / :func:`eeo.load_array`
             over calling this directly.
-        path : str or None, default None
+        path : str or path-like or None, default None
             Source path, when the dataset came from a file.
         timestamp : datetime.datetime or None, default None
             Optional acquisition time carried with the dataset and preserved
@@ -305,12 +306,12 @@ class EEORasterDataset:
     # Constructors
     # ========================
     @classmethod
-    def from_path(cls, path: str) -> EEORasterDataset:
+    def from_path(cls, path: StrPath) -> EEORasterDataset:
         """Open a raster file as a rasterio-backed dataset.
 
         Parameters
         ----------
-        path : str
+        path : str or path-like
             Path to a GDAL-readable raster.
 
         Returns
@@ -755,12 +756,12 @@ class EEORasterDataset:
     # ========================
     # Saving
     # ========================
-    def save_raster(self, path: str, driver: str = "GTiff") -> None:
+    def save_raster(self, path: StrPath, driver: str = "GTiff") -> None:
         """Write the raster to disk.
 
         Parameters
         ----------
-        path : str
+        path : str or path-like
             Output file path.
         driver : str, default "GTiff"
             GDAL driver name for the output format.

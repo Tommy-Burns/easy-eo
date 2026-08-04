@@ -15,6 +15,7 @@ from eeo.core.exceptions import (
     CRSMismatchError,
     ValidationError,
 )
+from eeo.core.types import StrPath
 
 
 @eeo_raster_op(preserve_none=True, propagate_band_names=False)
@@ -23,7 +24,7 @@ def mosaic(
     others: EEORasterDataset | Iterable[EEORasterDataset],
     *,
     resampling_method: str = "nearest",
-    save_path: str | None = None,
+    save_path: StrPath | None = None,
     auto_reproject: bool = False,
     names: list[str | None] | None = None,
     **kwargs,
@@ -39,7 +40,7 @@ def mosaic(
     resampling_method : str or rasterio.enums.Resampling, default "nearest"
         Resampling method used by ``rasterio.merge.merge`` where overlapping
         pixels require resampling.
-    save_path : str or None, default None
+    save_path : str or path-like or None, default None
         If given, writes the mosaic to this path and returns None instead of
         an ``EEORasterDataset``.
     auto_reproject : bool, default False

@@ -1,4 +1,6 @@
 import math
+import os
+import pathlib
 
 import geopandas as gpd
 import numpy as np
@@ -7,6 +9,7 @@ from rasterio.crs import CRS
 from rasterio.warp import calculate_default_transform
 from shapely.geometry import box
 
+from eeo import load_raster
 from eeo.core.exceptions import ValidationError
 from eeo.preprocessing import (
     clip_raster_with_bbox,
@@ -223,3 +226,71 @@ def test_clip_vector_preserves_nodata_and_dtype(raster_with_nodata):
 
     assert clipped.read().dtype == np.float32
     assert clipped.get_metadata()["nodata"] == -9999.0
+
+
+# ---------------------------------------------------------------------
+# Path-like arguments
+# ---------------------------------------------------------------------
+
+
+class _FsPathOnly(os.PathLike):
+    """A bare os.PathLike that is neither a str nor a Path.
+
+    Mirrors ``eeo.datasets.SamplePath``, which is what exposed the bug: an
+    ``isinstance(x, str)`` guard rejects it even though every path-consuming
+    library accepts it.
+    """
+
+    def __init__(self, path):
+        self._path = str(path)
+
+    def __fspath__(self):
+        return self._path
+
+
+def _write_aoi(raster, tmp_path, filename="aoi.geojson"):
+    """Write a small AOI covering the raster's top-left corner."""
+    gdf = gpd.GeoDataFrame(
+        geometry=[box(500_000.0, 4_199_970.0, 500_040.0, 4_200_000.0)],
+        crs=raster.get_crs(),
+    )
+    path = tmp_path / filename
+    gdf.to_file(path)
+    return path
+
+
+@pytest.mark.parametrize("as_type", [str, pathlib.Path, _FsPathOnly])
+def test_clip_vector_accepts_path_like(raster_with_nodata, tmp_path, as_type):
+    # A str, a pathlib.Path, and a bare os.PathLike must all be accepted:
+    # eeo.datasets hands out PathLike handles, and rejecting them made
+    # ds.clip_raster_with_vector(sd.boundary) fail with ValidationError.
+    aoi = _write_aoi(raster_with_nodata, tmp_path)
+
+    clipped = clip_raster_with_vector(raster_with_nodata, as_type(aoi))
+
+    assert clipped.get_bounds().left == pytest.approx(500_000.0)
+    assert clipped.read().dtype == np.float32
+
+
+def test_clip_vector_path_like_matches_str(raster_with_nodata, tmp_path):
+    aoi = _write_aoi(raster_with_nodata, tmp_path)
+
+    from_str = clip_raster_with_vector(raster_with_nodata, str(aoi))
+    from_path = clip_raster_with_vector(raster_with_nodata, pathlib.Path(aoi))
+
+    np.testing.assert_array_equal(from_str.read(), from_path.read())
+
+
+def test_clip_vector_rejects_missing_path_like(raster_with_nodata, tmp_path):
+    with pytest.raises(ValidationError, match="GeoDataFrame or a path"):
+        clip_raster_with_vector(raster_with_nodata, tmp_path / "no_such_file.geojson")
+
+
+def test_load_and_save_accept_path_like(single_band_float32, tmp_path):
+    out = tmp_path / "roundtrip.tif"
+    single_band_float32.save_raster(out)
+
+    reloaded = load_raster(out)
+
+    assert reloaded.get_shape() == single_band_float32.get_shape()
+    np.testing.assert_array_equal(reloaded.read(), single_band_float32.read())

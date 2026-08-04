@@ -11,12 +11,13 @@ from eeo.common import is_rasterio_backed
 from eeo.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import BackendError, ValidationError
+from eeo.core.types import StrPath
 
 
 @eeo_raster_op
 def clip_raster_with_vector(
     ds: EEORasterDataset,
-    vector_file: gpd.GeoDataFrame | str,
+    vector_file: gpd.GeoDataFrame | StrPath,
     *,
     crop: bool = True,
     pad: bool = False,
@@ -36,7 +37,7 @@ def clip_raster_with_vector(
     ----------
     ds : EEORasterDataset
         Raster to clip. Must be backed by rasterio.
-    vector_file : geopandas.GeoDataFrame or str
+    vector_file : geopandas.GeoDataFrame or str or path-like
         Clip geometries, either a GeoDataFrame or a path to a vector file
         readable by GeoPandas.
     crop : bool, default True
@@ -92,7 +93,7 @@ def clip_raster_with_vector(
     # Load vector data
     if isinstance(vector_file, gpd.GeoDataFrame):
         gdf = vector_file
-    elif isinstance(vector_file, str) and os.path.isfile(vector_file):
+    elif isinstance(vector_file, (str, os.PathLike)) and os.path.isfile(vector_file):
         gdf = gpd.read_file(vector_file)
     else:
         raise ValidationError(
