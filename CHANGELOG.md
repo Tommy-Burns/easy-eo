@@ -27,6 +27,9 @@ are called out under a **Breaking** heading.
 
 - README now opens with a runnable hero example — STAC search, NDVI, plot —
   so the library is visible working before any prose.
+- README gained a "What's next" section covering block-wise execution, the lazy
+  backend, time series, conda-forge, and citable releases, plus the xarray
+  interop route for work that exceeds one machine's memory today.
 - README gained a gallery of six figures - composites, an index map, a DEM,
   and histograms - each rendered by an Easy-EO call on the sample dataset and
   regenerable with `scripts/build_gallery.py`.

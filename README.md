@@ -132,6 +132,25 @@ and each one is backed by tests.
 
 ---
 
+## What's next
+
+Easy-EO is built around one scene at a time, and everything above works that
+way today. These are the next capabilities, in the order they are being built:
+
+| Coming | What it unlocks |
+| --- | --- |
+| **Block-wise execution** | Pixel-wise operations stream window by window instead of holding whole arrays, so a chain runs in a bounded memory footprint. Today, loading is read-free and clipping is windowed, but an operation like `ndvi()` materialises the bands it touches. |
+| **Lazy backend** (`easy-eo[lazy]`) | An xarray/dask-backed adapter behind the existing interface: chains on rasters larger than RAM, and COGs read straight over HTTP, with no change to your code beyond the loader call. |
+| **Time series** (`EEOTimeSeries`) | Multi-date stacks as a first-class object - map any existing operation across timesteps, reduce to cloud-free median composites, pull per-pixel trajectories. STAC search results are already ordered and timestamped, ready to become one. |
+| **conda-forge packaging** | `conda install -c conda-forge easy-eo` alongside the current `pip install`. |
+| **Citable releases** | A JOSS paper and Zenodo DOI, so the library can be cited in published work. |
+
+**Already using xarray?** You do not have to choose. `to_xarray()` and `from_xarray()` convert in both directions, so you can clip and compute indices
+here, hand the result to dask or anything else in the xarray ecosystem, and come back - which is also how to work past a single machine's memory today.
+See the [xarray interop guide](https://easy-eo.readthedocs.io/en/latest/user_guide/xarray_interop.html).
+
+---
+
 ## Installation
 
 ```bash
