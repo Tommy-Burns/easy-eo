@@ -243,7 +243,7 @@ with `python scripts/build_gallery.py`.
 | <img src=".github/assets/gallery/composite_true_colour.jpg" alt="True colour composite of a Sentinel-2 scene"> | <img src=".github/assets/gallery/composite_false_colour.jpg" alt="False colour composite, vegetation in red"> |
 | `scene.plot_composite(["red", "green", "blue"])` | `scene.plot_composite(["nir", "red", "green"])` |
 | <img src=".github/assets/gallery/index_ndvi.jpg" alt="NDVI map on a red-yellow-green colour scale"> | <img src=".github/assets/gallery/dem_terrain.jpg" alt="Copernicus DEM elevation map"> |
-| `scene.ndvi(red="red", nir="nir", name="NDVI").plot_raster(cmap="RdYlGn")` | `dem.plot_raster(cmap="YlOrBr")` - the same call on a DEM |
+| `scene.ndvi(red="red", nir="nir", name="NDVI").plot_raster(cmap="RdYlGn")` | `dem.plot_raster(cmap="Spectral_r")` - the same call on a DEM |
 | <img src=".github/assets/gallery/histogram_bands.png" alt="Value distribution of each of the four bands"> | <img src=".github/assets/gallery/clip_ndvi_histogram.png" alt="NDVI clipped to a hexagonal boundary beside its histogram"> |
 | `scene.plot_histogram()` - every band at once | `clipped.plot_raster_with_histogram(cmap="RdYlGn")` |
 
