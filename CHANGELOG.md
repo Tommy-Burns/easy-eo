@@ -9,6 +9,13 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Breaking
+
+- `plot_raster_with_histogram` no longer takes `sharey`. Every histogram panel
+  now has its own y-axis, so a quiet band is not flattened by a busy one, and
+  no plotting function shares axes any more. A call passing `sharey=` raises
+  `TypeError`; drop the argument, which was `False` by default.
+
 ### Added
 
 - `nrows` and `ncols` on `plot_band_array`, `plot_raster`, and `plot_histogram`,
@@ -37,6 +44,12 @@ are called out under a **Breaking** heading.
   not just `str`. It previously raised `ValidationError` for a `pathlib.Path`
   or a `eeo.datasets` sample handle, so
   `ds.clip_raster_with_vector(sd.boundary)` failed.
+- The getting-started guide told users to call
+  `plot_histogram(..., sharey=True)`, which has no such parameter — the value
+  fell through `**hist_kwargs` into `matplotlib.pyplot.hist` and raised
+  `AttributeError: Rectangle.set() got an unexpected keyword argument
+  'sharey'`. The example is corrected, and `plot_histogram` does not gain the
+  parameter — see the Breaking note above, which removes the last one.
 - Plotting now excludes a declared nodata value, as the nodata contract
   ("Mask before compute" in `CODE_STYLE.md`) has always required: a `-9999`
   fill must not shift a percentile stretch. Every plotting function read

@@ -222,7 +222,7 @@ Plot Histogram
 Plot Raster with Histogram
 --------------------------
 
-.. function:: plot_raster_with_histogram(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), bins=256, pmin=2, pmax=98, stretch=False, colorbar=False, colorbar_label=None, sharey=False, title=None, save_path=None)
+.. function:: plot_raster_with_histogram(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), bins=256, pmin=2, pmax=98, stretch=False, colorbar=False, colorbar_label=None, title=None, save_path=None)
 
    Plot raster bands alongside their corresponding histograms.
 
@@ -240,7 +240,6 @@ Plot Raster with Histogram
    :param pmax: Upper percentile used when ``stretch=True``.
    :param colorbar: Draw a colorbar beside each raster panel, in band units.
    :param colorbar_label: Colorbar label; ``None`` uses the band's name.
-   :param sharey: Share the y-axis between histogram plots.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.
 

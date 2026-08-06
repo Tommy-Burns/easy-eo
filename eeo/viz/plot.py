@@ -833,7 +833,6 @@ def plot_raster_with_histogram(
     stretch: bool = False,
     colorbar: bool = False,
     colorbar_label: str | None = None,
-    sharey: bool = False,
     save_path: StrPath | None = None,
     title: str | None = None,
 ) -> None:
@@ -870,8 +869,6 @@ def plot_raster_with_histogram(
     colorbar_label : str or None, default None
         Label for the colorbars; None uses each band's name, leaving an
         unnamed band's colorbar unlabelled.
-    sharey : bool, default False
-        If True, share the y-axis across the histogram panels.
     save_path : str or path-like or None, default None
         If given, save the figure to this path at 300 dpi.
     title : str or None, default None
@@ -910,7 +907,7 @@ def plot_raster_with_histogram(
     """
     bands_list = _normalize_bands(ds, bands)
 
-    fig, axes = plt.subplots(len(bands_list), 2, squeeze=False, sharey=sharey, figsize=figsize)
+    fig, axes = plt.subplots(len(bands_list), 2, squeeze=False, figsize=figsize)
 
     for row, band in enumerate(bands_list):
         array, transform = _read_band_for_display(ds, band, figsize)

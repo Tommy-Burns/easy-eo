@@ -282,7 +282,6 @@ class EEORasterDataset:
         stretch: bool = ...,
         colorbar: bool = ...,
         colorbar_label: str | None = ...,
-        sharey: bool = ...,
         save_path: StrPath | None = ...,
         title: str | None = ...,
     ) -> None: ...
