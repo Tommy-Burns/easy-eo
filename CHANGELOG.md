@@ -37,6 +37,12 @@ are called out under a **Breaking** heading.
 
 ### Changed
 
+- The visualization notebook (`examples/01_fundamentals/07_visualization.ipynb`)
+  and the spectral-indices guide now teach `colorbar=True`, including how a
+  band's name becomes the label. The hand-rolled Matplotlib figures elsewhere
+  in the docs are unchanged: they overlay two layers or give each panel its own
+  colormap, neither of which the built-in plots do, so they still demonstrate
+  the escape hatch rather than a gap.
 - `plot_band_array`, `plot_raster`, and `plot_raster_with_histogram` now apply
   the percentile stretch as Matplotlib display limits (`vmin`/`vmax`) instead
   of rescaling the band to `[0, 1]`. The rendered figure is unchanged —

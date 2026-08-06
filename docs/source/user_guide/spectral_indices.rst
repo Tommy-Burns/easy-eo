@@ -62,6 +62,14 @@ chainable. When you want the raw values, read them off the result:
        .plot_raster()
    )
 
+Naming the result pays off at the plot: the name becomes the band's label, and
+``colorbar=True`` then puts a scale in index units beside the map without any
+further arguments.
+
+.. code-block:: python
+
+   nir.ndvi(red, name="NDVI").plot_raster(cmap="RdYlGn", colorbar=True)
+
 -----
 
 The indices and their bands
