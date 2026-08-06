@@ -64,6 +64,14 @@ are called out under a **Breaking** heading.
   `AttributeError: Rectangle.set() got an unexpected keyword argument
   'sharey'`. The example is corrected, and `plot_histogram` does not gain the
   parameter — see the Breaking note above, which removes the last one.
+- `plot_raster` and `plot_raster_with_histogram` now pass `adjust=False` to
+  `rasterio.plot.show`. rasterio 1.5 extended `adjust=` to 2D arrays, min-max
+  rescaling the band to `[0, 1]` before drawing, which silently voided the
+  display limits set from the percentile stretch: on Python 3.12+ (where the
+  lockfile resolves rasterio 1.5) the image was drawn against limits its pixels
+  no longer used, and the colorbar reported a range that was not there. Scaling
+  is now left entirely to Matplotlib. A caller passing `adjust=True` through
+  `**show_kwargs` still gets rasterio's behaviour.
 - Plotting now excludes a declared nodata value, as the nodata contract
   ("Mask before compute" in `CODE_STYLE.md`) has always required: a `-9999`
   fill must not shift a percentile stretch. Every plotting function read

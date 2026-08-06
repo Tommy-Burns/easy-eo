@@ -787,9 +787,14 @@ def plot_raster(
 
     for ax, d, band in panels:
         array, transform = _read_band_for_display(d, band, size)
-        draw_kwargs = show_kwargs
+        draw_kwargs = dict(show_kwargs)
         if stretch:
-            draw_kwargs = _with_stretch_limits(show_kwargs, array, pmin, pmax)
+            draw_kwargs = _with_stretch_limits(draw_kwargs, array, pmin, pmax)
+        # rasterio 1.5 extended show()'s adjust= to 2D arrays, min-max rescaling
+        # the band to [0, 1] before drawing. That silently voids our display
+        # limits, which are in the band's own units. Opt out explicitly (a no-op
+        # on 1.4, which only adjusted RGB), leaving all scaling to Matplotlib.
+        draw_kwargs.setdefault("adjust", False)
         rioplot.show(array, transform=transform, ax=ax, cmap=cmap, **draw_kwargs)
         ax.set_title(_band_label(d, band))
         if colorbar:
@@ -999,6 +1004,9 @@ def plot_raster_with_histogram(
         # Limits scale the image panel only; the histogram bins raw values, so
         # its x-axis stays in the band's own units whatever the stretch does.
         draw_kwargs = _with_stretch_limits({}, array, pmin, pmax) if stretch else {}
+        # See plot_raster: rasterio 1.5's show() rescales 2D arrays unless told
+        # not to, which would override the display limits set just above.
+        draw_kwargs["adjust"] = False
 
         rioplot.show(array, transform=transform, ax=axes[row, 0], cmap=cmap, **draw_kwargs)
         axes[row, 1].hist(_valid_values(array), bins=bins)
