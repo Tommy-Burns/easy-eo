@@ -71,10 +71,44 @@ Important behavior notes:
 
 This approach is robust to outliers and commonly used for EO raster inspection.
 
+Colorbars
+---------
+
+``plot_band_array``, ``plot_raster`` and ``plot_raster_with_histogram`` accept
+``colorbar=True``, which draws a scale beside each subplot in the band's own
+values — index units for a spectral index, metres for a DEM, reflectance for a
+raw band:
+
+.. code-block:: python
+
+   ndvi = scene.ndvi(red="red", nir="nir", name="NDVI")
+   ndvi.plot_raster(cmap="RdYlGn", colorbar=True)
+
+The label comes from the band's name, so an index named at creation labels its
+own colorbar. Pass ``colorbar_label`` to override it — useful for units the
+band name does not carry:
+
+.. code-block:: python
+
+   dem.plot_raster(cmap="Spectral_r", colorbar=True, colorbar_label="elevation (m)")
+
+Notes:
+    - The bar spans the **display limits**, not the full data range. With
+      ``stretch=True`` those are the 2-98 percentiles, so arrowheads appear on
+      the ends where values are clipped.
+    - Each subplot gets its own bar. Bands in a grid carry unrelated ranges and
+      often unrelated units, so a single shared scale would mislabel every
+      panel but one.
+    - Bands are read unmasked, so a nodata *sentinel* (e.g. ``-9999``) is
+      treated as data and stretches the scale to reach it. Convert nodata to
+      NaN — which the percentiles ignore — to keep the colorbar on real values.
+    - ``plot_composite`` takes no colorbar: an RGB composite maps three bands to
+      colour channels, so there is no single scalar scale to label.
+
 Plot Band Arrays (Array Coordinates)
 ------------------------------------
 
-.. function:: plot_band_array(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (8, 8), stretch=True, pmin=2, pmax=98, title=None, save_path=None, **imshow_kwargs)
+.. function:: plot_band_array(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (8, 8), stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, **imshow_kwargs)
 
    Plot raster bands as NumPy arrays using row/column coordinates.
 
@@ -88,6 +122,8 @@ Plot Band Arrays (Array Coordinates)
    :param stretch: Apply percentile contrast stretching. Defaults to ``True``; pass ``False`` for raw values.
    :param pmin: Lower percentile used when ``stretch=True``.
    :param pmax: Upper percentile used when ``stretch=True``.
+   :param colorbar: Draw a colorbar beside each subplot, in band units.
+   :param colorbar_label: Colorbar label; ``None`` uses the band's name.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.
    :param imshow_kwargs: Additional keyword arguments passed to
@@ -96,7 +132,7 @@ Plot Band Arrays (Array Coordinates)
 Plot Raster (Spatial Coordinates)
 ---------------------------------
 
-.. function:: plot_raster(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), stretch=True, pmin=2, pmax=98, title=None, save_path=None, **show_kwargs)
+.. function:: plot_raster(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, **show_kwargs)
 
    Plot raster bands in spatial (CRS-aware) coordinates.
 
@@ -111,6 +147,8 @@ Plot Raster (Spatial Coordinates)
    :param stretch: Apply percentile contrast stretching. Defaults to ``True``; pass ``False`` for raw values.
    :param pmin: Lower percentile used when ``stretch=True``.
    :param pmax: Upper percentile used when ``stretch=True``.
+   :param colorbar: Draw a colorbar beside each subplot, in band units.
+   :param colorbar_label: Colorbar label; ``None`` uses the band's name.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.
    :param show_kwargs: Additional keyword arguments passed to
@@ -140,7 +178,7 @@ Plot Histogram
 Plot Raster with Histogram
 --------------------------
 
-.. function:: plot_raster_with_histogram(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), bins=256, pmin=2, pmax=98, stretch=False, sharey=False, title=None, save_path=None)
+.. function:: plot_raster_with_histogram(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), bins=256, pmin=2, pmax=98, stretch=False, colorbar=False, colorbar_label=None, sharey=False, title=None, save_path=None)
 
    Plot raster bands alongside their corresponding histograms.
 
@@ -156,6 +194,8 @@ Plot Raster with Histogram
    :param stretch: Apply percentile contrast stretching to the raster display. Defaults to ``False`` so the histogram shows the raw value distribution.
    :param pmin: Lower percentile used when ``stretch=True``.
    :param pmax: Upper percentile used when ``stretch=True``.
+   :param colorbar: Draw a colorbar beside each raster panel, in band units.
+   :param colorbar_label: Colorbar label; ``None`` uses the band's name.
    :param sharey: Share the y-axis between histogram plots.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.

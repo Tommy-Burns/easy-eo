@@ -6,10 +6,12 @@ import pytest
 from affine import Affine
 from matplotlib.axes import Axes
 from matplotlib.colors import Normalize
+from matplotlib.figure import Figure
 from rasterio.crs import CRS
 
 from eeo import load_array
 from eeo.core.adapters import RasterioAdapter
+from eeo.viz import plot as plot_module
 from eeo.viz import (
     plot_band_array,
     plot_composite,
@@ -19,6 +21,7 @@ from eeo.viz import (
 )
 from eeo.viz.plot import (
     _DISPLAY_OVERSAMPLE,
+    _add_colorbar,
     _as_list,
     _display_out_shape,
     _normalize_bands,
@@ -456,6 +459,167 @@ def test_plotting_large_raster_reads_reduced_arrays(large_rgb_raster, plot_func,
         height, width = shape[-2:]
         assert height <= budget
         assert width <= budget
+
+
+# ---------------------------------------------------------------------
+# Colorbars
+# ---------------------------------------------------------------------
+
+
+def _capture_colorbars(monkeypatch):
+    """Spy on ``Figure.colorbar``, recording each colorbar drawn."""
+    bars = []
+    real_colorbar = Figure.colorbar
+
+    def spy(self, mappable, **kwargs):
+        bar = real_colorbar(self, mappable, **kwargs)
+        bars.append(bar)
+        return bar
+
+    monkeypatch.setattr(Figure, "colorbar", spy)
+    return bars
+
+
+COLORBAR_FUNCS = [plot_band_array, plot_raster, plot_raster_with_histogram]
+COLORBAR_IDS = ["plot_band_array", "plot_raster", "plot_raster_with_histogram"]
+
+
+@pytest.mark.parametrize("plot_func", COLORBAR_FUNCS, ids=COLORBAR_IDS)
+def test_colorbar_off_by_default(ndvi_like_raster, plot_func, monkeypatch):
+    """Existing calls must render exactly as before, colorbar or not."""
+    bars = _capture_colorbars(monkeypatch)
+
+    plot_func(ndvi_like_raster)
+
+    assert bars == []
+
+
+@pytest.mark.parametrize("plot_func", COLORBAR_FUNCS, ids=COLORBAR_IDS)
+def test_colorbar_spans_band_values(ndvi_like_raster, plot_func, monkeypatch):
+    """The bar reports index units, not the 0-1 display scale."""
+    bars = _capture_colorbars(monkeypatch)
+
+    plot_func(ndvi_like_raster, stretch=True, colorbar=True)
+
+    assert len(bars) == 1
+    band = ndvi_like_raster.get_band(1)
+    assert bars[0].mappable.get_clim() == pytest.approx(tuple(np.nanpercentile(band, (2, 98))))
+
+
+@pytest.mark.parametrize("plot_func", COLORBAR_FUNCS, ids=COLORBAR_IDS)
+def test_colorbar_labelled_from_band_name(plot_func, monkeypatch):
+    """A named band labels its own colorbar; ``colorbar_label`` overrides it."""
+    ds = load_array(
+        np.linspace(-0.4, 0.9, 36, dtype=np.float32).reshape(6, 6),
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+        band_names=["NDVI"],
+    )
+    bars = _capture_colorbars(monkeypatch)
+
+    plot_func(ds, colorbar=True)
+    assert bars[-1].ax.get_ylabel() == "NDVI"
+
+    plot_func(ds, colorbar=True, colorbar_label="vegetation index")
+    assert bars[-1].ax.get_ylabel() == "vegetation index"
+
+
+@pytest.mark.parametrize("plot_func", COLORBAR_FUNCS, ids=COLORBAR_IDS)
+def test_colorbar_unlabelled_for_unnamed_band(ndvi_like_raster, plot_func, monkeypatch):
+    bars = _capture_colorbars(monkeypatch)
+
+    plot_func(ndvi_like_raster, colorbar=True)
+
+    assert bars[0].ax.get_ylabel() == ""
+
+
+def test_colorbar_extend_marks_clipped_ends(ndvi_like_raster, monkeypatch):
+    """Arrowheads must show which ends of the scale the stretch clips."""
+    bars = _capture_colorbars(monkeypatch)
+
+    # 2-98 percentiles clip both tails of a ramp.
+    plot_raster(ndvi_like_raster, stretch=True, colorbar=True)
+    assert bars[-1].extend == "both"
+
+    # Raw display autoscales to the data, so nothing is clipped.
+    plot_raster(ndvi_like_raster, stretch=False, colorbar=True)
+    assert bars[-1].extend == "neither"
+
+
+def test_colorbar_extend_one_sided(monkeypatch):
+    """Only the clipped end gets an arrowhead."""
+    array = np.linspace(0.0, 1.0, 36, dtype=np.float32).reshape(6, 6)
+    ds = load_array(
+        array,
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+    )
+    bars = _capture_colorbars(monkeypatch)
+
+    plot_band_array(ds, colorbar=True, vmin=float(array.min()), vmax=0.5)
+
+    assert bars[-1].extend == "max"
+
+
+def test_colorbar_per_band_in_a_grid(monkeypatch):
+    """Bands on different scales each get their own bar, not a shared one."""
+    band1 = np.linspace(0.0, 1.0, 36, dtype=np.float32).reshape(6, 6)
+    band2 = band1 * 10.0 + 100.0
+    ds = load_array(
+        np.stack([band1, band2]),
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+    )
+    bars = _capture_colorbars(monkeypatch)
+
+    plot_band_array(ds, colorbar=True, stretch=True)
+
+    assert len(bars) == 2
+    assert bars[0].mappable.get_clim() == pytest.approx(tuple(np.nanpercentile(band1, (2, 98))))
+    assert bars[1].mappable.get_clim() == pytest.approx(tuple(np.nanpercentile(band2, (2, 98))))
+
+
+def test_add_colorbar_without_a_mappable_draws_nothing(ndvi_like_raster, monkeypatch):
+    """No image on the axes means nothing to describe — and no crash."""
+    bars = _capture_colorbars(monkeypatch)
+    fig, ax = plt.subplots()
+
+    _add_colorbar(fig, ax, None, ndvi_like_raster, 1, None)
+
+    assert bars == []
+    plt.close(fig)
+
+
+def test_colorbar_skipped_when_no_image_drawn(ndvi_like_raster, monkeypatch):
+    """`plot_raster` must survive a draw that leaves the axes imageless.
+
+    Reached in practice by passing ``contour=True`` through to
+    ``rasterio.plot.show``, which draws contour lines instead of an image;
+    stubbed here so the test does not depend on contour rendering. An
+    unguarded ``ax.get_images()[-1]`` would raise IndexError in user code.
+    """
+    monkeypatch.setattr(plot_module.rioplot, "show", lambda *args, **kwargs: None)
+    bars = _capture_colorbars(monkeypatch)
+
+    plot_raster(ndvi_like_raster, colorbar=True)
+
+    assert bars == []
+
+
+def test_colorbar_all_nodata_band(monkeypatch):
+    """An all-NaN band has no finite values; the bar falls back to no arrowheads."""
+    ds = load_array(
+        np.full((6, 6), np.nan, dtype=np.float32),
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+    )
+    bars = _capture_colorbars(monkeypatch)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="All-NaN slice", category=RuntimeWarning)
+        plot_band_array(ds, colorbar=True, stretch=True)
+
+    assert bars[-1].extend == "neither"
 
 
 # ---------------------------------------------------------------------

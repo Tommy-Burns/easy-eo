@@ -9,6 +9,19 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- `colorbar` and `colorbar_label` on `plot_band_array`, `plot_raster`, and
+  `plot_raster_with_histogram`. `colorbar=True` draws a scale beside each
+  subplot in the band's own values, so
+  `ndvi.plot_raster(cmap="RdYlGn", colorbar=True)` reads in index units rather
+  than leaving the colours unexplained. The label defaults to the band's name —
+  an index named at creation labels its own colorbar — and `colorbar_label`
+  overrides it. Both default to off, so existing figures are unchanged.
+  Arrowheads mark the ends where the stretch clips data, and each subplot gets
+  its own bar because bands in a grid carry unrelated ranges. `plot_composite`
+  is excluded: an RGB composite has no single scalar scale to label.
+
 ### Fixed
 
 - `clip_raster_with_vector` now accepts any `os.PathLike` for `vector_file`,

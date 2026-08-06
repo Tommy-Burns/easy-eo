@@ -172,6 +172,79 @@ def _with_stretch_limits(
     return kwargs
 
 
+def _colorbar_extend(mappable) -> str:
+    """Report which ends of a colorbar are clipping data, as an ``extend`` value.
+
+    A stretched plot maps everything below ``vmin`` (or above ``vmax``) to the
+    colormap's end colour, so those pixels are drawn as if they sat at the
+    limit. The matching arrowhead on the colorbar is what tells a reader the
+    scale is clipped rather than complete.
+
+    Parameters
+    ----------
+    mappable : matplotlib.cm.ScalarMappable
+        The drawn image, carrying both the plotted array and its limits.
+
+    Returns
+    -------
+    str
+        ``"both"``, ``"min"``, ``"max"``, or ``"neither"``, as
+        ``matplotlib.figure.Figure.colorbar`` expects.
+    """
+    array = np.asarray(mappable.get_array(), dtype=float)
+    finite = array[np.isfinite(array)]
+    if finite.size == 0:
+        return "neither"
+
+    vmin, vmax = mappable.get_clim()
+    below = bool(finite.min() < vmin)
+    above = bool(finite.max() > vmax)
+    if below and above:
+        return "both"
+    if below:
+        return "min"
+    return "max" if above else "neither"
+
+
+def _add_colorbar(fig, ax, mappable, ds: EEORasterDataset, band: int, label: str | None) -> None:
+    """Attach a colorbar to one subplot, labelled in the band's own units.
+
+    Drawn per subplot rather than per figure: bands in a grid carry unrelated
+    ranges (and unrelated physical units), so a single shared scale would
+    mislabel every panel but one.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        Figure that owns the subplot.
+    ax : matplotlib.axes.Axes
+        Subplot the colorbar is attached to.
+    mappable : matplotlib.cm.ScalarMappable or None
+        The drawn image. None when the panel holds no image (e.g. a caller
+        passed ``contour=True`` through to ``rasterio.plot.show``), in which
+        case there is nothing to describe and no colorbar is drawn.
+    ds : EEORasterDataset
+        Dataset the band came from, consulted for the default label.
+    band : int
+        1-based band index.
+    label : str or None
+        Explicit label; None falls back to the band's name, and an unnamed
+        band yields an unlabelled colorbar.
+
+    Returns
+    -------
+    None
+        Draws on ``fig`` as a side effect.
+    """
+    if mappable is None:
+        return
+
+    colorbar = fig.colorbar(mappable, ax=ax, shrink=0.7, extend=_colorbar_extend(mappable))
+    text = label if label is not None else ds.band_names[band - 1]
+    if text:
+        colorbar.set_label(text)
+
+
 def _display_out_shape(shape: tuple[int, int], figsize: tuple[int, int]) -> tuple[int, int] | None:
     """Compute a decimated read shape capped at the figure's display budget.
 
@@ -251,6 +324,8 @@ def plot_band_array(
     stretch: bool = True,
     pmin: float = 2,
     pmax: float = 98,
+    colorbar: bool = False,
+    colorbar_label: str | None = None,
     title: str | None = None,
     save_path: StrPath | None = None,
     **imshow_kwargs,
@@ -282,6 +357,12 @@ def plot_band_array(
         Lower percentile for the stretch (used only when ``stretch=True``).
     pmax : float, default 98
         Upper percentile for the stretch (used only when ``stretch=True``).
+    colorbar : bool, default False
+        If True, draw a colorbar beside each subplot, scaled in the band's own
+        values. Arrowheads mark the ends where the stretch clips data.
+    colorbar_label : str or None, default None
+        Label for the colorbars; None uses each band's name, leaving an
+        unnamed band's colorbar unlabelled.
     title : str or None, default None
         Optional figure title.
     save_path : str or path-like or None, default None
@@ -308,13 +389,17 @@ def plot_band_array(
     Reads each band decimated to the figure's display resolution (rasterio
     ``out_shape``, served from overviews when present); rasters already
     within the display budget, and NumPy-backed datasets, are read in full.
-    Displays the figure with ``matplotlib.pyplot.show`` and, when
+    Bands are read unmasked, so a nodata *sentinel* (e.g. ``-9999``) counts as
+    an ordinary value and widens both the stretch and the colorbar; convert
+    nodata to NaN, which the percentiles ignore, to keep the scale on real
+    data. Displays the figure with ``matplotlib.pyplot.show`` and, when
     ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
     --------
     >>> ds.plot_band_array(bands=[1, 2, 3])                # 2-98 stretch on by default
     >>> ds.plot_band_array(bands=[1, 2, 3], stretch=False)  # raw values
+    >>> ds.plot_band_array(bands=1, colorbar=True)          # scale in band units
     """
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
@@ -328,9 +413,11 @@ def plot_band_array(
             draw_kwargs = imshow_kwargs
             if stretch:
                 draw_kwargs = _with_stretch_limits(imshow_kwargs, array, pmin, pmax)
-            ax.imshow(array, cmap=cmap, **draw_kwargs)
+            image = ax.imshow(array, cmap=cmap, **draw_kwargs)
             ax.set_title(_band_label(d, band))
             ax.axis("off")
+            if colorbar:
+                _add_colorbar(fig, ax, image, d, band, colorbar_label)
 
     if title:
         fig.suptitle(title)
@@ -354,6 +441,8 @@ def plot_raster(
     stretch: bool = True,
     pmin: float = 2,
     pmax: float = 98,
+    colorbar: bool = False,
+    colorbar_label: str | None = None,
     title: str | None = None,
     save_path: StrPath | None = None,
     **show_kwargs,
@@ -385,6 +474,12 @@ def plot_raster(
         Lower percentile for the stretch (used only when ``stretch=True``).
     pmax : float, default 98
         Upper percentile for the stretch (used only when ``stretch=True``).
+    colorbar : bool, default False
+        If True, draw a colorbar beside each subplot, scaled in the band's own
+        values. Arrowheads mark the ends where the stretch clips data.
+    colorbar_label : str or None, default None
+        Label for the colorbars; None uses each band's name, leaving an
+        unnamed band's colorbar unlabelled.
     title : str or None, default None
         Optional figure title.
     save_path : str or path-like or None, default None
@@ -411,13 +506,19 @@ def plot_raster(
     Reads each band decimated to the figure's display resolution (rasterio
     ``out_shape``, served from overviews when present); rasters already
     within the display budget, and NumPy-backed datasets, are read in full.
-    Displays the figure with ``matplotlib.pyplot.show`` and, when
+    Bands are read unmasked, so a nodata *sentinel* (e.g. ``-9999``) counts as
+    an ordinary value and widens both the stretch and the colorbar; convert
+    nodata to NaN, which the percentiles ignore, to keep the scale on real
+    data. Displays the figure with ``matplotlib.pyplot.show`` and, when
     ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
     --------
     >>> ds.plot_raster(bands=1)                 # 2-98 stretch on by default
     >>> ds.plot_raster(bands=1, stretch=False)  # raw values
+    >>> ds.ndvi(red="red", nir="nir", name="NDVI").plot_raster(
+    ...     cmap="RdYlGn", colorbar=True
+    ... )  # colorbar labelled "NDVI", in index units
     """
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
@@ -433,6 +534,10 @@ def plot_raster(
                 draw_kwargs = _with_stretch_limits(show_kwargs, array, pmin, pmax)
             rioplot.show(array, transform=transform, ax=ax, cmap=cmap, **draw_kwargs)
             ax.set_title(_band_label(d, band))
+            if colorbar:
+                # rasterio.plot.show returns the axes, not the image it drew.
+                images = ax.get_images()
+                _add_colorbar(fig, ax, images[-1] if images else None, d, band, colorbar_label)
 
     if title:
         fig.suptitle(title)
@@ -541,6 +646,8 @@ def plot_raster_with_histogram(
     pmin: float = 2,
     pmax: float = 98,
     stretch: bool = False,
+    colorbar: bool = False,
+    colorbar_label: str | None = None,
     sharey: bool = False,
     save_path: StrPath | None = None,
     title: str | None = None,
@@ -571,6 +678,13 @@ def plot_raster_with_histogram(
         If True, apply percentile contrast stretching to the raster panel.
         The stretch sets that panel's display limits only: pixel values are
         unchanged, and the histogram always bins the band's raw values.
+    colorbar : bool, default False
+        If True, draw a colorbar beside each raster panel, scaled in the
+        band's own values. Arrowheads mark the ends where the stretch clips
+        data.
+    colorbar_label : str or None, default None
+        Label for the colorbars; None uses each band's name, leaving an
+        unnamed band's colorbar unlabelled.
     sharey : bool, default False
         If True, share the y-axis across the histogram panels.
     save_path : str or path-like or None, default None
@@ -598,12 +712,16 @@ def plot_raster_with_histogram(
     within the display budget, and NumPy-backed datasets, are read in full.
     For a decimated raster the histogram is computed from the decimated
     pixels, so bin counts are an approximation of the full-resolution
-    histogram. Displays the figure with ``matplotlib.pyplot.show`` and, when
+    histogram. Bands are read unmasked, so a nodata *sentinel* (e.g.
+    ``-9999``) counts as an ordinary value in the histogram, the stretch, and
+    the colorbar; convert nodata to NaN to keep the scale on real data.
+    Displays the figure with ``matplotlib.pyplot.show`` and, when
     ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
     --------
     >>> ds.plot_raster_with_histogram(bands=[1, 2])
+    >>> ds.plot_raster_with_histogram(bands=1, colorbar=True)
     """
     bands_list = _normalize_bands(ds, bands)
 
@@ -617,6 +735,13 @@ def plot_raster_with_histogram(
 
         rioplot.show(array, transform=transform, ax=axes[row, 0], cmap=cmap, **draw_kwargs)
         axes[row, 1].hist(array.ravel(), bins=bins)
+
+        if colorbar:
+            # rasterio.plot.show returns the axes, not the image it drew.
+            images = axes[row, 0].get_images()
+            _add_colorbar(
+                fig, axes[row, 0], images[-1] if images else None, ds, band, colorbar_label
+            )
 
         axes[row, 0].set_title(_band_label(ds, band))
         axes[row, 1].set_title(f"Histogram of {_band_label(ds, band).lower()}")
