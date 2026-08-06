@@ -28,6 +28,18 @@ are called out under a **Breaking** heading.
   not just `str`. It previously raised `ValidationError` for a `pathlib.Path`
   or a `eeo.datasets` sample handle, so
   `ds.clip_raster_with_vector(sd.boundary)` failed.
+- Plotting now excludes a declared nodata value, as the nodata contract
+  ("Mask before compute" in `CODE_STYLE.md`) has always required: a `-9999`
+  fill must not shift a percentile stretch. Every plotting function read
+  unmasked, so a sentinel counted as an ordinary value — it widened the
+  stretch, dragged a colorbar's end to the sentinel, and put a spike in every
+  histogram. The sentinel is now masked before the percentiles are taken, and
+  those pixels render blank instead of as a colour. In `plot_composite` a pixel
+  that is nodata in any channel is transparent in the composite (the contract's
+  contagion rule), on the stretched floating-point path where RGBA is
+  available. Float rasters are unaffected: their nodata is already NaN, which
+  the percentiles ignored. `plot_histogram`'s docstring, which documented the
+  old behaviour ("nodata pixels are counted as ordinary values"), is corrected.
 - Plotting a band whose percentile range is empty (a constant band, or one with
   a single valid pixel) no longer paints its nodata pixels as real values. The
   rescaling path mapped such a band to all zeros, turning every NaN into a 0

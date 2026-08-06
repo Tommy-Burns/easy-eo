@@ -10,7 +10,7 @@ import numpy as np
 import rasterio.plot as rioplot
 from rasterio.transform import Affine
 
-from eeo.common import is_rasterio_backed, resolve_band_index
+from eeo.common import get_nodata, is_rasterio_backed, resolve_band_index
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_viz
 from eeo.core.exceptions import ValidationError
@@ -70,6 +70,56 @@ def _band_label(ds: EEORasterDataset, band: int) -> str:
     return f"Band {band}" if name is None else f"Band {band} ({name})"
 
 
+def _mask_nodata_for_display(ds: EEORasterDataset, array):
+    """Mask a band's declared nodata sentinel so display treats it as absent.
+
+    The nodata contract (``CODE_STYLE.md``, "Nodata policy") requires every
+    statistic to exclude nodata — a ``-9999`` fill must not shift a percentile
+    stretch. Masking here is what makes the plots obey it: the stretch, the
+    colorbar and the histograms all see valid pixels only, and Matplotlib
+    renders the masked pixels transparent instead of colouring them.
+
+    A float raster's nodata is already NaN under the contract, and NaN is
+    ignored by the percentile helpers and rendered blank, so it needs no mask.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Dataset the band was read from, consulted for its nodata value.
+    array : numpy.ndarray
+        Band values as read.
+
+    Returns
+    -------
+    numpy.ndarray
+        A masked array hiding the sentinel, or ``array`` unchanged when the
+        dataset declares no nodata (every pixel is valid) or declares NaN.
+    """
+    nodata = get_nodata(ds)
+    if nodata is None or np.isnan(nodata):
+        return array
+    return np.ma.masked_equal(array, nodata)
+
+
+def _valid_values(array):
+    """Return an array's non-nodata values, flattened.
+
+    Parameters
+    ----------
+    array : numpy.ndarray
+        Plain or masked array.
+
+    Returns
+    -------
+    numpy.ndarray
+        1D array of the unmasked values; the whole array when nothing is
+        masked. NaNs survive — the percentile helpers ignore those separately.
+    """
+    if np.ma.isMaskedArray(array):
+        return array.compressed()
+    return np.asarray(array).ravel()
+
+
 def _percentile_stretch(array, pmin=2, pmax=98):
     """Rescale an array to [0, 1] using percentile clipping.
 
@@ -93,10 +143,14 @@ def _percentile_stretch(array, pmin=2, pmax=98):
     Returns
     -------
     numpy.ndarray
-        Array clipped and scaled to [0, 1]. NaNs are ignored when computing
-        the percentiles.
+        Array clipped and scaled to [0, 1]. Nodata pixels stay masked, and
+        both they and NaNs are ignored when computing the percentiles.
     """
-    low, high = np.nanpercentile(array, (pmin, pmax))
+    values = _valid_values(array)
+    if values.size == 0:  # every pixel is nodata
+        return np.zeros_like(array)
+
+    low, high = np.nanpercentile(values, (pmin, pmax))
     if high - low == 0:
         return np.zeros_like(array)
     return np.clip((array - low) / (high - low), 0, 1)
@@ -127,10 +181,14 @@ def _stretch_limits(array, pmin=2, pmax=98) -> tuple[float, float] | None:
         The ``(vmin, vmax)`` display limits, or None when the percentile range
         is empty (a constant array) or not finite (an all-nodata band, whose
         percentiles are NaN). Both cases fall back to Matplotlib's own
-        autoscaling rather than handing it degenerate limits. NaNs are ignored
-        when computing the percentiles.
+        autoscaling rather than handing it degenerate limits. Masked nodata
+        pixels and NaNs are ignored when computing the percentiles.
     """
-    low, high = np.nanpercentile(array, (pmin, pmax))
+    values = _valid_values(array)
+    if values.size == 0:  # every pixel is nodata
+        return None
+
+    low, high = np.nanpercentile(values, (pmin, pmax))
     if not (np.isfinite(low) and np.isfinite(high)) or high - low == 0:
         return None
     return float(low), float(high)
@@ -191,8 +249,8 @@ def _colorbar_extend(mappable) -> str:
         ``"both"``, ``"min"``, ``"max"``, or ``"neither"``, as
         ``matplotlib.figure.Figure.colorbar`` expects.
     """
-    array = np.asarray(mappable.get_array(), dtype=float)
-    finite = array[np.isfinite(array)]
+    values = np.asarray(_valid_values(mappable.get_array()), dtype=float)
+    finite = values[np.isfinite(values)]
     if finite.size == 0:
         return "neither"
 
@@ -299,18 +357,21 @@ def _read_band_for_display(
     Returns
     -------
     tuple of (numpy.ndarray, affine.Affine)
-        The band as a 2D array, and the transform mapping that array to
-        world coordinates.
+        The band as a 2D array — masked where the dataset declares a nodata
+        sentinel — and the transform mapping that array to world coordinates.
     """
     transform = ds.get_transform()
     out_shape = _display_out_shape(ds.get_shape(), figsize)
     if out_shape is None or not is_rasterio_backed(ds):
-        return ds.get_band(band), transform
+        return _mask_nodata_for_display(ds, ds.get_band(band)), transform
 
     array = ds.read(band, out_shape=out_shape)
     height, width = ds.get_shape()
     out_height, out_width = out_shape
-    return array, transform * Affine.scale(width / out_width, height / out_height)
+    return (
+        _mask_nodata_for_display(ds, array),
+        transform * Affine.scale(width / out_width, height / out_height),
+    )
 
 
 # Plot band as NumPy array
@@ -389,10 +450,10 @@ def plot_band_array(
     Reads each band decimated to the figure's display resolution (rasterio
     ``out_shape``, served from overviews when present); rasters already
     within the display budget, and NumPy-backed datasets, are read in full.
-    Bands are read unmasked, so a nodata *sentinel* (e.g. ``-9999``) counts as
-    an ordinary value and widens both the stretch and the colorbar; convert
-    nodata to NaN, which the percentiles ignore, to keep the scale on real
-    data. Displays the figure with ``matplotlib.pyplot.show`` and, when
+    A declared nodata value is excluded per the library's nodata contract: the
+    sentinel is masked before the percentiles are taken, so it cannot shift the
+    stretch or the colorbar, and those pixels render blank rather than as a
+    colour. Displays the figure with ``matplotlib.pyplot.show`` and, when
     ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
@@ -506,10 +567,10 @@ def plot_raster(
     Reads each band decimated to the figure's display resolution (rasterio
     ``out_shape``, served from overviews when present); rasters already
     within the display budget, and NumPy-backed datasets, are read in full.
-    Bands are read unmasked, so a nodata *sentinel* (e.g. ``-9999``) counts as
-    an ordinary value and widens both the stretch and the colorbar; convert
-    nodata to NaN, which the percentiles ignore, to keep the scale on real
-    data. Displays the figure with ``matplotlib.pyplot.show`` and, when
+    A declared nodata value is excluded per the library's nodata contract: the
+    sentinel is masked before the percentiles are taken, so it cannot shift the
+    stretch or the colorbar, and those pixels render blank rather than as a
+    colour. Displays the figure with ``matplotlib.pyplot.show`` and, when
     ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
@@ -602,9 +663,10 @@ def plot_histogram(
 
     Notes
     -----
-    Reads each band at full resolution into memory; nodata pixels are counted
-    as ordinary values. Displays the figure with ``matplotlib.pyplot.show``
-    and, when ``save_path`` is given, writes it to disk as a side effect.
+    Reads each band at full resolution into memory. A declared nodata value is
+    excluded per the library's nodata contract, so the counts describe valid
+    pixels only. Displays the figure with ``matplotlib.pyplot.show`` and, when
+    ``save_path`` is given, writes it to disk as a side effect.
 
     Examples
     --------
@@ -618,7 +680,7 @@ def plot_histogram(
     for col, d in enumerate(datasets):
         for row, band in enumerate(bands_list):
             ax = axes[row, col]
-            data = d.get_band(band).ravel()
+            data = _valid_values(_mask_nodata_for_display(d, d.get_band(band)))
             ax.hist(data, bins=bins, **hist_kwargs)
             if log:
                 ax.set_yscale("log")
@@ -712,9 +774,9 @@ def plot_raster_with_histogram(
     within the display budget, and NumPy-backed datasets, are read in full.
     For a decimated raster the histogram is computed from the decimated
     pixels, so bin counts are an approximation of the full-resolution
-    histogram. Bands are read unmasked, so a nodata *sentinel* (e.g.
-    ``-9999``) counts as an ordinary value in the histogram, the stretch, and
-    the colorbar; convert nodata to NaN to keep the scale on real data.
+    histogram. A declared nodata value is excluded per the library's nodata
+    contract: the sentinel is masked, so it is absent from the histogram, the
+    stretch, and the colorbar, and those pixels render blank.
     Displays the figure with ``matplotlib.pyplot.show`` and, when
     ``save_path`` is given, writes it to disk as a side effect.
 
@@ -734,7 +796,7 @@ def plot_raster_with_histogram(
         draw_kwargs = _with_stretch_limits({}, array, pmin, pmax) if stretch else {}
 
         rioplot.show(array, transform=transform, ax=axes[row, 0], cmap=cmap, **draw_kwargs)
-        axes[row, 1].hist(array.ravel(), bins=bins)
+        axes[row, 1].hist(_valid_values(array), bins=bins)
 
         if colorbar:
             # rasterio.plot.show returns the axes, not the image it drew.
@@ -817,8 +879,13 @@ def plot_composite(
     already within the display budget, and NumPy-backed datasets, are read
     in full. When ``stretch=True`` the channels are rescaled to floating-point
     ``[0, 1]`` before display, so integer rasters (e.g. Sentinel-2 reflectance)
-    render correctly. Displays the figure with ``matplotlib.pyplot.show``
-    and, when ``save_path`` is given, writes it to disk as a side effect.
+    render correctly. A declared nodata value is excluded from each channel's
+    stretch per the library's nodata contract, and a pixel that is nodata in
+    any channel is transparent in the composite — but only on the stretched
+    (floating-point) path, since RGBA needs floats in ``[0, 1]``; an
+    unstretched integer composite renders its raw nodata values. Displays the
+    figure with ``matplotlib.pyplot.show`` and, when ``save_path`` is given,
+    writes it to disk as a side effect.
 
     Examples
     --------
@@ -829,13 +896,25 @@ def plot_composite(
         raise ValidationError(f"a composite needs exactly 3 bands (R, G, B); got {len(bands_list)}")
     channels = [_read_band_for_display(ds, b, figsize)[0] for b in bands_list]
 
+    # A pixel that is nodata in any channel is nodata in the composite, per the
+    # nodata contract's contagion rule.
+    invalid = np.zeros(channels[0].shape, dtype=bool)
+    for channel in channels:
+        invalid |= np.ma.getmaskarray(channel)
+
     if stretch:
         # Stretch into float [0, 1]; stacking the float results keeps the
         # composite floating so the scaled values are not truncated to an
         # integer band dtype (which would render the image black).
         channels = [_percentile_stretch(channel, pmin, pmax) for channel in channels]
 
-    composite = np.stack(channels, axis=-1)
+    composite = np.stack([np.ma.filled(channel, 0) for channel in channels], axis=-1)
+
+    if invalid.any() and np.issubdtype(composite.dtype, np.floating):
+        # RGBA needs floats in [0, 1], which only the stretched path produces;
+        # an unstretched integer composite keeps its raw nodata values.
+        alpha = (~invalid).astype(composite.dtype)
+        composite = np.concatenate([composite, alpha[..., None]], axis=-1)
 
     plt.figure(figsize=figsize)
     plt.imshow(composite)

@@ -24,10 +24,12 @@ from eeo.viz.plot import (
     _add_colorbar,
     _as_list,
     _display_out_shape,
+    _mask_nodata_for_display,
     _normalize_bands,
     _percentile_stretch,
     _read_band_for_display,
     _stretch_limits,
+    _valid_values,
     _with_stretch_limits,
 )
 
@@ -218,7 +220,9 @@ def _capture_imshow(monkeypatch):
 
     def spy(self, arr, *args, **kwargs):
         image = real_imshow(self, arr, *args, **kwargs)
-        calls.append((np.asarray(arr), image.get_clim()))
+        # Recorded as passed, not via np.asarray: that would strip the nodata
+        # mask the plots rely on.
+        calls.append((arr, image.get_clim()))
         return image
 
     monkeypatch.setattr(Axes, "imshow", spy)
@@ -459,6 +463,163 @@ def test_plotting_large_raster_reads_reduced_arrays(large_rgb_raster, plot_func,
         height, width = shape[-2:]
         assert height <= budget
         assert width <= budget
+
+
+# ---------------------------------------------------------------------
+# Nodata is absent from the display (nodata contract)
+# ---------------------------------------------------------------------
+# The `raster_with_nodata` fixture is a 6x6 float32 gradient whose top-left
+# 2x2 block is the -9999 sentinel: 4 nodata pixels, 32 valid ones.
+
+
+def test_mask_nodata_for_display_masks_the_sentinel(raster_with_nodata):
+    masked = _mask_nodata_for_display(raster_with_nodata, raster_with_nodata.get_band(1))
+
+    assert np.ma.isMaskedArray(masked)
+    assert masked.count() == 32  # the 4 sentinel pixels are gone
+    assert -9999.0 not in _valid_values(masked)
+
+
+def test_mask_nodata_for_display_no_nodata_declared(single_band_float32):
+    band = single_band_float32.get_band(1)
+
+    assert _mask_nodata_for_display(single_band_float32, band) is band
+
+
+def test_mask_nodata_for_display_nan_nodata_needs_no_mask():
+    """A float raster's nodata is already NaN, which the percentiles ignore."""
+    array = np.array([[1.0, np.nan], [3.0, 4.0]], dtype=np.float32)
+    ds = load_array(
+        array,
+        transform=Affine.translation(0, 2) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+        nodata=np.nan,
+    )
+
+    assert _mask_nodata_for_display(ds, array) is array
+
+
+def test_valid_values_drops_masked_entries():
+    array = np.ma.masked_equal(np.array([1.0, -9999.0, 3.0]), -9999.0)
+
+    np.testing.assert_array_equal(_valid_values(array), [1.0, 3.0])
+
+
+def test_valid_values_passes_plain_arrays_through():
+    array = np.arange(6, dtype=np.float32).reshape(2, 3)
+
+    np.testing.assert_array_equal(_valid_values(array), array.ravel())
+
+
+def test_stretch_limits_exclude_the_nodata_sentinel(raster_with_nodata):
+    """A -9999 fill must not drag the stretch down (CODE_STYLE nodata rule 1)."""
+    band = raster_with_nodata.get_band(1)
+    valid = band[band != -9999.0]
+
+    limits = _stretch_limits(_mask_nodata_for_display(raster_with_nodata, band))
+
+    assert limits == pytest.approx(tuple(np.nanpercentile(valid, (2, 98))))
+    assert limits is not None and limits[0] > -9999.0
+
+
+def test_stretch_limits_all_nodata_band():
+    array = np.ma.masked_equal(np.full((4, 4), -9999.0), -9999.0)
+
+    assert _stretch_limits(array) is None
+
+
+@pytest.mark.parametrize(
+    "plot_func",
+    [plot_band_array, plot_raster, plot_raster_with_histogram],
+    ids=["plot_band_array", "plot_raster", "plot_raster_with_histogram"],
+)
+def test_nodata_pixels_are_not_drawn(raster_with_nodata, plot_func, monkeypatch):
+    """Nodata renders blank rather than as a colour at the sentinel's value."""
+    calls = _capture_imshow(monkeypatch)
+
+    plot_func(raster_with_nodata, stretch=True)
+
+    drawn, clim = calls[0]
+    assert np.ma.isMaskedArray(drawn)
+    assert np.ma.getmaskarray(drawn).sum() == 4
+    assert clim[0] > -9999.0  # the sentinel did not set the low limit
+
+
+@pytest.mark.parametrize(
+    "plot_func",
+    [plot_histogram, plot_raster_with_histogram],
+    ids=["plot_histogram", "plot_raster_with_histogram"],
+)
+def test_histograms_exclude_nodata(raster_with_nodata, plot_func, monkeypatch):
+    binned = []
+    real_hist = Axes.hist
+
+    def spy(self, data, *args, **kwargs):
+        binned.append(np.asarray(data))
+        return real_hist(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "hist", spy)
+
+    plot_func(raster_with_nodata)
+
+    assert binned[0].size == 32  # 36 pixels less the 4 nodata ones
+    assert -9999.0 not in binned[0]
+
+
+def test_colorbar_excludes_nodata(raster_with_nodata, monkeypatch):
+    bars = _capture_colorbars(monkeypatch)
+
+    plot_raster(raster_with_nodata, stretch=True, colorbar=True)
+
+    band = raster_with_nodata.get_band(1)
+    valid = band[band != -9999.0]
+    assert bars[0].mappable.get_clim() == pytest.approx(tuple(np.nanpercentile(valid, (2, 98))))
+
+
+def test_composite_makes_nodata_transparent(monkeypatch):
+    """Nodata in any channel is nodata in the composite (contagion rule)."""
+    base = np.linspace(0.0, 1.0, 36, dtype=np.float32).reshape(6, 6)
+    array = np.stack([base, 0.5 * base, 0.25 * base])
+    array[0, :2, :2] = -9999.0  # nodata in the red channel only
+    ds = load_array(
+        array,
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+        nodata=-9999.0,
+    )
+    captured = {}
+    monkeypatch.setattr(plt, "imshow", lambda arr, *a, **k: captured.update(arr=np.asarray(arr)))
+
+    plot_composite(ds, bands=(1, 2, 3), stretch=True)
+
+    composite = captured["arr"]
+    assert composite.shape == (6, 6, 4)  # RGBA: an alpha channel was added
+    np.testing.assert_array_equal(composite[:2, :2, 3], 0.0)  # nodata transparent
+    assert composite[2:, :, 3].min() == 1.0  # valid pixels opaque
+
+
+def test_composite_stretch_ignores_nodata(monkeypatch):
+    """The sentinel must not compress every valid pixel into one shade."""
+    base = np.linspace(0.2, 0.8, 36, dtype=np.float32).reshape(6, 6)
+    array = np.stack([base, base, base])
+    array[:, 0, 0] = -9999.0
+    ds = load_array(
+        array,
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+        nodata=-9999.0,
+    )
+    captured = {}
+    monkeypatch.setattr(plt, "imshow", lambda arr, *a, **k: captured.update(arr=np.asarray(arr)))
+
+    plot_composite(ds, bands=(1, 2, 3), stretch=True)
+
+    # Every pixel but [0, 0], which is the sentinel.
+    red = captured["arr"][..., 0]
+    valid = np.delete(red.ravel(), 0)
+    # Masked: the stretch spans the real 0.2-0.8 range, so the channel uses the
+    # full [0, 1]. Unmasked, -9999 as the low limit would crush it all near 1.
+    assert valid.min() < 0.05 and valid.max() > 0.95
 
 
 # ---------------------------------------------------------------------

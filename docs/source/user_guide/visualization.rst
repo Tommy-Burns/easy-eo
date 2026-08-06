@@ -66,6 +66,9 @@ Important behavior notes:
       than as black.
     - A band with an empty percentile range (a constant band, or an all-nodata
       one) has no meaningful limits, so Matplotlib's own autoscaling applies.
+    - Nodata pixels are excluded from the percentiles and are not drawn, per
+      the :doc:`nodata contract <nodata_and_dtype>`: the stretch describes
+      valid data only, and gaps render blank instead of as a colour.
     - Percentile stretching is intended for **visualization only** and does not
       modify the underlying dataset.
 
@@ -99,9 +102,8 @@ Notes:
     - Each subplot gets its own bar. Bands in a grid carry unrelated ranges and
       often unrelated units, so a single shared scale would mislabel every
       panel but one.
-    - Bands are read unmasked, so a nodata *sentinel* (e.g. ``-9999``) is
-      treated as data and stretches the scale to reach it. Convert nodata to
-      NaN — which the percentiles ignore — to keep the colorbar on real values.
+    - A declared nodata value is excluded, so a ``-9999`` fill cannot stretch
+      the scale to reach it. See :doc:`nodata_and_dtype`.
     - ``plot_composite`` takes no colorbar: an RGB composite maps three bands to
       colour channels, so there is no single scalar scale to label.
 

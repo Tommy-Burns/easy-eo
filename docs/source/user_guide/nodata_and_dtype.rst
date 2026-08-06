@@ -17,7 +17,10 @@ Nodata handling
 Pixel-wise operations (arithmetic, indices, normalization, standardization)
 and every statistic (minimum, maximum, mean, percentile) exclude nodata
 pixels from the computation. A ``-9999`` fill value never drags down a mean,
-shifts a percentile stretch, or leaks into an arithmetic result.
+shifts a percentile stretch, or leaks into an arithmetic result. Plotting
+follows the same rule: the display stretch, colorbars, and histograms are
+computed from valid pixels only, and nodata renders blank rather than as a
+colour (see :doc:`visualization`).
 
 **Nodata is contagious.**
 When an operation combines two rasters, a pixel that is nodata in *either*
