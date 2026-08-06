@@ -15,8 +15,27 @@ are called out under a **Breaking** heading.
   not just `str`. It previously raised `ValidationError` for a `pathlib.Path`
   or a `eeo.datasets` sample handle, so
   `ds.clip_raster_with_vector(sd.boundary)` failed.
+- Plotting a band whose percentile range is empty (a constant band, or one with
+  a single valid pixel) no longer paints its nodata pixels as real values. The
+  rescaling path mapped such a band to all zeros, turning every NaN into a 0
+  that rendered as the colormap's low end; nodata now stays blank. An
+  all-nodata band, whose percentiles are NaN, likewise falls back to
+  Matplotlib's autoscaling rather than being handed NaN display limits.
 
 ### Changed
+
+- `plot_band_array`, `plot_raster`, and `plot_raster_with_histogram` now apply
+  the percentile stretch as Matplotlib display limits (`vmin`/`vmax`) instead
+  of rescaling the band to `[0, 1]`. The rendered figure is unchanged —
+  verified pixel-for-pixel across float, integer, outlier-heavy, and partly-NaN
+  bands — but the plotted array keeps its own units, which is what lets a
+  colorbar report real values. Two consequences worth noting:
+  - An explicit `vmin`/`vmax` passed through `**imshow_kwargs` / `**show_kwargs`
+    now takes precedence over the stretch. Previously such a value was silently
+    ineffective, the data having already been rescaled to `[0, 1]`.
+  - `plot_raster_with_histogram(stretch=True)` previously binned the *stretched*
+    values, putting the histogram on a 0-1 axis; it now always bins the band's
+    raw values while the stretch scales the image panel alone.
 
 - Added the `Programming Language :: Python :: 3.13` classifier. CI has tested
   3.13 since it was added to the matrix, but the metadata stopped at 3.12, so

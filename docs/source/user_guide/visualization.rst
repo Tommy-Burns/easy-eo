@@ -53,10 +53,19 @@ Defaults:
 Important behavior notes:
     - When ``stretch=False``, values are passed directly to Matplotlib and may be
       auto-scaled according to Matplotlib’s default behavior.
-    - When ``stretch=True``, values are explicitly normalized into the range
-      ``[0, 1]``. The output becomes float-like, even if the original raster
-      bands are ``uint16`` or integer types — which is also why integer rasters
-      such as Sentinel-2 reflectance render correctly rather than as black.
+    - For the single-band plots (``plot_band_array``, ``plot_raster``,
+      ``plot_raster_with_histogram``), ``stretch=True`` sets the subplot's
+      **display limits** — ``vmin`` and ``vmax`` — to :math:`p_{min}` and
+      :math:`p_{max}`. Matplotlib applies the normalization above when it
+      renders, so the array itself keeps its own values and units. Passing an
+      explicit ``vmin``/``vmax`` overrides the stretch.
+    - ``plot_composite`` instead rescales each channel into ``[0, 1]``, because
+      the three channels are stacked into a single RGB image. Its output is
+      float-like even when the source bands are ``uint16`` — which is why
+      integer rasters such as Sentinel-2 reflectance render correctly rather
+      than as black.
+    - A band with an empty percentile range (a constant band, or an all-nodata
+      one) has no meaningful limits, so Matplotlib's own autoscaling applies.
     - Percentile stretching is intended for **visualization only** and does not
       modify the underlying dataset.
 

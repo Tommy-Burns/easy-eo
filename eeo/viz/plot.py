@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -76,6 +77,10 @@ def _percentile_stretch(array, pmin=2, pmax=98):
     remaining range is scaled to [0, 1], improving display contrast while
     suppressing outliers. A constant array maps to all zeros.
 
+    Used where the rescaled values are themselves needed — stacking an RGB
+    composite. Single-band plots stretch with ``_stretch_limits`` instead,
+    which normalizes at display time and so keeps the array in its own units.
+
     Parameters
     ----------
     array : numpy.ndarray
@@ -95,6 +100,76 @@ def _percentile_stretch(array, pmin=2, pmax=98):
     if high - low == 0:
         return np.zeros_like(array)
     return np.clip((array - low) / (high - low), 0, 1)
+
+
+def _stretch_limits(array, pmin=2, pmax=98) -> tuple[float, float] | None:
+    """Return percentile display limits for an array.
+
+    The limits are the ``pmin``-``pmax`` percentiles of ``array``, to be handed
+    to Matplotlib as ``vmin``/``vmax``. Normalizing at display time is
+    equivalent to rescaling the data with ``_percentile_stretch`` — both map
+    values through ``clip((x - low) / (high - low), 0, 1)`` — but leaves the
+    array in its own units, so the rendered image is identical while anything
+    reading the plotted values back reports real data values.
+
+    Parameters
+    ----------
+    array : numpy.ndarray
+        Input array (e.g. a raster band).
+    pmin : float, default 2
+        Lower percentile.
+    pmax : float, default 98
+        Upper percentile.
+
+    Returns
+    -------
+    tuple of float or None
+        The ``(vmin, vmax)`` display limits, or None when the percentile range
+        is empty (a constant array) or not finite (an all-nodata band, whose
+        percentiles are NaN). Both cases fall back to Matplotlib's own
+        autoscaling rather than handing it degenerate limits. NaNs are ignored
+        when computing the percentiles.
+    """
+    low, high = np.nanpercentile(array, (pmin, pmax))
+    if not (np.isfinite(low) and np.isfinite(high)) or high - low == 0:
+        return None
+    return float(low), float(high)
+
+
+def _with_stretch_limits(
+    draw_kwargs: dict[str, Any], array, pmin: float, pmax: float
+) -> dict[str, Any]:
+    """Copy draw keyword arguments, filling in percentile display limits.
+
+    Returns a copy rather than mutating so that limits computed for one band
+    cannot leak into the next subplot drawn from the same caller kwargs.
+    Caller-supplied ``vmin``/``vmax`` win: they are left untouched.
+
+    Parameters
+    ----------
+    draw_kwargs : dict
+        Keyword arguments destined for ``imshow`` (directly or through
+        ``rasterio.plot.show``).
+    array : numpy.ndarray
+        Array being drawn, whose percentiles set the limits.
+    pmin : float
+        Lower percentile.
+    pmax : float
+        Upper percentile.
+
+    Returns
+    -------
+    dict
+        A new dict with ``vmin``/``vmax`` set from the percentiles of
+        ``array`` unless already present, or an unchanged copy for a constant
+        array.
+    """
+    kwargs = dict(draw_kwargs)
+    limits = _stretch_limits(array, pmin, pmax)
+    if limits is not None:
+        kwargs.setdefault("vmin", limits[0])
+        kwargs.setdefault("vmax", limits[1])
+    return kwargs
 
 
 def _display_out_shape(shape: tuple[int, int], figsize: tuple[int, int]) -> tuple[int, int] | None:
@@ -200,7 +275,9 @@ def plot_band_array(
     stretch : bool, default True
         If True, apply percentile contrast stretching to each band. On by
         default because the ``pmin``-``pmax`` (2-98) stretch renders most
-        rasters best; pass ``stretch=False`` to display raw values.
+        rasters best; pass ``stretch=False`` to display raw values. The
+        stretch sets each subplot's display limits and leaves the pixel
+        values themselves unchanged.
     pmin : float, default 2
         Lower percentile for the stretch (used only when ``stretch=True``).
     pmax : float, default 98
@@ -210,7 +287,8 @@ def plot_band_array(
     save_path : str or path-like or None, default None
         If given, save the figure to this path at 300 dpi.
     **imshow_kwargs
-        Extra keyword arguments forwarded to ``matplotlib.pyplot.imshow``.
+        Extra keyword arguments forwarded to ``matplotlib.pyplot.imshow``. An
+        explicit ``vmin``/``vmax`` takes precedence over the stretch.
 
     Returns
     -------
@@ -247,9 +325,10 @@ def plot_band_array(
         for row, band in enumerate(bands_list):
             ax = axes[row, col]
             array, _ = _read_band_for_display(d, band, figsize)
+            draw_kwargs = imshow_kwargs
             if stretch:
-                array = _percentile_stretch(array, pmin, pmax)
-            ax.imshow(array, cmap=cmap, **imshow_kwargs)
+                draw_kwargs = _with_stretch_limits(imshow_kwargs, array, pmin, pmax)
+            ax.imshow(array, cmap=cmap, **draw_kwargs)
             ax.set_title(_band_label(d, band))
             ax.axis("off")
 
@@ -299,7 +378,9 @@ def plot_raster(
     stretch : bool, default True
         If True, apply percentile contrast stretching to each band. On by
         default because the ``pmin``-``pmax`` (2-98) stretch renders most
-        rasters best; pass ``stretch=False`` to display raw values.
+        rasters best; pass ``stretch=False`` to display raw values. The
+        stretch sets each subplot's display limits and leaves the pixel
+        values themselves unchanged.
     pmin : float, default 2
         Lower percentile for the stretch (used only when ``stretch=True``).
     pmax : float, default 98
@@ -309,7 +390,8 @@ def plot_raster(
     save_path : str or path-like or None, default None
         If given, save the figure to this path at 300 dpi.
     **show_kwargs
-        Extra keyword arguments forwarded to ``rasterio.plot.show``.
+        Extra keyword arguments forwarded to ``rasterio.plot.show``. An
+        explicit ``vmin``/``vmax`` takes precedence over the stretch.
 
     Returns
     -------
@@ -346,9 +428,10 @@ def plot_raster(
         for row, band in enumerate(bands_list):
             ax = axes[row, col]
             array, transform = _read_band_for_display(d, band, figsize)
+            draw_kwargs = show_kwargs
             if stretch:
-                array = _percentile_stretch(array, pmin, pmax)
-            rioplot.show(array, transform=transform, ax=ax, cmap=cmap, **show_kwargs)
+                draw_kwargs = _with_stretch_limits(show_kwargs, array, pmin, pmax)
+            rioplot.show(array, transform=transform, ax=ax, cmap=cmap, **draw_kwargs)
             ax.set_title(_band_label(d, band))
 
     if title:
@@ -486,6 +569,8 @@ def plot_raster_with_histogram(
         Upper percentile for the stretch (used only when ``stretch=True``).
     stretch : bool, default False
         If True, apply percentile contrast stretching to the raster panel.
+        The stretch sets that panel's display limits only: pixel values are
+        unchanged, and the histogram always bins the band's raw values.
     sharey : bool, default False
         If True, share the y-axis across the histogram panels.
     save_path : str or path-like or None, default None
@@ -526,10 +611,11 @@ def plot_raster_with_histogram(
 
     for row, band in enumerate(bands_list):
         array, transform = _read_band_for_display(ds, band, figsize)
-        if stretch:
-            array = _percentile_stretch(array, pmin, pmax)
+        # Limits scale the image panel only; the histogram bins raw values, so
+        # its x-axis stays in the band's own units whatever the stretch does.
+        draw_kwargs = _with_stretch_limits({}, array, pmin, pmax) if stretch else {}
 
-        rioplot.show(array, transform=transform, ax=axes[row, 0], cmap=cmap)
+        rioplot.show(array, transform=transform, ax=axes[row, 0], cmap=cmap, **draw_kwargs)
         axes[row, 1].hist(array.ravel(), bins=bins)
 
         axes[row, 0].set_title(_band_label(ds, band))

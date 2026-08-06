@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from affine import Affine
+from matplotlib.axes import Axes
+from matplotlib.colors import Normalize
 from rasterio.crs import CRS
 
 from eeo import load_array
@@ -22,6 +24,8 @@ from eeo.viz.plot import (
     _normalize_bands,
     _percentile_stretch,
     _read_band_for_display,
+    _stretch_limits,
+    _with_stretch_limits,
 )
 
 # ---------------------------------------------------------------------
@@ -111,6 +115,218 @@ def test_percentile_stretch_constant_array():
     stretched = _percentile_stretch(arr)
 
     assert np.all(stretched == 0)
+
+
+def test_stretch_limits_basic():
+    arr = np.array([0, 1, 2, 3, 4], dtype=np.float32)
+
+    assert _stretch_limits(arr, 0, 100) == (0.0, 4.0)
+
+
+def test_stretch_limits_constant_array():
+    arr = np.ones((5, 5), dtype=np.float32)
+
+    assert _stretch_limits(arr) is None
+
+
+def test_stretch_limits_ignores_nan():
+    arr = np.array([0.0, 1.0, 2.0, 3.0, 4.0, np.nan], dtype=np.float32)
+
+    assert _stretch_limits(arr, 0, 100) == (0.0, 4.0)
+
+
+def test_stretch_limits_all_nan_band():
+    """An all-nodata band has NaN percentiles; never hand those to Matplotlib."""
+    arr = np.full((5, 5), np.nan, dtype=np.float32)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="All-NaN slice", category=RuntimeWarning)
+        assert _stretch_limits(arr) is None
+
+
+def test_stretch_limits_match_percentile_stretch():
+    """Display-time normalization must render exactly what rescaling did.
+
+    ``Normalize(vmin, vmax)`` applies ``(x - low) / (high - low)`` — the same
+    mapping as ``_percentile_stretch``, whose clipping ``Normalize`` leaves to
+    the colormap (out-of-range values land on the under/over colours, which
+    default to the colormap's own end colours). Proving both halves is what
+    licenses the single-band plots to stretch by display limits instead of by
+    rewriting the array: same pixels, real values retained.
+    """
+    # Outliers on both ends so the 2-98 percentiles actually clip.
+    arr = np.concatenate([np.linspace(0.0, 1.0, 100), [-5.0, 7.0]]).astype(np.float32)
+
+    limits = _stretch_limits(arr)
+    assert limits is not None
+
+    # Same linear mapping, once the clip Matplotlib defers is applied.
+    np.testing.assert_allclose(
+        np.asarray(Normalize(*limits, clip=True)(arr)),
+        _percentile_stretch(arr),
+        rtol=1e-6,
+    )
+    # And the colours actually rendered are identical, clip deferred or not.
+    cmap = plt.get_cmap("gray")
+    np.testing.assert_array_equal(
+        cmap(Normalize(*limits)(arr)),
+        cmap(_percentile_stretch(arr)),
+    )
+
+
+def test_with_stretch_limits_leaves_caller_kwargs_untouched():
+    arr = np.linspace(0.0, 1.0, 25, dtype=np.float32).reshape(5, 5)
+    caller_kwargs: dict = {}
+
+    result = _with_stretch_limits(caller_kwargs, arr, 2, 98)
+
+    assert caller_kwargs == {}  # per-band limits must not leak across subplots
+    assert result["vmin"] == pytest.approx(np.nanpercentile(arr, 2))
+    assert result["vmax"] == pytest.approx(np.nanpercentile(arr, 98))
+
+
+def test_with_stretch_limits_respects_explicit_limits():
+    arr = np.linspace(0.0, 1.0, 25, dtype=np.float32).reshape(5, 5)
+
+    result = _with_stretch_limits({"vmin": -1.0, "vmax": 1.0}, arr, 2, 98)
+
+    assert result == {"vmin": -1.0, "vmax": 1.0}
+
+
+def test_with_stretch_limits_constant_array_sets_none():
+    arr = np.ones((5, 5), dtype=np.float32)
+
+    assert _with_stretch_limits({}, arr, 2, 98) == {}
+
+
+# ---------------------------------------------------------------------
+# Stretching normalizes at display time (data values survive)
+# ---------------------------------------------------------------------
+
+
+def _capture_imshow(monkeypatch):
+    """Spy on ``Axes.imshow``, recording each drawn array and its limits.
+
+    Catches both draw paths: ``plot_band_array`` calls ``imshow`` directly and
+    ``rasterio.plot.show`` calls it underneath.
+    """
+    calls = []
+    real_imshow = Axes.imshow
+
+    def spy(self, arr, *args, **kwargs):
+        image = real_imshow(self, arr, *args, **kwargs)
+        calls.append((np.asarray(arr), image.get_clim()))
+        return image
+
+    monkeypatch.setattr(Axes, "imshow", spy)
+    return calls
+
+
+@pytest.fixture
+def ndvi_like_raster():
+    """Single-band float32 raster on an index-like scale, NumPy-backed."""
+    array = np.linspace(-0.4, 0.9, 36, dtype=np.float32).reshape(6, 6)
+
+    return load_array(
+        array,
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+    )
+
+
+@pytest.mark.parametrize(
+    "plot_func",
+    [plot_band_array, plot_raster],
+    ids=["plot_band_array", "plot_raster"],
+)
+def test_stretch_sets_display_limits_without_rescaling(ndvi_like_raster, plot_func, monkeypatch):
+    """A stretched plot draws the raw band, clipped by vmin/vmax."""
+    expected = ndvi_like_raster.get_band(1)
+    calls = _capture_imshow(monkeypatch)
+
+    plot_func(ndvi_like_raster, stretch=True)
+
+    drawn, clim = calls[0]
+    np.testing.assert_array_equal(drawn, expected)  # values kept, not mapped to [0, 1]
+    assert clim == pytest.approx(tuple(np.nanpercentile(expected, (2, 98))))
+
+
+@pytest.mark.parametrize(
+    "plot_func",
+    [plot_band_array, plot_raster],
+    ids=["plot_band_array", "plot_raster"],
+)
+def test_explicit_limits_win_over_stretch(ndvi_like_raster, plot_func, monkeypatch):
+    """A caller's vmin/vmax must override the stretch, not collide with it."""
+    calls = _capture_imshow(monkeypatch)
+
+    plot_func(ndvi_like_raster, stretch=True, vmin=-1.0, vmax=1.0)
+
+    assert calls[0][1] == (-1.0, 1.0)
+
+
+def test_stretch_keeps_nodata_unpainted_when_range_is_empty(monkeypatch):
+    """A degenerate stretch must not paint NaN pixels as real values.
+
+    Rescaling returned ``zeros_like`` for an empty percentile range, turning
+    every NaN into a 0 and rendering nodata as the colormap's low end — the one
+    case where the old and new stretch draw different pixels. Display limits
+    leave NaN as NaN, so nodata stays blank.
+    """
+    array = np.full((6, 6), np.nan, dtype=np.float32)
+    array[0, 0] = 1.0  # single valid pixel: p2 == p98, so no limits apply
+    ds = load_array(
+        array,
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+    )
+    calls = _capture_imshow(monkeypatch)
+
+    plot_band_array(ds, stretch=True)
+
+    drawn, _ = calls[0]
+    assert np.count_nonzero(np.isnan(drawn)) == array.size - 1
+
+
+def test_stretch_limits_are_computed_per_band(monkeypatch):
+    """Bands on different scales each get their own limits.
+
+    Regression guard for reusing one kwargs dict across subplots, which would
+    freeze the first band's limits onto every later one.
+    """
+    band1 = np.linspace(0.0, 1.0, 36, dtype=np.float32).reshape(6, 6)
+    band2 = band1 * 10.0 + 100.0
+    ds = load_array(
+        np.stack([band1, band2]),
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+    )
+    calls = _capture_imshow(monkeypatch)
+
+    plot_band_array(ds, stretch=True)
+
+    assert len(calls) == 2
+    assert calls[0][1] == pytest.approx(tuple(np.nanpercentile(band1, (2, 98))))
+    assert calls[1][1] == pytest.approx(tuple(np.nanpercentile(band2, (2, 98))))
+
+
+def test_raster_with_histogram_bins_raw_values_when_stretched(ndvi_like_raster, monkeypatch):
+    """The stretch scales the image panel only; the histogram stays in band units."""
+    expected = ndvi_like_raster.get_band(1)
+    hist_data = []
+    real_hist = Axes.hist
+
+    def spy_hist(self, data, *args, **kwargs):
+        hist_data.append(np.asarray(data))
+        return real_hist(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "hist", spy_hist)
+    calls = _capture_imshow(monkeypatch)
+
+    plot_raster_with_histogram(ndvi_like_raster, stretch=True)
+
+    np.testing.assert_array_equal(hist_data[0], expected.ravel())
+    assert calls[0][1] == pytest.approx(tuple(np.nanpercentile(expected, (2, 98))))
 
 
 # ---------------------------------------------------------------------

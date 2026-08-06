@@ -241,8 +241,8 @@ Visualization functions are **terminal operations** and should be used last in a
 .. note::
     - Percentile stretching is on by default for ``plot_raster``,
       ``plot_band_array`` and ``plot_composite`` (pass ``stretch=False`` for raw
-      values); ``plot_raster_with_histogram`` defaults to raw so its histogram
-      reflects true values
+      values); ``plot_raster_with_histogram`` defaults to raw, and its histogram
+      bins true values whether or not the raster panel is stretched
     - `sharey=True` aligns histogram axes across multiple bands
     - Multi-band plotting works with single or multiple rasters
     - Composite plotting supports RGB/false-color conventions
