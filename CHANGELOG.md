@@ -9,14 +9,100 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Breaking
+
+- `plot_raster_with_histogram` no longer takes `sharey`. Every histogram panel
+  now has its own y-axis, so a quiet band is not flattened by a busy one, and
+  no plotting function shares axes any more. A call passing `sharey=` raises
+  `TypeError`; drop the argument, which was `False` by default.
+
+### Changed
+
+- `plot_band_array`, `plot_raster`, and `plot_histogram` now lay their subplots
+  out near-square by default rather than one per row. A 4-band raster renders
+  2x2 instead of a 4x1 strip, and four single-band datasets 2x2 instead of 1x4;
+  2 and 3 panels stay a single row, 6 become 2x3, 9 become 3x3. Several
+  datasets *and* several bands still get the semantic grid — rows are bands,
+  columns are datasets — because that is what puts band *i* of one dataset
+  beside band *i* of the next. **Existing multi-panel figures will change
+  shape**; pass `nrows`/`ncols` to pin a layout.
+- `figsize` on those three functions now defaults to `None`, meaning derived:
+  the previous default for a single row of panels, and for a taller grid the
+  same width with the height set to keep the cells roughly square (so a 2x2 of
+  square maps is not squeezed into a 10x5 letterbox). Passing a `figsize`
+  disables the derivation, and single-panel figures are unchanged.
+
+### Added
+
+- `nrows` and `ncols` on `plot_band_array`, `plot_raster`, and `plot_histogram`,
+  so the subplot grid can be shaped. The layout was one row per band and one
+  column per dataset with no way to reflow, which put a 4-band raster in a
+  4x1 strip and four single-band datasets in a 1x4 one; `ncols=2` now gives a
+  2x2 block. Giving one of the two derives the other, leftover cells are
+  hidden, and a grid too small for every panel raises `ValidationError` instead
+  of dropping bands. (The default layout changed too — see Changed above.)
+- `colorbar` and `colorbar_label` on `plot_band_array`, `plot_raster`, and
+  `plot_raster_with_histogram`. `colorbar=True` draws a scale beside each
+  subplot in the band's own values, so
+  `ndvi.plot_raster(cmap="RdYlGn", colorbar=True)` reads in index units rather
+  than leaving the colours unexplained. The label defaults to the band's name —
+  an index named at creation labels its own colorbar — and `colorbar_label`
+  overrides it. Both default to off, so existing figures are unchanged.
+  Arrowheads mark the ends where the stretch clips data, and each subplot gets
+  its own bar because bands in a grid carry unrelated ranges. `plot_composite`
+  is excluded: an RGB composite has no single scalar scale to label.
+
 ### Fixed
 
 - `clip_raster_with_vector` now accepts any `os.PathLike` for `vector_file`,
   not just `str`. It previously raised `ValidationError` for a `pathlib.Path`
   or a `eeo.datasets` sample handle, so
   `ds.clip_raster_with_vector(sd.boundary)` failed.
+- The getting-started guide told users to call
+  `plot_histogram(..., sharey=True)`, which has no such parameter — the value
+  fell through `**hist_kwargs` into `matplotlib.pyplot.hist` and raised
+  `AttributeError: Rectangle.set() got an unexpected keyword argument
+  'sharey'`. The example is corrected, and `plot_histogram` does not gain the
+  parameter — see the Breaking note above, which removes the last one.
+- Plotting now excludes a declared nodata value, as the nodata contract
+  ("Mask before compute" in `CODE_STYLE.md`) has always required: a `-9999`
+  fill must not shift a percentile stretch. Every plotting function read
+  unmasked, so a sentinel counted as an ordinary value — it widened the
+  stretch, dragged a colorbar's end to the sentinel, and put a spike in every
+  histogram. The sentinel is now masked before the percentiles are taken, and
+  those pixels render blank instead of as a colour. In `plot_composite` a pixel
+  that is nodata in any channel is transparent in the composite (the contract's
+  contagion rule), on the stretched floating-point path where RGBA is
+  available. Float rasters are unaffected: their nodata is already NaN, which
+  the percentiles ignored. `plot_histogram`'s docstring, which documented the
+  old behaviour ("nodata pixels are counted as ordinary values"), is corrected.
+- Plotting a band whose percentile range is empty (a constant band, or one with
+  a single valid pixel) no longer paints its nodata pixels as real values. The
+  rescaling path mapped such a band to all zeros, turning every NaN into a 0
+  that rendered as the colormap's low end; nodata now stays blank. An
+  all-nodata band, whose percentiles are NaN, likewise falls back to
+  Matplotlib's autoscaling rather than being handed NaN display limits.
 
 ### Changed
+
+- The visualization notebook (`examples/01_fundamentals/07_visualization.ipynb`)
+  and the spectral-indices guide now teach `colorbar=True`, including how a
+  band's name becomes the label. The hand-rolled Matplotlib figures elsewhere
+  in the docs are unchanged: they overlay two layers or give each panel its own
+  colormap, neither of which the built-in plots do, so they still demonstrate
+  the escape hatch rather than a gap.
+- `plot_band_array`, `plot_raster`, and `plot_raster_with_histogram` now apply
+  the percentile stretch as Matplotlib display limits (`vmin`/`vmax`) instead
+  of rescaling the band to `[0, 1]`. The rendered figure is unchanged —
+  verified pixel-for-pixel across float, integer, outlier-heavy, and partly-NaN
+  bands — but the plotted array keeps its own units, which is what lets a
+  colorbar report real values. Two consequences worth noting:
+  - An explicit `vmin`/`vmax` passed through `**imshow_kwargs` / `**show_kwargs`
+    now takes precedence over the stretch. Previously such a value was silently
+    ineffective, the data having already been rescaled to `[0, 1]`.
+  - `plot_raster_with_histogram(stretch=True)` previously binned the *stretched*
+    values, putting the histogram on a 0-1 axis; it now always bins the band's
+    raw values while the stretch scales the image panel alone.
 
 - Added the `Programming Language :: Python :: 3.13` classifier. CI has tested
   3.13 since it was added to the matrix, but the metadata stopped at 3.12, so

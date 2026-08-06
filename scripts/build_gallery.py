@@ -80,6 +80,7 @@ def main() -> None:
         cmap="RdYlGn",
         figsize=FIGSIZE,
         stretch=False,
+        colorbar=True,
         save_path=OUT_DIR / "index_ndvi.jpg",
     )
 
@@ -89,6 +90,7 @@ def main() -> None:
         cmap="Spectral_r",
         figsize=FIGSIZE,
         stretch=False,
+        colorbar=True,
         title="Copernicus DEM over the same footprint (356-560 m)",
         save_path=OUT_DIR / "dem_terrain.jpg",
     )
@@ -108,6 +110,7 @@ def main() -> None:
         cmap="RdYlGn",
         # wide enough that the UTM x-axis labels do not collide
         figsize=(13, 4.5),
+        colorbar=True,
         title="NDVI clipped to a boundary polygon, with its distribution",
         save_path=OUT_DIR / "clip_ndvi_histogram.png",
     )
