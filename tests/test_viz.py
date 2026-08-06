@@ -262,6 +262,48 @@ def test_stretch_sets_display_limits_without_rescaling(ndvi_like_raster, plot_fu
     assert clim == pytest.approx(tuple(np.nanpercentile(expected, (2, 98))))
 
 
+def _capture_rioplot_show(monkeypatch):
+    """Spy on ``rasterio.plot.show``, recording the kwargs it is called with."""
+    calls = []
+    real_show = plot_module.rioplot.show
+
+    def spy(*args, **kwargs):
+        calls.append(kwargs)
+        return real_show(*args, **kwargs)
+
+    monkeypatch.setattr(plot_module.rioplot, "show", spy)
+    return calls
+
+
+@pytest.mark.parametrize(
+    "plot_func",
+    [plot_raster, plot_raster_with_histogram],
+    ids=["plot_raster", "plot_raster_with_histogram"],
+)
+def test_rasterio_show_is_told_not_to_rescale(ndvi_like_raster, plot_func, monkeypatch):
+    """rasterio must not min-max the band out from under our display limits.
+
+    rasterio 1.5 extended ``show(adjust=...)`` to 2D arrays, so the band was
+    rescaled to [0, 1] while ``vmin``/``vmax`` stayed in the band's own units:
+    the image was drawn against limits its pixels no longer used and the
+    colorbar described a range that was not there. 1.4 only adjusted RGB, so
+    this assertion is what catches a regression on either version.
+    """
+    calls = _capture_rioplot_show(monkeypatch)
+
+    plot_func(ndvi_like_raster, stretch=True)
+
+    assert calls[0]["adjust"] is False
+
+
+def test_caller_can_still_ask_rasterio_to_rescale(ndvi_like_raster, monkeypatch):
+    calls = _capture_rioplot_show(monkeypatch)
+
+    plot_raster(ndvi_like_raster, stretch=False, adjust=True)
+
+    assert calls[0]["adjust"] is True
+
+
 @pytest.mark.parametrize(
     "plot_func",
     [plot_band_array, plot_raster],
