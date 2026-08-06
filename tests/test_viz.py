@@ -11,6 +11,7 @@ from rasterio.crs import CRS
 
 from eeo import load_array
 from eeo.core.adapters import RasterioAdapter
+from eeo.core.exceptions import ValidationError
 from eeo.viz import plot as plot_module
 from eeo.viz import (
     plot_band_array,
@@ -24,6 +25,7 @@ from eeo.viz.plot import (
     _add_colorbar,
     _as_list,
     _display_out_shape,
+    _grid_shape,
     _mask_nodata_for_display,
     _normalize_bands,
     _percentile_stretch,
@@ -463,6 +465,132 @@ def test_plotting_large_raster_reads_reduced_arrays(large_rgb_raster, plot_func,
         height, width = shape[-2:]
         assert height <= budget
         assert width <= budget
+
+
+# ---------------------------------------------------------------------
+# Subplot grid (nrows / ncols)
+# ---------------------------------------------------------------------
+
+GRID_FUNCS = [plot_band_array, plot_raster, plot_histogram]
+GRID_IDS = ["plot_band_array", "plot_raster", "plot_histogram"]
+
+
+def _grid_of(plot_func, ds, monkeypatch, **kwargs):
+    """Run a plot and report the (nrows, ncols) it asked ``subplots`` for."""
+    captured = {}
+    real_subplots = plt.subplots
+
+    def spy(*args, **kw):
+        captured["shape"] = args[:2]
+        return real_subplots(*args, **kw)
+
+    monkeypatch.setattr(plt, "subplots", spy)
+    plot_func(ds, **kwargs)
+    return captured["shape"]
+
+
+def test_grid_shape_derives_rows_from_ncols():
+    assert _grid_shape(4, None, 2) == (2, 2)
+    assert _grid_shape(5, None, 2) == (3, 2)  # ceil, so nothing is dropped
+
+
+def test_grid_shape_derives_cols_from_nrows():
+    assert _grid_shape(4, 2, None) == (2, 2)
+    assert _grid_shape(5, 2, None) == (2, 3)
+
+
+def test_grid_shape_accepts_an_explicit_pair():
+    assert _grid_shape(4, 2, 3) == (2, 3)  # room to spare is fine
+
+
+def test_grid_shape_rejects_a_grid_that_drops_panels():
+    with pytest.raises(ValidationError, match="holds 3 panels, but 4"):
+        _grid_shape(4, 1, 3)
+
+
+@pytest.mark.parametrize("bad", [0, -1, 2.5, "2"], ids=["zero", "negative", "float", "str"])
+def test_grid_shape_rejects_non_positive_integers(bad):
+    with pytest.raises(ValidationError, match="positive integer"):
+        _grid_shape(4, None, bad)
+
+
+@pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
+def test_default_layout_is_unchanged(multiband_uint16, plot_func, monkeypatch):
+    """No grid requested keeps one row per band, one column per dataset."""
+    assert _grid_of(plot_func, multiband_uint16, monkeypatch) == (4, 1)
+
+
+@pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
+def test_ncols_reflows_a_multiband_raster(multiband_uint16, plot_func, monkeypatch):
+    """The reported case: a 4-band raster as 2x2 instead of a 4x1 strip."""
+    assert _grid_of(plot_func, multiband_uint16, monkeypatch, ncols=2) == (2, 2)
+
+
+@pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
+def test_nrows_reflows_a_list_of_datasets(single_band_float32, plot_func, monkeypatch):
+    """The other reported case: four datasets as 2x2 instead of a 1x4 strip."""
+    datasets = [single_band_float32] * 4
+
+    assert _grid_of(plot_func, datasets, monkeypatch, nrows=2) == (2, 2)
+
+
+@pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
+def test_leftover_cells_are_hidden(multiband_uint16, plot_func, monkeypatch):
+    """A 2x3 grid holding 4 panels must not show two empty framed axes."""
+    fig_axes = []
+    real_subplots = plt.subplots
+
+    def spy(*args, **kw):
+        fig, axes = real_subplots(*args, **kw)
+        fig_axes.append(axes)
+        return fig, axes
+
+    monkeypatch.setattr(plt, "subplots", spy)
+
+    plot_func(multiband_uint16, nrows=2, ncols=3)
+
+    flat = fig_axes[0].ravel()
+    assert [ax.axison for ax in flat[4:]] == [False, False]
+
+
+@pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
+def test_grid_too_small_raises(multiband_uint16, plot_func):
+    with pytest.raises(ValidationError, match="increase nrows or ncols"):
+        plot_func(multiband_uint16, nrows=1, ncols=2)
+
+
+def test_reflow_fill_order_is_dataset_major(multiband_uint16, monkeypatch):
+    """Every band of the first dataset, then every band of the next."""
+    second = load_array(
+        np.zeros((2, 6, 6), dtype=np.float32) + 5.0,
+        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        crs=CRS.from_epsg(4326),
+    )
+    titles = []
+    real_set_title = Axes.set_title
+
+    def spy(self, label, *args, **kwargs):
+        titles.append(label)
+        return real_set_title(self, label, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "set_title", spy)
+
+    plot_band_array([multiband_uint16, second], bands=[1, 2], ncols=2)
+
+    assert titles == ["Band 1", "Band 2", "Band 1", "Band 2"]
+
+
+def test_semantic_layout_survives_a_two_dimensional_selection(multiband_uint16, monkeypatch):
+    """Datasets x bands keeps its meaning when no grid is requested.
+
+    Rows are bands and columns are datasets, so band i of one dataset sits
+    beside band i of the other; reflowing that would destroy the comparison.
+    """
+    shape = _grid_of(
+        plot_band_array, [multiband_uint16, multiband_uint16], monkeypatch, bands=[1, 2, 3]
+    )
+
+    assert shape == (3, 2)
 
 
 # ---------------------------------------------------------------------

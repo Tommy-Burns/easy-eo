@@ -74,6 +74,39 @@ Important behavior notes:
 
 This approach is robust to outliers and commonly used for EO raster inspection.
 
+Subplot Layout
+--------------
+
+``plot_band_array``, ``plot_raster`` and ``plot_histogram`` draw one subplot per
+band, with bands down the rows and datasets across the columns. That puts a
+four-band raster in a single tall column, and four single-band datasets in a
+single wide row. Pass ``nrows`` or ``ncols`` to reflow them:
+
+.. code-block:: python
+
+   # a 4-band index stack as a 2x2 block instead of a 4x1 strip
+   stacked.plot_raster(cmap="RdYlGn", ncols=2, figsize=(12, 10))
+
+   # the same for several separate datasets
+   plot_raster([ndvi, ndwi, evi, savi], bands=1, ncols=2)
+
+Giving one of the two derives the other, so ``ncols=2`` with five panels gives
+three rows and leaves the last cell blank. Giving both is honoured as long as
+the grid has room; a grid too small to hold every panel raises
+``ValidationError`` rather than silently dropping bands.
+
+Notes:
+    - Panels fill row-major, dataset-major within that: every band of the first
+      dataset, then every band of the second.
+    - With neither set, the layout stays **semantic** — rows are bands, columns
+      are datasets — so band *i* of one dataset sits beside band *i* of the
+      next. That alignment is the point of a multi-dataset figure, which is why
+      it is not reflowed unless you ask.
+    - ``figsize`` is not adjusted for you. A grid usually wants a larger figure
+      than the strip the defaults were chosen for.
+    - ``plot_raster_with_histogram`` has no ``nrows``/``ncols``: its two columns
+      are structural (raster beside histogram).
+
 Colorbars
 ---------
 
@@ -110,7 +143,7 @@ Notes:
 Plot Band Arrays (Array Coordinates)
 ------------------------------------
 
-.. function:: plot_band_array(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (8, 8), stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, **imshow_kwargs)
+.. function:: plot_band_array(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (8, 8), nrows=None, ncols=None, stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, **imshow_kwargs)
 
    Plot raster bands as NumPy arrays using row/column coordinates.
 
@@ -121,6 +154,9 @@ Plot Band Arrays (Array Coordinates)
    :param bands: Band index or indices (1-based). If ``None``, all bands are plotted.
    :type bands: int | Sequence[int] | None
    :param cmap: Matplotlib colormap.
+   :param nrows: Subplot rows; with ``ncols`` also unset, the layout is one row
+       per band and one column per dataset.
+   :param ncols: Subplot columns; giving either reflows the panels into that grid.
    :param stretch: Apply percentile contrast stretching. Defaults to ``True``; pass ``False`` for raw values.
    :param pmin: Lower percentile used when ``stretch=True``.
    :param pmax: Upper percentile used when ``stretch=True``.
@@ -134,7 +170,7 @@ Plot Band Arrays (Array Coordinates)
 Plot Raster (Spatial Coordinates)
 ---------------------------------
 
-.. function:: plot_raster(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, **show_kwargs)
+.. function:: plot_raster(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), nrows=None, ncols=None, stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, **show_kwargs)
 
    Plot raster bands in spatial (CRS-aware) coordinates.
 
@@ -146,6 +182,9 @@ Plot Raster (Spatial Coordinates)
    :param bands: Band index or indices (1-based). If ``None``, all bands are plotted.
    :param cmap: Matplotlib colormap.
    :param figsize: Size of the matplotlib figure
+   :param nrows: Subplot rows; with ``ncols`` also unset, the layout is one row
+       per band and one column per dataset.
+   :param ncols: Subplot columns; giving either reflows the panels into that grid.
    :param stretch: Apply percentile contrast stretching. Defaults to ``True``; pass ``False`` for raw values.
    :param pmin: Lower percentile used when ``stretch=True``.
    :param pmax: Upper percentile used when ``stretch=True``.
@@ -159,7 +198,7 @@ Plot Raster (Spatial Coordinates)
 Plot Histogram
 --------------
 
-.. function:: plot_histogram(ds, bands=None, *, bins=256, figsize: tuple[int, int] = (10, 5), log=False, title=None, save_path=None, **hist_kwargs)
+.. function:: plot_histogram(ds, bands=None, *, bins=256, figsize: tuple[int, int] = (10, 5), nrows=None, ncols=None, log=False, title=None, save_path=None, **hist_kwargs)
 
    Plot histograms of raster band values.
 
@@ -171,6 +210,9 @@ Plot Histogram
    :param bands: Band index or indices (1-based). If ``None``, all bands are plotted.
    :param bins: Number of histogram bins.
    :param figsize: Size of the matplotlib figure
+   :param nrows: Subplot rows; with ``ncols`` also unset, the layout is one row
+       per band and one column per dataset.
+   :param ncols: Subplot columns; giving either reflows the panels into that grid.
    :param log: Use a logarithmic scale on the y-axis.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.

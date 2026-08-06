@@ -11,6 +11,15 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- `nrows` and `ncols` on `plot_band_array`, `plot_raster`, and `plot_histogram`,
+  so the subplot grid can be shaped. The layout was one row per band and one
+  column per dataset with no way to reflow, which put a 4-band raster in a
+  4x1 strip and four single-band datasets in a 1x4 one; `ncols=2` now gives a
+  2x2 block. Giving one of the two derives the other, leftover cells are
+  hidden, and a grid too small for every panel raises `ValidationError` instead
+  of dropping bands. With neither set the layout is unchanged, keeping rows as
+  bands and columns as datasets so band *i* of one dataset stays beside band
+  *i* of the next.
 - `colorbar` and `colorbar_label` on `plot_band_array`, `plot_raster`, and
   `plot_raster_with_histogram`. `colorbar=True` draws a scale beside each
   subplot in the band's own values, so

@@ -70,6 +70,108 @@ def _band_label(ds: EEORasterDataset, band: int) -> str:
     return f"Band {band}" if name is None else f"Band {band} ({name})"
 
 
+def _grid_shape(n_panels: int, nrows: int | None, ncols: int | None) -> tuple[int, int]:
+    """Resolve a requested grid to concrete ``(nrows, ncols)``.
+
+    Parameters
+    ----------
+    n_panels : int
+        Number of subplots to place.
+    nrows, ncols : int or None
+        Requested grid. Giving one derives the other; giving both is used as
+        is, provided it has room for every panel.
+
+    Returns
+    -------
+    tuple of int
+        ``(nrows, ncols)``, large enough to hold ``n_panels``.
+
+    Raises
+    ------
+    ValidationError
+        If either value is not a positive integer, or if both are given and
+        their product is smaller than ``n_panels``.
+    """
+    for label, value in (("nrows", nrows), ("ncols", ncols)):
+        if value is not None and (not isinstance(value, int) or value < 1):
+            raise ValidationError(f"{label} must be a positive integer; got {value!r}")
+
+    if nrows is not None and ncols is not None:
+        if nrows * ncols < n_panels:
+            raise ValidationError(
+                f"a {nrows}x{ncols} grid holds {nrows * ncols} panels, but {n_panels} "
+                f"were requested; increase nrows or ncols"
+            )
+        return nrows, ncols
+    if ncols is not None:
+        return -(-n_panels // ncols), ncols
+    assert nrows is not None  # both-None is handled by the caller
+    return nrows, -(-n_panels // nrows)
+
+
+def _panel_grid(
+    datasets: Sequence[EEORasterDataset],
+    bands_list: Sequence[int],
+    nrows: int | None,
+    ncols: int | None,
+    figsize: tuple[int, int],
+    **subplots_kwargs,
+):
+    """Build the subplot grid and pair each axes with the panel it draws.
+
+    With no grid requested, keeps the semantic layout — bands down the rows,
+    datasets across the columns — which is what aligns band *i* of one dataset
+    beside band *i* of the next. A requested grid flows the panels row-major
+    instead, dataset-major within that (every band of the first dataset, then
+    every band of the second), and switches off any leftover axes.
+
+    Parameters
+    ----------
+    datasets : sequence of EEORasterDataset
+        Datasets to draw.
+    bands_list : sequence of int
+        1-based band indices, applied to every dataset.
+    nrows, ncols : int or None
+        Requested grid; both None keeps the semantic layout.
+    figsize : tuple of int
+        Figure size in inches.
+    **subplots_kwargs
+        Extra keyword arguments for ``matplotlib.pyplot.subplots``.
+
+    Returns
+    -------
+    tuple of (matplotlib.figure.Figure, list)
+        The figure, and a list of ``(axes, dataset, band)`` triples in draw
+        order.
+
+    Raises
+    ------
+    ValidationError
+        If the requested grid is invalid or too small (see ``_grid_shape``).
+    """
+    if nrows is None and ncols is None:
+        fig, axes = plt.subplots(
+            len(bands_list), len(datasets), squeeze=False, figsize=figsize, **subplots_kwargs
+        )
+        panels = [
+            (axes[row, col], ds, band)
+            for col, ds in enumerate(datasets)
+            for row, band in enumerate(bands_list)
+        ]
+        return fig, panels
+
+    pairs = [(ds, band) for ds in datasets for band in bands_list]
+    rows, cols = _grid_shape(len(pairs), nrows, ncols)
+    fig, axes = plt.subplots(rows, cols, squeeze=False, figsize=figsize, **subplots_kwargs)
+
+    flat = axes.ravel()
+    for ax in flat[len(pairs) :]:
+        ax.axis("off")
+    # strict=False: the grid may hold more cells than panels, and the extras
+    # were just switched off above.
+    return fig, [(ax, ds, band) for ax, (ds, band) in zip(flat, pairs, strict=False)]
+
+
 def _mask_nodata_for_display(ds: EEORasterDataset, array):
     """Mask a band's declared nodata sentinel so display treats it as absent.
 
@@ -382,6 +484,8 @@ def plot_band_array(
     *,
     cmap: str = "gray",
     figsize: tuple[int, int] = (8, 8),
+    nrows: int | None = None,
+    ncols: int | None = None,
     stretch: bool = True,
     pmin: float = 2,
     pmax: float = 98,
@@ -408,6 +512,13 @@ def plot_band_array(
         Matplotlib colormap.
     figsize : tuple of int, default (8, 8)
         Figure size in inches.
+    nrows : int or None, default None
+        Number of subplot rows. With ``ncols`` also None, the layout is one
+        row per band and one column per dataset; giving either reflows the
+        panels row-major into that grid instead (every band of the first
+        dataset, then of the next), hiding any leftover cells.
+    ncols : int or None, default None
+        Number of subplot columns; see ``nrows``.
     stretch : bool, default True
         If True, apply percentile contrast stretching to each band. On by
         default because the ``pmin``-``pmax`` (2-98) stretch renders most
@@ -465,20 +576,18 @@ def plot_band_array(
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
 
-    fig, axes = plt.subplots(len(bands_list), len(datasets), squeeze=False, figsize=figsize)
+    fig, panels = _panel_grid(datasets, bands_list, nrows, ncols, figsize)
 
-    for col, d in enumerate(datasets):
-        for row, band in enumerate(bands_list):
-            ax = axes[row, col]
-            array, _ = _read_band_for_display(d, band, figsize)
-            draw_kwargs = imshow_kwargs
-            if stretch:
-                draw_kwargs = _with_stretch_limits(imshow_kwargs, array, pmin, pmax)
-            image = ax.imshow(array, cmap=cmap, **draw_kwargs)
-            ax.set_title(_band_label(d, band))
-            ax.axis("off")
-            if colorbar:
-                _add_colorbar(fig, ax, image, d, band, colorbar_label)
+    for ax, d, band in panels:
+        array, _ = _read_band_for_display(d, band, figsize)
+        draw_kwargs = imshow_kwargs
+        if stretch:
+            draw_kwargs = _with_stretch_limits(imshow_kwargs, array, pmin, pmax)
+        image = ax.imshow(array, cmap=cmap, **draw_kwargs)
+        ax.set_title(_band_label(d, band))
+        ax.axis("off")
+        if colorbar:
+            _add_colorbar(fig, ax, image, d, band, colorbar_label)
 
     if title:
         fig.suptitle(title)
@@ -499,6 +608,8 @@ def plot_raster(
     *,
     cmap: str = "gray",
     figsize: tuple[int, int] = (10, 5),
+    nrows: int | None = None,
+    ncols: int | None = None,
     stretch: bool = True,
     pmin: float = 2,
     pmax: float = 98,
@@ -525,6 +636,13 @@ def plot_raster(
         Matplotlib colormap.
     figsize : tuple of int, default (10, 5)
         Figure size in inches.
+    nrows : int or None, default None
+        Number of subplot rows. With ``ncols`` also None, the layout is one
+        row per band and one column per dataset; giving either reflows the
+        panels row-major into that grid instead (every band of the first
+        dataset, then of the next), hiding any leftover cells.
+    ncols : int or None, default None
+        Number of subplot columns; see ``nrows``.
     stretch : bool, default True
         If True, apply percentile contrast stretching to each band. On by
         default because the ``pmin``-``pmax`` (2-98) stretch renders most
@@ -584,21 +702,19 @@ def plot_raster(
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
 
-    fig, axes = plt.subplots(len(bands_list), len(datasets), squeeze=False, figsize=figsize)
+    fig, panels = _panel_grid(datasets, bands_list, nrows, ncols, figsize)
 
-    for col, d in enumerate(datasets):
-        for row, band in enumerate(bands_list):
-            ax = axes[row, col]
-            array, transform = _read_band_for_display(d, band, figsize)
-            draw_kwargs = show_kwargs
-            if stretch:
-                draw_kwargs = _with_stretch_limits(show_kwargs, array, pmin, pmax)
-            rioplot.show(array, transform=transform, ax=ax, cmap=cmap, **draw_kwargs)
-            ax.set_title(_band_label(d, band))
-            if colorbar:
-                # rasterio.plot.show returns the axes, not the image it drew.
-                images = ax.get_images()
-                _add_colorbar(fig, ax, images[-1] if images else None, d, band, colorbar_label)
+    for ax, d, band in panels:
+        array, transform = _read_band_for_display(d, band, figsize)
+        draw_kwargs = show_kwargs
+        if stretch:
+            draw_kwargs = _with_stretch_limits(show_kwargs, array, pmin, pmax)
+        rioplot.show(array, transform=transform, ax=ax, cmap=cmap, **draw_kwargs)
+        ax.set_title(_band_label(d, band))
+        if colorbar:
+            # rasterio.plot.show returns the axes, not the image it drew.
+            images = ax.get_images()
+            _add_colorbar(fig, ax, images[-1] if images else None, d, band, colorbar_label)
 
     if title:
         fig.suptitle(title)
@@ -618,6 +734,8 @@ def plot_histogram(
     *,
     bins: int = 256,
     figsize: tuple[int, int] = (10, 5),
+    nrows: int | None = None,
+    ncols: int | None = None,
     log: bool = False,
     title: str | None = None,
     save_path: StrPath | None = None,
@@ -639,6 +757,13 @@ def plot_histogram(
         Number of histogram bins.
     figsize : tuple of int, default (10, 5)
         Figure size in inches.
+    nrows : int or None, default None
+        Number of subplot rows. With ``ncols`` also None, the layout is one
+        row per band and one column per dataset; giving either reflows the
+        panels row-major into that grid instead (every band of the first
+        dataset, then of the next), hiding any leftover cells.
+    ncols : int or None, default None
+        Number of subplot columns; see ``nrows``.
     log : bool, default False
         If True, use a logarithmic y-axis.
     title : str or None, default None
@@ -675,16 +800,14 @@ def plot_histogram(
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
 
-    fig, axes = plt.subplots(len(bands_list), len(datasets), squeeze=False, figsize=figsize)
+    fig, panels = _panel_grid(datasets, bands_list, nrows, ncols, figsize)
 
-    for col, d in enumerate(datasets):
-        for row, band in enumerate(bands_list):
-            ax = axes[row, col]
-            data = _valid_values(_mask_nodata_for_display(d, d.get_band(band)))
-            ax.hist(data, bins=bins, **hist_kwargs)
-            if log:
-                ax.set_yscale("log")
-            ax.set_title(_band_label(d, band))
+    for ax, d, band in panels:
+        data = _valid_values(_mask_nodata_for_display(d, d.get_band(band)))
+        ax.hist(data, bins=bins, **hist_kwargs)
+        if log:
+            ax.set_yscale("log")
+        ax.set_title(_band_label(d, band))
 
     if title:
         fig.suptitle(title)
