@@ -619,17 +619,34 @@ def test_explicit_figsize_is_never_overridden(multiband_uint16, plot_func, monke
 
 
 @pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
-def test_ncols_reflows_a_multiband_raster(multiband_uint16, plot_func, monkeypatch):
-    """The reported case: a 4-band raster as 2x2 instead of a 4x1 strip."""
-    assert _grid_of(plot_func, multiband_uint16, monkeypatch, ncols=2) == (2, 2)
+def test_ncols_overrides_the_default_grid(multiband_uint16, plot_func, monkeypatch):
+    """An explicit ncols wins over the near-square default.
+
+    Deliberately asks for shapes the default would never choose for 4 panels
+    (it picks 2x2), so an ignored argument fails the test instead of passing
+    by coincidence.
+    """
+    assert _grid_of(plot_func, multiband_uint16, monkeypatch, ncols=4) == (1, 4)
+    assert _grid_of(plot_func, multiband_uint16, monkeypatch, ncols=1) == (4, 1)
 
 
 @pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
-def test_nrows_reflows_a_list_of_datasets(single_band_float32, plot_func, monkeypatch):
-    """The other reported case: four datasets as 2x2 instead of a 1x4 strip."""
+def test_nrows_overrides_the_default_grid(single_band_float32, plot_func, monkeypatch):
     datasets = [single_band_float32] * 4
 
-    assert _grid_of(plot_func, datasets, monkeypatch, nrows=2) == (2, 2)
+    assert _grid_of(plot_func, datasets, monkeypatch, nrows=4) == (4, 1)
+    assert _grid_of(plot_func, datasets, monkeypatch, nrows=1) == (1, 4)
+
+
+def test_explicit_grid_overrides_the_semantic_layout(multiband_uint16, monkeypatch):
+    """Datasets x bands is the default, not a rule the caller cannot escape."""
+    two_datasets = [multiband_uint16, multiband_uint16]
+
+    default = _grid_of(plot_band_array, two_datasets, monkeypatch, bands=[1, 2, 3])
+    forced = _grid_of(plot_band_array, two_datasets, monkeypatch, bands=[1, 2, 3], ncols=3)
+
+    assert default == (3, 2)  # rows are bands, columns are datasets
+    assert forced == (2, 3)  # six panels reflowed into the requested width
 
 
 @pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)

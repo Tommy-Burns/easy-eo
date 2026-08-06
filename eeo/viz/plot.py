@@ -568,9 +568,12 @@ def plot_band_array(
 ) -> None:
     """Plot raster bands as arrays in row/column (pixel) space.
 
-    Draws one subplot per band, with bands down the rows and datasets across
-    the columns. Axes are array indices, not spatial coordinates; use
-    ``plot_raster`` for CRS-aware axes.
+    Draws one subplot per band, arranged near-square by default — four bands
+    render 2x2 — or into the grid ``nrows``/``ncols`` ask for. Several datasets
+    *and* several bands instead keep bands down the rows and datasets across
+    the columns, so band *i* of one dataset sits beside band *i* of the next.
+    Axes are array indices, not spatial coordinates; use ``plot_raster`` for
+    CRS-aware axes.
 
     Parameters
     ----------
@@ -694,8 +697,11 @@ def plot_raster(
 ) -> None:
     """Plot raster bands in spatial (CRS-aware) coordinates.
 
-    Draws one subplot per band using the raster's transform, with bands down
-    the rows and datasets across the columns. Use ``plot_band_array`` for
+    Draws one subplot per band using the raster's transform, arranged
+    near-square by default — four bands render 2x2 — or into the grid
+    ``nrows``/``ncols`` ask for. Several datasets *and* several bands instead
+    keep bands down the rows and datasets across the columns, so band *i* of
+    one dataset sits beside band *i* of the next. Use ``plot_band_array`` for
     plain array-index axes.
 
     Parameters
@@ -818,8 +824,10 @@ def plot_histogram(
 ) -> None:
     """Plot per-band value histograms.
 
-    Draws one histogram per band, with bands down the rows and datasets
-    across the columns.
+    Draws one histogram per band, arranged near-square by default — four bands
+    render 2x2 — or into the grid ``nrows``/``ncols`` ask for. Several datasets
+    *and* several bands instead keep bands down the rows and datasets across
+    the columns, so band *i* of one dataset sits beside band *i* of the next.
 
     Parameters
     ----------
