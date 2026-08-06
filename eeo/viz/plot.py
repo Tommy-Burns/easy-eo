@@ -70,6 +70,63 @@ def _band_label(ds: EEORasterDataset, band: int) -> str:
     return f"Band {band}" if name is None else f"Band {band} ({name})"
 
 
+def _auto_grid(n_panels: int) -> tuple[int, int]:
+    """Choose a near-square grid for ``n_panels``, never taller than it is wide.
+
+    ``nrows = floor(sqrt(n))`` with the columns derived from it. Taking the
+    floor keeps the grid landscape-shaped, which suits both the default figure
+    sizes and the screens these are read on, and it wastes at most one row:
+    2 and 3 panels stay a single row, 4 becomes 2x2, 6 becomes 2x3, 8 becomes
+    2x4, 9 becomes 3x3.
+
+    Parameters
+    ----------
+    n_panels : int
+        Number of subplots to place.
+
+    Returns
+    -------
+    tuple of int
+        ``(nrows, ncols)``, large enough to hold ``n_panels``.
+    """
+    rows = max(1, int(n_panels**0.5))
+    return rows, -(-n_panels // rows)
+
+
+def _resolve_figsize(
+    figsize: tuple[int, int] | None, base: tuple[int, int], rows: int, cols: int
+) -> tuple[float, float]:
+    """Resolve the figure size for a grid, honouring an explicit request.
+
+    The per-function defaults were chosen for a single row of panels, and reuse
+    them unchanged for a 2x2 block leaves square maps squeezed into wide, short
+    cells. When the caller expresses no preference and the grid has more than
+    one row, the width is kept and the height set to make the cells roughly
+    square.
+
+    Parameters
+    ----------
+    figsize : tuple of int or None
+        The caller's request; None asks for the derived size.
+    base : tuple of int
+        The function's own default, treated as the size of a single row.
+    rows, cols : int
+        Grid shape.
+
+    Returns
+    -------
+    tuple of float
+        Figure size in inches: ``figsize`` when given, ``base`` for a
+        single-row grid, else the width of ``base`` with a derived height.
+    """
+    if figsize is not None:
+        return figsize
+    if rows == 1:
+        return base
+    width = base[0]
+    return width, width * rows / cols
+
+
 def _grid_shape(n_panels: int, nrows: int | None, ncols: int | None) -> tuple[int, int]:
     """Resolve a requested grid to concrete ``(nrows, ncols)``.
 
@@ -114,16 +171,22 @@ def _panel_grid(
     bands_list: Sequence[int],
     nrows: int | None,
     ncols: int | None,
-    figsize: tuple[int, int],
+    figsize: tuple[int, int] | None,
+    base_figsize: tuple[int, int],
     **subplots_kwargs,
 ):
     """Build the subplot grid and pair each axes with the panel it draws.
 
-    With no grid requested, keeps the semantic layout — bands down the rows,
-    datasets across the columns — which is what aligns band *i* of one dataset
-    beside band *i* of the next. A requested grid flows the panels row-major
-    instead, dataset-major within that (every band of the first dataset, then
-    every band of the second), and switches off any leftover axes.
+    Several datasets *and* several bands keep the semantic layout — bands down
+    the rows, datasets across the columns — which is what aligns band *i* of
+    one dataset beside band *i* of the next; reflowing that would destroy the
+    comparison the figure exists to make. Anything else is one flat run of
+    panels, laid out near-square by default (``_auto_grid``) so a four-band
+    raster is a 2x2 block rather than a four-storey strip.
+
+    A requested grid overrides the default, flowing the panels row-major and
+    dataset-major within that (every band of the first dataset, then every band
+    of the second), and switches off any leftover axes.
 
     Parameters
     ----------
@@ -132,44 +195,52 @@ def _panel_grid(
     bands_list : sequence of int
         1-based band indices, applied to every dataset.
     nrows, ncols : int or None
-        Requested grid; both None keeps the semantic layout.
-    figsize : tuple of int
-        Figure size in inches.
+        Requested grid; both None takes the default layout.
+    figsize : tuple of int or None
+        Requested figure size; None derives one (see ``_resolve_figsize``).
+    base_figsize : tuple of int
+        The calling function's own default, as the size for a single row.
     **subplots_kwargs
         Extra keyword arguments for ``matplotlib.pyplot.subplots``.
 
     Returns
     -------
-    tuple of (matplotlib.figure.Figure, list)
-        The figure, and a list of ``(axes, dataset, band)`` triples in draw
-        order.
+    tuple of (matplotlib.figure.Figure, list, tuple of float)
+        The figure, a list of ``(axes, dataset, band)`` triples in draw order,
+        and the figure size used — which callers need for the display budget.
 
     Raises
     ------
     ValidationError
         If the requested grid is invalid or too small (see ``_grid_shape``).
     """
-    if nrows is None and ncols is None:
-        fig, axes = plt.subplots(
-            len(bands_list), len(datasets), squeeze=False, figsize=figsize, **subplots_kwargs
-        )
+    two_dimensional = len(datasets) > 1 and len(bands_list) > 1
+    if nrows is None and ncols is None and two_dimensional:
+        rows, cols = len(bands_list), len(datasets)
+        size = _resolve_figsize(figsize, base_figsize, rows, cols)
+        fig, axes = plt.subplots(rows, cols, squeeze=False, figsize=size, **subplots_kwargs)
         panels = [
             (axes[row, col], ds, band)
             for col, ds in enumerate(datasets)
             for row, band in enumerate(bands_list)
         ]
-        return fig, panels
+        return fig, panels, size
 
     pairs = [(ds, band) for ds in datasets for band in bands_list]
-    rows, cols = _grid_shape(len(pairs), nrows, ncols)
-    fig, axes = plt.subplots(rows, cols, squeeze=False, figsize=figsize, **subplots_kwargs)
+    if nrows is None and ncols is None:
+        rows, cols = _auto_grid(len(pairs))
+    else:
+        rows, cols = _grid_shape(len(pairs), nrows, ncols)
+
+    size = _resolve_figsize(figsize, base_figsize, rows, cols)
+    fig, axes = plt.subplots(rows, cols, squeeze=False, figsize=size, **subplots_kwargs)
 
     flat = axes.ravel()
     for ax in flat[len(pairs) :]:
         ax.axis("off")
     # strict=False: the grid may hold more cells than panels, and the extras
     # were just switched off above.
-    return fig, [(ax, ds, band) for ax, (ds, band) in zip(flat, pairs, strict=False)]
+    return fig, [(ax, ds, band) for ax, (ds, band) in zip(flat, pairs, strict=False)], size
 
 
 def _mask_nodata_for_display(ds: EEORasterDataset, array):
@@ -483,7 +554,7 @@ def plot_band_array(
     bands: int | str | Sequence[int | str] | None = None,
     *,
     cmap: str = "gray",
-    figsize: tuple[int, int] = (8, 8),
+    figsize: tuple[int, int] | None = None,
     nrows: int | None = None,
     ncols: int | None = None,
     stretch: bool = True,
@@ -510,8 +581,10 @@ def plot_band_array(
         every band. A sequence may mix indices and names.
     cmap : str, default "gray"
         Matplotlib colormap.
-    figsize : tuple of int, default (8, 8)
-        Figure size in inches.
+    figsize : tuple of int or None, default None
+        Figure size in inches. None derives one: (8, 8) for a single
+        row of panels, and for a taller grid the same width with the height
+        set to keep the cells roughly square.
     nrows : int or None, default None
         Number of subplot rows. With ``ncols`` also None, the layout is one
         row per band and one column per dataset; giving either reflows the
@@ -576,10 +649,10 @@ def plot_band_array(
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
 
-    fig, panels = _panel_grid(datasets, bands_list, nrows, ncols, figsize)
+    fig, panels, size = _panel_grid(datasets, bands_list, nrows, ncols, figsize, (8, 8))
 
     for ax, d, band in panels:
-        array, _ = _read_band_for_display(d, band, figsize)
+        array, _ = _read_band_for_display(d, band, size)
         draw_kwargs = imshow_kwargs
         if stretch:
             draw_kwargs = _with_stretch_limits(imshow_kwargs, array, pmin, pmax)
@@ -607,7 +680,7 @@ def plot_raster(
     bands: int | str | Sequence[int | str] | None = None,
     *,
     cmap: str = "gray",
-    figsize: tuple[int, int] = (10, 5),
+    figsize: tuple[int, int] | None = None,
     nrows: int | None = None,
     ncols: int | None = None,
     stretch: bool = True,
@@ -634,8 +707,10 @@ def plot_raster(
         every band. A sequence may mix indices and names.
     cmap : str, default "gray"
         Matplotlib colormap.
-    figsize : tuple of int, default (10, 5)
-        Figure size in inches.
+    figsize : tuple of int or None, default None
+        Figure size in inches. None derives one: (10, 5) for a single
+        row of panels, and for a taller grid the same width with the height
+        set to keep the cells roughly square.
     nrows : int or None, default None
         Number of subplot rows. With ``ncols`` also None, the layout is one
         row per band and one column per dataset; giving either reflows the
@@ -702,10 +777,10 @@ def plot_raster(
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
 
-    fig, panels = _panel_grid(datasets, bands_list, nrows, ncols, figsize)
+    fig, panels, size = _panel_grid(datasets, bands_list, nrows, ncols, figsize, (10, 5))
 
     for ax, d, band in panels:
-        array, transform = _read_band_for_display(d, band, figsize)
+        array, transform = _read_band_for_display(d, band, size)
         draw_kwargs = show_kwargs
         if stretch:
             draw_kwargs = _with_stretch_limits(show_kwargs, array, pmin, pmax)
@@ -733,7 +808,7 @@ def plot_histogram(
     bands: int | str | Sequence[int | str] | None = None,
     *,
     bins: int = 256,
-    figsize: tuple[int, int] = (10, 5),
+    figsize: tuple[int, int] | None = None,
     nrows: int | None = None,
     ncols: int | None = None,
     log: bool = False,
@@ -755,8 +830,10 @@ def plot_histogram(
         every band. A sequence may mix indices and names.
     bins : int, default 256
         Number of histogram bins.
-    figsize : tuple of int, default (10, 5)
-        Figure size in inches.
+    figsize : tuple of int or None, default None
+        Figure size in inches. None derives one: (10, 5) for a single
+        row of panels, and for a taller grid the same width with the height
+        set to keep the cells roughly square.
     nrows : int or None, default None
         Number of subplot rows. With ``ncols`` also None, the layout is one
         row per band and one column per dataset; giving either reflows the
@@ -800,7 +877,7 @@ def plot_histogram(
     datasets = _as_list(ds)
     bands_list = _normalize_bands(datasets[0], bands)
 
-    fig, panels = _panel_grid(datasets, bands_list, nrows, ncols, figsize)
+    fig, panels, _ = _panel_grid(datasets, bands_list, nrows, ncols, figsize, (10, 5))
 
     for ax, d, band in panels:
         data = _valid_values(_mask_nodata_for_display(d, d.get_band(band)))

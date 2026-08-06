@@ -16,6 +16,22 @@ are called out under a **Breaking** heading.
   no plotting function shares axes any more. A call passing `sharey=` raises
   `TypeError`; drop the argument, which was `False` by default.
 
+### Changed
+
+- `plot_band_array`, `plot_raster`, and `plot_histogram` now lay their subplots
+  out near-square by default rather than one per row. A 4-band raster renders
+  2x2 instead of a 4x1 strip, and four single-band datasets 2x2 instead of 1x4;
+  2 and 3 panels stay a single row, 6 become 2x3, 9 become 3x3. Several
+  datasets *and* several bands still get the semantic grid — rows are bands,
+  columns are datasets — because that is what puts band *i* of one dataset
+  beside band *i* of the next. **Existing multi-panel figures will change
+  shape**; pass `nrows`/`ncols` to pin a layout.
+- `figsize` on those three functions now defaults to `None`, meaning derived:
+  the previous default for a single row of panels, and for a taller grid the
+  same width with the height set to keep the cells roughly square (so a 2x2 of
+  square maps is not squeezed into a 10x5 letterbox). Passing a `figsize`
+  disables the derivation, and single-panel figures are unchanged.
+
 ### Added
 
 - `nrows` and `ncols` on `plot_band_array`, `plot_raster`, and `plot_histogram`,
@@ -24,9 +40,7 @@ are called out under a **Breaking** heading.
   4x1 strip and four single-band datasets in a 1x4 one; `ncols=2` now gives a
   2x2 block. Giving one of the two derives the other, leftover cells are
   hidden, and a grid too small for every panel raises `ValidationError` instead
-  of dropping bands. With neither set the layout is unchanged, keeping rows as
-  bands and columns as datasets so band *i* of one dataset stays beside band
-  *i* of the next.
+  of dropping bands. (The default layout changed too — see Changed above.)
 - `colorbar` and `colorbar_label` on `plot_band_array`, `plot_raster`, and
   `plot_raster_with_histogram`. `colorbar=True` draws a scale beside each
   subplot in the band's own values, so

@@ -24,12 +24,14 @@ from eeo.viz.plot import (
     _DISPLAY_OVERSAMPLE,
     _add_colorbar,
     _as_list,
+    _auto_grid,
     _display_out_shape,
     _grid_shape,
     _mask_nodata_for_display,
     _normalize_bands,
     _percentile_stretch,
     _read_band_for_display,
+    _resolve_figsize,
     _stretch_limits,
     _valid_values,
     _with_stretch_limits,
@@ -514,10 +516,106 @@ def test_grid_shape_rejects_non_positive_integers(bad):
         _grid_shape(4, None, bad)
 
 
+@pytest.mark.parametrize(
+    "n_panels, expected",
+    [
+        (1, (1, 1)),
+        (2, (1, 2)),  # small counts stay a single row
+        (3, (1, 3)),
+        (4, (2, 2)),  # the reported case
+        (5, (2, 3)),  # one blank cell
+        (6, (2, 3)),
+        (8, (2, 4)),
+        (9, (3, 3)),
+        (12, (3, 4)),
+    ],
+)
+def test_auto_grid_is_near_square_and_landscape(n_panels, expected):
+    """Never taller than wide, and never wasting more than one row."""
+    rows, cols = _auto_grid(n_panels)
+
+    assert (rows, cols) == expected
+    assert rows * cols >= n_panels  # every panel has a cell
+    assert rows <= cols  # landscape, matching the default figure sizes
+
+
 @pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
-def test_default_layout_is_unchanged(multiband_uint16, plot_func, monkeypatch):
-    """No grid requested keeps one row per band, one column per dataset."""
-    assert _grid_of(plot_func, multiband_uint16, monkeypatch) == (4, 1)
+def test_default_layout_is_near_square(multiband_uint16, plot_func, monkeypatch):
+    """A 4-band raster defaults to 2x2, not a 4x1 strip."""
+    assert _grid_of(plot_func, multiband_uint16, monkeypatch) == (2, 2)
+
+
+@pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
+def test_default_layout_for_a_list_of_datasets(single_band_float32, plot_func, monkeypatch):
+    """Four single-band datasets default to 2x2, not a 1x4 strip."""
+    datasets = [single_band_float32] * 4
+
+    assert _grid_of(plot_func, datasets, monkeypatch) == (2, 2)
+
+
+@pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
+def test_single_panel_layout_is_unchanged(single_band_float32, plot_func, monkeypatch):
+    assert _grid_of(plot_func, single_band_float32, monkeypatch) == (1, 1)
+
+
+def test_resolve_figsize_honours_an_explicit_request():
+    assert _resolve_figsize((3, 4), (10, 5), 2, 2) == (3, 4)
+
+
+def test_resolve_figsize_keeps_the_base_for_a_single_row():
+    """One row of panels is what the per-function defaults were chosen for."""
+    assert _resolve_figsize(None, (10, 5), 1, 3) == (10, 5)
+
+
+@pytest.mark.parametrize(
+    "base, rows, cols, expected",
+    [
+        ((10, 5), 2, 2, (10, 10)),  # square cells, not 2:1 letterboxes
+        ((8, 8), 2, 2, (8, 8)),  # already square: unchanged
+        ((10, 5), 2, 4, (10, 5)),  # a wide grid needs no extra height
+        ((10, 5), 3, 3, (10, 10)),
+    ],
+)
+def test_resolve_figsize_squares_up_taller_grids(base, rows, cols, expected):
+    width, height = _resolve_figsize(None, base, rows, cols)
+
+    assert (width, height) == expected
+    # Cell aspect ratio is 1:1 — the point of deriving at all.
+    assert (width / cols) / (height / rows) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
+def test_default_figsize_grows_with_the_grid(multiband_uint16, plot_func, monkeypatch):
+    """A 2x2 of square maps must not be squeezed into the single-row default."""
+    captured = {}
+    real_subplots = plt.subplots
+
+    def spy(*args, **kwargs):
+        captured["figsize"] = kwargs.get("figsize")
+        return real_subplots(*args, **kwargs)
+
+    monkeypatch.setattr(plt, "subplots", spy)
+
+    plot_func(multiband_uint16)  # 4 bands -> 2x2
+
+    width, height = captured["figsize"]
+    assert height > width / 2  # taller than the (w, w/2) single-row defaults
+
+
+@pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
+def test_explicit_figsize_is_never_overridden(multiband_uint16, plot_func, monkeypatch):
+    captured = {}
+    real_subplots = plt.subplots
+
+    def spy(*args, **kwargs):
+        captured["figsize"] = kwargs.get("figsize")
+        return real_subplots(*args, **kwargs)
+
+    monkeypatch.setattr(plt, "subplots", spy)
+
+    plot_func(multiband_uint16, figsize=(7, 3))
+
+    assert captured["figsize"] == (7, 3)
 
 
 @pytest.mark.parametrize("plot_func", GRID_FUNCS, ids=GRID_IDS)
