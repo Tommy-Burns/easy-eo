@@ -1,7 +1,7 @@
 # Easy-EO
 
 <p align="center">
-  <img src=".github/assets/eeo_logo.png" alt="Easy-EO logo" width="200">
+  <img src="https://raw.githubusercontent.com/Tommy-Burns/easy-eo/main/.github/assets/eeo_logo.png" alt="Easy-EO logo" width="200">
 </p>
 
 [![CI](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
@@ -55,7 +55,7 @@ The `stac_search` needs the STAC extra - `pip install "easy-eo[stac]"`, or the [
 | **Visualization** | Single bands, RGB composites, histograms, and map-plus-histogram views, read at display resolution | [Visualization](https://easy-eo.readthedocs.io/en/latest/user_guide/visualization.html) |
 | **Predictable nodata & dtype** | One written-down contract every operation follows: mask before compute, nodata stays contagious, fractional results are float32 | [Nodata & dtype](https://easy-eo.readthedocs.io/en/latest/user_guide/nodata_and_dtype.html) |
 | **Ecosystem interop** | `to_xarray()` / `from_xarray()` in both directions; NumPy and Rasterio backends behind one interface | [xarray interop](https://easy-eo.readthedocs.io/en/latest/user_guide/xarray_interop.html) · [Backends](https://easy-eo.readthedocs.io/en/latest/backends.html) |
-| **Typed and tested** | Ships `py.typed`, 830+ tests, ~95% coverage, checked on Python 3.10-3.13 across Linux, macOS and Windows | [Contributing](CONTRIBUTING.md) |
+| **Typed and tested** | Ships `py.typed`, 950+ tests, ~95% coverage, checked on Python 3.10-3.14 across Linux, macOS and Windows | [Contributing](https://github.com/Tommy-Burns/easy-eo/blob/main/CONTRIBUTING.md) |
 
 ---
 
@@ -217,19 +217,19 @@ ndvi.plot_raster()
 
 ## Tutorials
 
-Sixteen runnable notebooks live in [`examples/`](examples/README.md), from first
+Sixteen runnable notebooks live in [`examples/`](https://github.com/Tommy-Burns/easy-eo/blob/main/examples/README.md), from first
 install through to complete analyses (flood mapping, drought stress, land cover,
 terrain). Each one opens in Colab with no local setup — the first cell installs
 Easy-EO when it detects Colab:
 
 | | |
 | --- | --- |
-| [Quickstart: NDVI](examples/00_getting_started/02_quickstart_ndvi.ipynb) — open a scene, compute an index, plot it | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/00_getting_started/02_quickstart_ndvi.ipynb) |
-| [Search and load from STAC](examples/02_data_access/02_stac_search_and_load.ipynb) — find real scenes, read them over HTTP | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/02_data_access/02_stac_search_and_load.ipynb) |
-| [Flood mapping with NDWI](examples/03_real_world/01_flood_mapping_ndwi.ipynb) — Pakistan 2022, before/after, area affected | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/03_real_world/01_flood_mapping_ndwi.ipynb) |
+| [Quickstart: NDVI](https://github.com/Tommy-Burns/easy-eo/blob/main/examples/00_getting_started/02_quickstart_ndvi.ipynb) — open a scene, compute an index, plot it | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/00_getting_started/02_quickstart_ndvi.ipynb) |
+| [Search and load from STAC](https://github.com/Tommy-Burns/easy-eo/blob/main/examples/02_data_access/02_stac_search_and_load.ipynb) — find real scenes, read them over HTTP | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/02_data_access/02_stac_search_and_load.ipynb) |
+| [Flood mapping with NDWI](https://github.com/Tommy-Burns/easy-eo/blob/main/examples/03_real_world/01_flood_mapping_ndwi.ipynb) — Pakistan 2022, before/after, area affected | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/03_real_world/01_flood_mapping_ndwi.ipynb) |
 
 The full index, including what each notebook covers, is in
-[`examples/README.md`](examples/README.md) and in the
+[`examples/README.md`](https://github.com/Tommy-Burns/easy-eo/blob/main/examples/README.md) and in the
 [tutorials page](https://easy-eo.readthedocs.io/en/latest/tutorials.html) of the
 documentation.
 
@@ -243,11 +243,11 @@ with `python scripts/build_gallery.py`.
 
 | | |
 | --- | --- |
-| <img src=".github/assets/gallery/composite_true_colour.jpg" alt="True colour composite of a Sentinel-2 scene"> | <img src=".github/assets/gallery/composite_false_colour.jpg" alt="False colour composite, vegetation in red"> |
+| <img src="https://raw.githubusercontent.com/Tommy-Burns/easy-eo/main/.github/assets/gallery/composite_true_colour.jpg" alt="True colour composite of a Sentinel-2 scene"> | <img src="https://raw.githubusercontent.com/Tommy-Burns/easy-eo/main/.github/assets/gallery/composite_false_colour.jpg" alt="False colour composite, vegetation in red"> |
 | `scene.plot_composite(["red", "green", "blue"])` | `scene.plot_composite(["nir", "red", "green"])` |
-| <img src=".github/assets/gallery/index_ndvi.jpg" alt="NDVI map on a red-yellow-green colour scale"> | <img src=".github/assets/gallery/dem_terrain.jpg" alt="Copernicus DEM elevation map"> |
+| <img src="https://raw.githubusercontent.com/Tommy-Burns/easy-eo/main/.github/assets/gallery/index_ndvi.jpg" alt="NDVI map on a red-yellow-green colour scale"> | <img src="https://raw.githubusercontent.com/Tommy-Burns/easy-eo/main/.github/assets/gallery/dem_terrain.jpg" alt="Copernicus DEM elevation map"> |
 | `scene.ndvi(red="red", nir="nir", name="NDVI").plot_raster(cmap="RdYlGn")` | `dem.plot_raster(cmap="Spectral_r")` - the same call on a DEM |
-| <img src=".github/assets/gallery/histogram_bands.png" alt="Value distribution of each of the four bands"> | <img src=".github/assets/gallery/clip_ndvi_histogram.png" alt="NDVI clipped to a hexagonal boundary beside its histogram"> |
+| <img src="https://raw.githubusercontent.com/Tommy-Burns/easy-eo/main/.github/assets/gallery/histogram_bands.png" alt="Value distribution of each of the four bands"> | <img src="https://raw.githubusercontent.com/Tommy-Burns/easy-eo/main/.github/assets/gallery/clip_ndvi_histogram.png" alt="NDVI clipped to a hexagonal boundary beside its histogram"> |
 | `scene.plot_histogram()` - every band at once | `clipped.plot_raster_with_histogram(cmap="RdYlGn")` |
 
 Bands are addressed by name throughout (`"red"`, `"nir"`) because the sample
