@@ -9,44 +9,14 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-07
+
 ### Breaking
 
 - `plot_raster_with_histogram` no longer takes `sharey`. Every histogram panel
   now has its own y-axis, so a quiet band is not flattened by a busy one, and
   no plotting function shares axes any more. A call passing `sharey=` raises
   `TypeError`; drop the argument, which was `False` by default.
-
-### Changed
-
-- `plot_band_array`, `plot_raster`, and `plot_histogram` now lay their subplots
-  out near-square by default rather than one per row. A 4-band raster renders
-  2x2 instead of a 4x1 strip, and four single-band datasets 2x2 instead of 1x4;
-  2 and 3 panels stay a single row, 6 become 2x3, 9 become 3x3. Several
-  datasets *and* several bands still get the semantic grid — rows are bands,
-  columns are datasets — because that is what puts band *i* of one dataset
-  beside band *i* of the next. **Existing multi-panel figures will change
-  shape**; pass `nrows`/`ncols` to pin a layout.
-- `figsize` on those three functions now defaults to `None`, meaning derived:
-  the previous default for a single row of panels, and for a taller grid the
-  same width with the height set to keep the cells roughly square (so a 2x2 of
-  square maps is not squeezed into a 10x5 letterbox). Passing a `figsize`
-  disables the derivation, and single-panel figures are unchanged.
-
-### Changed
-
-- `MissingDependencyError` now names an install command that can actually be
-  run. It previously ended every message with `pip install 'easy-eo[<extra>]'`,
-  which a conda user cannot follow: conda has no extras mechanism, and brackets
-  already mean key-value constraints in its match syntax, so
-  `conda install "easy-eo[stac]"` does not even parse. When conda manages the
-  Easy-EO install the message now gives
-  `conda install -c conda-forge pystac-client planetary-computer` instead, and
-  says not to pip install an extra into a conda-managed environment — that
-  combination works at first and breaks on a later `conda update`, and the old
-  message was what recommended it. Detection reads conda's own record of the
-  `easy-eo` package, so Easy-EO pip-installed into a conda environment still
-  gets the pip command; if the environment cannot be inspected, both commands
-  are shown. Existing pip installs see no change.
 
 ### Added
 
@@ -75,6 +45,88 @@ are called out under a **Breaking** heading.
   Arrowheads mark the ends where the stretch clips data, and each subplot gets
   its own bar because bands in a grid carry unrelated ranges. `plot_composite`
   is excluded: an RGB composite has no single scalar scale to label.
+
+### Changed
+
+- `plot_band_array`, `plot_raster`, and `plot_histogram` now lay their subplots
+  out near-square by default rather than one per row. A 4-band raster renders
+  2x2 instead of a 4x1 strip, and four single-band datasets 2x2 instead of 1x4;
+  2 and 3 panels stay a single row, 6 become 2x3, 9 become 3x3. Several
+  datasets *and* several bands still get the semantic grid — rows are bands,
+  columns are datasets — because that is what puts band *i* of one dataset
+  beside band *i* of the next. **Existing multi-panel figures will change
+  shape**; pass `nrows`/`ncols` to pin a layout.
+- `figsize` on those three functions now defaults to `None`, meaning derived:
+  the previous default for a single row of panels, and for a taller grid the
+  same width with the height set to keep the cells roughly square (so a 2x2 of
+  square maps is not squeezed into a 10x5 letterbox). Passing a `figsize`
+  disables the derivation, and single-panel figures are unchanged.
+- `MissingDependencyError` now names an install command that can actually be
+  run. It previously ended every message with `pip install 'easy-eo[<extra>]'`,
+  which a conda user cannot follow: conda has no extras mechanism, and brackets
+  already mean key-value constraints in its match syntax, so
+  `conda install "easy-eo[stac]"` does not even parse. When conda manages the
+  Easy-EO install the message now gives
+  `conda install -c conda-forge pystac-client planetary-computer` instead, and
+  says not to pip install an extra into a conda-managed environment — that
+  combination works at first and breaks on a later `conda update`, and the old
+  message was what recommended it. Detection reads conda's own record of the
+  `easy-eo` package, so Easy-EO pip-installed into a conda environment still
+  gets the pip command; if the environment cannot be inspected, both commands
+  are shown. Existing pip installs see no change.
+- The visualization notebook (`examples/01_fundamentals/07_visualization.ipynb`)
+  and the spectral-indices guide now teach `colorbar=True`, including how a
+  band's name becomes the label. The hand-rolled Matplotlib figures elsewhere
+  in the docs are unchanged: they overlay two layers or give each panel its own
+  colormap, neither of which the built-in plots do, so they still demonstrate
+  the escape hatch rather than a gap.
+- `plot_band_array`, `plot_raster`, and `plot_raster_with_histogram` now apply
+  the percentile stretch as Matplotlib display limits (`vmin`/`vmax`) instead
+  of rescaling the band to `[0, 1]`. The rendered figure is unchanged —
+  verified pixel-for-pixel across float, integer, outlier-heavy, and partly-NaN
+  bands — but the plotted array keeps its own units, which is what lets a
+  colorbar report real values. Two consequences worth noting:
+  - An explicit `vmin`/`vmax` passed through `**imshow_kwargs` / `**show_kwargs`
+    now takes precedence over the stretch. Previously such a value was silently
+    ineffective, the data having already been rescaled to `[0, 1]`.
+  - `plot_raster_with_histogram(stretch=True)` previously binned the *stretched*
+    values, putting the histogram on a 0-1 axis; it now always bins the band's
+    raw values while the stretch scales the image panel alone.
+
+- Added the `Programming Language :: Python :: 3.13` classifier. CI has tested
+  3.13 since it was added to the matrix, but the metadata stopped at 3.12, so
+  PyPI (and the README's version badge) under-reported supported versions.
+- **Python 3.14 is now tested and supported**, on Linux, macOS and Windows.
+  This was not a speculative addition: conda-forge already resolves 3.14 by
+  default for `conda install easy-eo`, so users were running on it before the
+  project claimed it. The CI matrix now covers 3.10–3.14 (15 jobs) and the
+  classifier follows. Note that on 3.14 the full test suite intermittently
+  prints a few empty `Error in sys.excepthook:` blocks on stderr after the
+  summary; every test passes and the exit code is 0. It is a CPython 3.14
+  interpreter-finalization artifact rather than an Easy-EO one — 3.13 with an
+  identical dependency set is clean — and it affects the test suite, not the
+  library.
+- README rewritten for positioning: a feature matrix with per-topic guide
+  links replaces the bullet list, and installation now covers the optional
+  extras and the conda-forge status.
+- Every public path parameter is now typed `str | os.PathLike` (`load_raster`,
+  `save_raster`, `from_path`, `mosaic(save_path=...)`, and the `save_path` of
+  each plotting function), exported as `eeo.core.types.StrPath`. These already
+  accepted path-like values at runtime but were annotated `str`, so passing a
+  `pathlib.Path` was a type error for users type-checking against the shipped
+  stubs.
+
+- README now opens with a runnable hero example — STAC search, NDVI, plot —
+  so the library is visible working before any prose.
+- README gained a "What's next" section covering block-wise execution, the lazy
+  backend, time series, conda-forge, and citable releases, plus the xarray
+  interop route for work that exceeds one machine's memory today.
+- README gained a gallery of six figures - composites, an index map, a DEM,
+  and histograms - each rendered by an Easy-EO call on the sample dataset and
+  regenerable with `scripts/build_gallery.py`.
+- README gained a "Before and after" section comparing the same
+  clip-to-vector-AOI → NDVI → save task in raw Rasterio/GeoPandas/NumPy and in
+  Easy-EO; both versions were executed and produce byte-identical output.
 
 ### Fixed
 
@@ -114,52 +166,6 @@ are called out under a **Breaking** heading.
   that rendered as the colormap's low end; nodata now stays blank. An
   all-nodata band, whose percentiles are NaN, likewise falls back to
   Matplotlib's autoscaling rather than being handed NaN display limits.
-
-### Changed
-
-- The visualization notebook (`examples/01_fundamentals/07_visualization.ipynb`)
-  and the spectral-indices guide now teach `colorbar=True`, including how a
-  band's name becomes the label. The hand-rolled Matplotlib figures elsewhere
-  in the docs are unchanged: they overlay two layers or give each panel its own
-  colormap, neither of which the built-in plots do, so they still demonstrate
-  the escape hatch rather than a gap.
-- `plot_band_array`, `plot_raster`, and `plot_raster_with_histogram` now apply
-  the percentile stretch as Matplotlib display limits (`vmin`/`vmax`) instead
-  of rescaling the band to `[0, 1]`. The rendered figure is unchanged —
-  verified pixel-for-pixel across float, integer, outlier-heavy, and partly-NaN
-  bands — but the plotted array keeps its own units, which is what lets a
-  colorbar report real values. Two consequences worth noting:
-  - An explicit `vmin`/`vmax` passed through `**imshow_kwargs` / `**show_kwargs`
-    now takes precedence over the stretch. Previously such a value was silently
-    ineffective, the data having already been rescaled to `[0, 1]`.
-  - `plot_raster_with_histogram(stretch=True)` previously binned the *stretched*
-    values, putting the histogram on a 0-1 axis; it now always bins the band's
-    raw values while the stretch scales the image panel alone.
-
-- Added the `Programming Language :: Python :: 3.13` classifier. CI has tested
-  3.13 since it was added to the matrix, but the metadata stopped at 3.12, so
-  PyPI (and the README's version badge) under-reported supported versions.
-- README rewritten for positioning: a feature matrix with per-topic guide
-  links replaces the bullet list, and installation now covers the optional
-  extras and the conda-forge status.
-- Every public path parameter is now typed `str | os.PathLike` (`load_raster`,
-  `save_raster`, `from_path`, `mosaic(save_path=...)`, and the `save_path` of
-  each plotting function), exported as `eeo.core.types.StrPath`. These already
-  accepted path-like values at runtime but were annotated `str`, so passing a
-  `pathlib.Path` was a type error for users type-checking against the shipped
-  stubs.
-
-- README now opens with a runnable hero example — STAC search, NDVI, plot —
-  so the library is visible working before any prose.
-- README gained a "What's next" section covering block-wise execution, the lazy
-  backend, time series, conda-forge, and citable releases, plus the xarray
-  interop route for work that exceeds one machine's memory today.
-- README gained a gallery of six figures - composites, an index map, a DEM,
-  and histograms - each rendered by an Easy-EO call on the sample dataset and
-  regenerable with `scripts/build_gallery.py`.
-- README gained a "Before and after" section comparing the same
-  clip-to-vector-AOI → NDVI → save task in raw Rasterio/GeoPandas/NumPy and in
-  Easy-EO; both versions were executed and produce byte-identical output.
 
 ## [0.2.0] - 2026-07-29
 
@@ -291,6 +297,7 @@ Initial public beta release.
 - Visualization: `plot_raster`, `plot_composite`,
   `plot_raster_with_histogram`, `plot_band_array`.
 
-[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.1.0b1...v0.2.0
 [0.1.0b1]: https://github.com/Tommy-Burns/easy-eo/releases/tag/v0.1.0b1
