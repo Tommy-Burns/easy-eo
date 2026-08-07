@@ -26,6 +26,18 @@ version ranges:
 - ``numpy>=1.26,<3``
 - ``matplotlib>=3.8``
 
+Install from either package manager:
+
+.. code-block:: bash
+
+    pip install easy-eo
+
+.. code-block:: bash
+
+    conda install -c conda-forge easy-eo
+
+Whichever you choose, stay with it — see :ref:`extras-package-manager` below.
+
 ----
 
 Optional extras
@@ -42,7 +54,7 @@ Several extras can be installed at once: ``pip install "easy-eo[stac,xarray]"``.
 
 .. list-table::
     :header-rows: 1
-    :widths: 15 40 45
+    :widths: 12 30 58
 
     * - Extra
       - Installs
@@ -58,9 +70,49 @@ Several extras can be installed at once: ``pip install "easy-eo[stac,xarray]"``.
         georeferenced :class:`xarray.DataArray`, to hand data to the wider
         xarray ecosystem and back — see :doc:`user_guide/xarray_interop`
 
+.. _extras-package-manager:
+
+Extras with conda
+-----------------
+
+conda has no concept of extras. ``[project.optional-dependencies]`` becomes
+wheel metadata that pip understands, whereas a conda package carries one flat
+dependency list with nothing to opt into — and brackets already mean something
+else in conda's own grammar (key-value constraints such as
+``easy-eo[channel=conda-forge]``), so ``conda install "easy-eo[stac]"`` does not
+merely fail to find the extra, it fails to parse.
+
+Install the same packages by name instead:
+
+.. list-table::
+    :header-rows: 1
+    :widths: 12 44 44
+
+    * - Extra
+      - pip
+      - conda
+    * - ``stac``
+      - ``pip install "easy-eo[stac]"``
+      - ``conda install -c conda-forge easy-eo pystac-client planetary-computer``
+    * - ``xarray``
+      - ``pip install "easy-eo[xarray]"``
+      - ``conda install -c conda-forge easy-eo xarray rioxarray``
+
+.. warning::
+
+    Install Easy-EO and its extras with the **same** package manager. A conda
+    package's files are tracked by conda's solver; pip-installed files are not.
+    So pip-installing an extra into a conda-managed environment works at first
+    and breaks later: a subsequent ``conda install`` or ``conda update`` can
+    overwrite those files, or resolve a second copy of a transitive dependency
+    that conda already manages (``pystac-client`` alone brings ``pystac``,
+    ``requests`` and ``python-dateutil``). Every extra dependency listed above
+    is on conda-forge, so mixing is never necessary.
+
 Using a feature without its extra installed raises
 :class:`~eeo.MissingDependencyError` — an ``ImportError`` whose message names
-the exact install command:
+the exact install command for the package manager Easy-EO was installed with.
+On a pip install:
 
 .. code-block:: text
 
@@ -68,21 +120,48 @@ the exact install command:
     package, which is not installed. Install the 'stac' extra with:
     pip install 'easy-eo[stac]'
 
+and on a conda install, where that bracket syntax could not be run at all:
+
+.. code-block:: text
+
+    MissingDependencyError: STAC search requires the optional 'pystac_client'
+    package, which is not installed. Easy-EO was installed by conda, which has
+    no equivalent of pip's extras, so install the 'stac' extra's packages by
+    name: conda install -c conda-forge pystac-client planetary-computer. Do not
+    pip install them into a conda-managed environment: conda does not track
+    pip-installed files, so a later conda install or update can overwrite them.
+
+Which one you see is decided by conda's own record of the ``easy-eo`` package,
+not by the kind of environment: Easy-EO pip-installed into a conda environment
+still gets the pip command, which is the correct advice for it.
+
 ``eeo.show_versions()`` reports which extras are present, which is worth
 pasting into any bug report.
 
 ----
 
-It is recommended to install `easy-eo` in a `conda` environment:
+Installing into a fresh environment
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Easy-EO and its geospatial dependencies are worth isolating from other
+projects. With conda, create the environment and install from conda-forge:
 
 .. code-block:: bash
 
-    conda create -n env_name python=3.10
-    conda activate env_name
+    conda create -n eeo python=3.11
+    conda activate eeo
+    conda install -c conda-forge easy-eo
+
+With pip, a virtual environment does the same job:
+
+.. code-block:: bash
+
+    python -m venv .venv
+    source .venv/bin/activate     # Windows: .venv\Scripts\activate
     pip install easy-eo
 
-This will install **Easy-EO** along with all required dependencies. Make sure your
-Python environment is version **3.10 or above**.
+Either way the required dependencies come with it. Make sure the environment's
+Python is **3.10 or above**.
 
 ----
 
