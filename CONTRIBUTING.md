@@ -296,6 +296,136 @@ The local documentation can then be accessed at `docs/build`. This local build f
    3. Any known limitations
    4. Small, focused pull requests are preferred.
 
+## Releasing (section for easy-eo maintainers)
+
+A release lands in two places. **PyPI** is fully automated from a tag.
+**conda-forge** is a separate repository that does not read this one, and it
+needs a review step you cannot skip safely — see step 3.
+
+### 1. Prepare the release here
+
+1. **Pick the version.** While the project is pre-1.0, anything under a
+   `### Breaking` heading in `CHANGELOG.md` means a **minor** bump
+   (`0.2.x` → `0.3.0`), not a patch. Patch releases are for changes with no
+   Breaking entries.
+2. **Bump it in both places** — they are not linked, and nothing fails if they
+   drift:
+   - `version` in `pyproject.toml` (what PyPI and conda build from)
+   - `__version__` in `eeo/__init__.py` (what `eeo.show_versions()` prints, so
+     a stale value quietly misreports in every bug report)
+3. **Close the changelog section.** Rename `## [Unreleased]` to
+   `## [X.Y.Z] - YYYY-MM-DD` and open a fresh, empty `## [Unreleased]` above it.
+4. **Run the full checks** — `pytest`, `ruff check`, `ruff format --check`,
+   `mypy`, and a docs build under `-W`.
+5. **Tag and push:**
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+`release.yml` takes it from there: it builds the sdist and wheel, runs
+`twine check`, publishes to PyPI via trusted publishing (no API token), and
+triggers a Read the Docs build. Nothing conda-specific happens here.
+
+### 2. conda-forge follows on its own
+
+The conda package is built from a recipe in
+[`conda-forge/easy-eo-feedstock`](https://github.com/conda-forge/easy-eo-feedstock),
+a separate repository. conda users never see this one — they get an artifact
+built from that recipe.
+
+`regro-cf-autotick-bot` watches PyPI and opens a PR on the feedstock, usually
+within a few hours, updating three lines of `recipe/recipe.yaml`: `version`,
+`sha256`, and `build.number` back to `0`. Check its CI is green and merge —
+maintainers can merge their own feedstock PRs, and the upload to the
+conda-forge channel happens automatically. The package appears on anaconda.org
+within roughly 15–60 minutes, plus another 10–20 for CDN sync before
+`conda install` resolves it.
+
+If no PR has appeared after a day, comment on the feedstock:
+
+```
+@conda-forge-admin, please update version
+```
+
+### 3. If the release changed dependencies, edit the bot's PR
+
+**The bot never reads `pyproject.toml`.** It compares sdist hashes. So for a
+release that adds, removes, or re-bounds a dependency, its PR builds a package
+carrying the *old* dependency list — and `conda install easy-eo` then produces
+a broken environment, with nothing warning you. This is the reason to read the
+bot's PR rather than rubber-stamp it. Edit `recipe/recipe.yaml` in that PR
+before merging:
+
+| Changed in `pyproject.toml`                     | Edit in `recipe/recipe.yaml`      |
+| ----------------------------------------------- | --------------------------------- |
+| `dependencies` — added, removed, rebounded      | `requirements.run`                |
+| `requires-python`                               | `python_min` usage in `host`/`run` |
+| `[build-system] requires`                       | `requirements.host`               |
+| A new public import worth smoke-testing         | `tests.python.imports`            |
+| `[project.optional-dependencies]`               | nothing — conda has no extras     |
+
+Two things to know before editing that list:
+
+- **conda names are not always PyPI names.** The recipe depends on
+  `matplotlib-base`, *not* `matplotlib`: the plain package pulls in Qt and a
+  GUI stack a library has no use for. Keep it that way.
+- **Check a new dependency exists on conda-forge at all**, or the release
+  cannot ship there:
+  ```bash
+  curl -s https://api.anaconda.org/package/conda-forge/<name> | head -c 300
+  ```
+- **`requires-python` is not pinned locally.** The recipe uses
+  `${{ python_min }}`, which comes from conda-forge's global configuration, and
+  today that matches our `>=3.10`. If you ever raise the minimum ahead of
+  conda-forge's global bump, set it explicitly in the recipe — otherwise
+  conda-forge keeps building for a Python the code no longer supports. Note the
+  ceiling is unpinned in both directions: with no upper bound in
+  `requires-python`, conda will resolve the newest Python available, which can
+  be one the CI matrix does not test.
+
+Optional extras need no recipe change — conda has no extras mechanism, so
+their packages are documented as ordinary installs instead (see
+[Getting Started](https://easy-eo.readthedocs.io/en/latest/getting_started.html)).
+What a *new* extra does need is an entry in `_CONDA_PACKAGES` in
+`eeo/_optional.py`, so the missing-dependency error can name a command a conda
+user can actually run; a test fails if one is missing.
+
+### 4. Fixing a bad package without cutting a release
+
+A conda artifact is identified by name + version + build string, and a
+published file cannot be overwritten. So when the code is fine but the
+*packaging* is wrong — a runtime dependency missing from `requirements.run`, a
+bound that turns out to break — fix the recipe and bump `build.number`
+(`0` → `1`) in the same PR. Same version, same `sha256`, new artifact; the
+solver prefers the highest build number, so fresh installs get the fix. A
+version bump resets it to `0` by itself.
+
+### 5. Feedstock files you must never hand-edit
+
+`conda-smithy` generates these and will silently overwrite your changes:
+
+- `.github/workflows/conda-build.yml`
+- `.ci_support/`
+- `.scripts/`
+- the feedstock's own `README.md`
+
+The only files edited by hand are `recipe/recipe.yaml` and `conda-forge.yml`.
+To regenerate the rest, comment on a feedstock PR or issue:
+
+```
+@conda-forge-admin, please rerender        # after a smithy or pinning update
+@conda-forge-admin, please restart ci      # a stuck build
+```
+
+Finally: **work through PRs, not pushes to the feedstock's `main`.** A push
+there builds and uploads immediately, so a mistake ships to users. Bots will
+also open migration PRs of their own — new Python versions, numpy pin bumps,
+ABI rebuilds. Those are not about this codebase: check CI is green and merge.
+
+Fuller detail lives in the
+[conda-forge maintainer docs](https://conda-forge.org/docs/maintainer/).
+
 ## Backers and Acknowledgements
 Contributors who provide meaningful improvements — code, documentation,
 design, or reviews — will be acknowledged in release notes or documentation.
