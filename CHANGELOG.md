@@ -32,8 +32,32 @@ are called out under a **Breaking** heading.
   square maps is not squeezed into a 10x5 letterbox). Passing a `figsize`
   disables the derivation, and single-panel figures are unchanged.
 
+### Changed
+
+- `MissingDependencyError` now names an install command that can actually be
+  run. It previously ended every message with `pip install 'easy-eo[<extra>]'`,
+  which a conda user cannot follow: conda has no extras mechanism, and brackets
+  already mean key-value constraints in its match syntax, so
+  `conda install "easy-eo[stac]"` does not even parse. When conda manages the
+  Easy-EO install the message now gives
+  `conda install -c conda-forge pystac-client planetary-computer` instead, and
+  says not to pip install an extra into a conda-managed environment — that
+  combination works at first and breaks on a later `conda update`, and the old
+  message was what recommended it. Detection reads conda's own record of the
+  `easy-eo` package, so Easy-EO pip-installed into a conda environment still
+  gets the pip command; if the environment cannot be inspected, both commands
+  are shown. Existing pip installs see no change.
+
 ### Added
 
+- Easy-EO is now on conda-forge: `conda install -c conda-forge easy-eo`
+  installs it and its dependencies without pip. The README, the getting-started
+  guide, and the installation notebook document both package managers,
+  including what to do about the optional extras — conda has no extras
+  mechanism, so their dependencies are installed by name
+  (`conda install -c conda-forge easy-eo pystac-client planetary-computer`),
+  and Easy-EO should not be mixed across package managers within one
+  environment.
 - `nrows` and `ncols` on `plot_band_array`, `plot_raster`, and `plot_histogram`,
   so the subplot grid can be shaped. The layout was one row per band and one
   column per dataset with no way to reflow, which put a 4-band raster in a

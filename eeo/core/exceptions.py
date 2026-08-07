@@ -47,9 +47,13 @@ class AlignmentError(EEOError, ValueError):
 class MissingDependencyError(EEOError, ImportError):
     """Raised when a feature's optional dependency is not installed.
 
-    Carries the exact ``pip install`` command for the extra that provides the
-    missing package. Subclasses :class:`ImportError` so ``except ImportError``
-    handlers around an optional feature keep working.
+    Carries the exact install command for the extra that provides the missing
+    package, matched to the package manager Easy-EO was installed with — a
+    ``pip install 'easy-eo[<extra>]'`` for a pip install, or a
+    ``conda install -c conda-forge ...`` naming the extra's packages when conda
+    manages Easy-EO, since conda has no extras mechanism. Subclasses
+    :class:`ImportError` so ``except ImportError`` handlers around an optional
+    feature keep working.
     """
 
 

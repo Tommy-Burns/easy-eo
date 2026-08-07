@@ -7,6 +7,7 @@
 [![CI](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/Tommy-Burns/easy-eo/branch/main/graph/badge.svg)](https://codecov.io/gh/Tommy-Burns/easy-eo)
 [![PyPI](https://img.shields.io/pypi/v/easy-eo.svg)](https://pypi.org/project/easy-eo/)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/easy-eo.svg)](https://anaconda.org/conda-forge/easy-eo)
 [![Python versions](https://img.shields.io/pypi/pyversions/easy-eo.svg)](https://pypi.org/project/easy-eo/)
 [![Documentation Status](https://readthedocs.org/projects/easy-eo/badge/?version=latest)](https://easy-eo.readthedocs.io/en/latest/?badge=latest)
 [![License: MIT](https://img.shields.io/github/license/Tommy-Burns/easy-eo)](https://github.com/Tommy-Burns/easy-eo/blob/main/LICENSE)
@@ -37,7 +38,7 @@ queries [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/)
 (any STAC catalog works, you have to pass `catalog="your stac catalog"`), and the load streams just the window covering your
 bounding box over HTTP: 14 MB out of a 240 MB Sentinel-2 tile, in a few seconds.
 
-The `stac_search` needs the STAC extra - `pip install "easy-eo[stac]"`. If you prefer to start offline, jump to the [hosted sample dataset](#quick-example), which needs no network after the first call.
+The `stac_search` needs the STAC extra - `pip install "easy-eo[stac]"`, or the [conda equivalent](#installation). If you prefer to start offline, jump to the [hosted sample dataset](#quick-example), which needs no network after the first call.
 
 ---
 
@@ -142,7 +143,6 @@ way today. These are the next capabilities, in the order they are being built:
 | **Block-wise execution** | Pixel-wise operations stream window by window instead of holding whole arrays, so a chain runs in a bounded memory footprint. Today, loading is read-free and clipping is windowed, but an operation like `ndvi()` materialises the bands it touches. |
 | **Lazy backend** (`easy-eo[lazy]`) | An xarray/dask-backed adapter behind the existing interface: chains on rasters larger than RAM, and COGs read straight over HTTP, with no change to your code beyond the loader call. |
 | **Time series** (`EEOTimeSeries`) | Multi-date stacks as a first-class object - map any existing operation across timesteps, reduce to cloud-free median composites, pull per-pixel trajectories. STAC search results are already ordered and timestamped, ready to become one. |
-| **conda-forge packaging** | `conda install -c conda-forge easy-eo` alongside the current `pip install`. The recipe is submitted and under review. |
 | **Citable releases** | A JOSS paper and Zenodo DOI, so the library can be cited in published work. |
 
 **Already using xarray?** You do not have to choose. `to_xarray()` and `from_xarray()` convert in both directions, so you can clip and compute indices
@@ -153,35 +153,38 @@ See the [xarray interop guide](https://easy-eo.readthedocs.io/en/latest/user_gui
 
 ## Installation
 
-Python 3.10 or newer:
+Python 3.10 or newer, from either package manager:
 
 ```bash
 pip install easy-eo
 ```
 
-That is everything you need for the core: raster I/O, algebra, indices,
-preprocessing and plotting. Two optional extras add the heavier integrations,
-and they compose (`pip install "easy-eo[stac,xarray]"`):
+```bash
+conda install -c conda-forge easy-eo
+```
 
-| Extra | Command | Adds |
+That is everything you need for the core: raster I/O, algebra, indices,
+preprocessing and plotting. Two heavier integrations are kept separate, so you
+only install them if you use them:
+
+| Adds | pip | conda |
 | --- | --- | --- |
-| `stac` | `pip install "easy-eo[stac]"` | `stac_search()` and loading scenes from STAC catalogs |
-| `xarray` | `pip install "easy-eo[xarray]"` | `to_xarray()` / `from_xarray()` |
+| `stac_search()` and loading scenes from STAC catalogs | `pip install "easy-eo[stac]"` | `conda install -c conda-forge easy-eo pystac-client planetary-computer` |
+| `to_xarray()` / `from_xarray()` | `pip install "easy-eo[xarray]"` | `conda install -c conda-forge easy-eo xarray rioxarray` |
+
+pip extras compose - `pip install "easy-eo[stac,xarray]"` installs both. conda
+has no concept of extras, so `conda install "easy-eo[stac]"` is not a valid
+command; the same packages are simply installed by name, as above.
+
+**Use one package manager, not both.** If Easy-EO came from conda, install the
+extras from conda too. conda's solver knows nothing about pip-installed files,
+so a later `conda install` or `conda update` can overwrite them or leave a
+second copy of a shared dependency in the environment. Every extra dependency
+is on conda-forge, so there is no reason to mix.
 
 Without an extra installed, the features that need it raise a
 `MissingDependencyError` telling you exactly what to install - nothing fails
 silently at import time.
-
-Prefer conda? Easy-EO's recipe is
-[under review at conda-forge](https://github.com/conda-forge/staged-recipes),
-so `conda install` is not available yet. Until it lands, pip installs cleanly
-into a conda environment:
-
-```bash
-conda create -n eeo python=3.11
-conda activate eeo
-pip install easy-eo
-```
 
 ## Quick Example
 ```python
