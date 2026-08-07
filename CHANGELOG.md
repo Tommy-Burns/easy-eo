@@ -96,6 +96,16 @@ are called out under a **Breaking** heading.
 - Added the `Programming Language :: Python :: 3.13` classifier. CI has tested
   3.13 since it was added to the matrix, but the metadata stopped at 3.12, so
   PyPI (and the README's version badge) under-reported supported versions.
+- **Python 3.14 is now tested and supported**, on Linux, macOS and Windows.
+  This was not a speculative addition: conda-forge already resolves 3.14 by
+  default for `conda install easy-eo`, so users were running on it before the
+  project claimed it. The CI matrix now covers 3.10–3.14 (15 jobs) and the
+  classifier follows. Note that on 3.14 the full test suite intermittently
+  prints a few empty `Error in sys.excepthook:` blocks on stderr after the
+  summary; every test passes and the exit code is 0. It is a CPython 3.14
+  interpreter-finalization artifact rather than an Easy-EO one — 3.13 with an
+  identical dependency set is clean — and it affects the test suite, not the
+  library.
 - README rewritten for positioning: a feature matrix with per-topic guide
   links replaces the bullet list, and installation now covers the optional
   extras and the conda-forge status.
