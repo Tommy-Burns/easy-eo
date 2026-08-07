@@ -9,44 +9,14 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-07
+
 ### Breaking
 
 - `plot_raster_with_histogram` no longer takes `sharey`. Every histogram panel
   now has its own y-axis, so a quiet band is not flattened by a busy one, and
   no plotting function shares axes any more. A call passing `sharey=` raises
   `TypeError`; drop the argument, which was `False` by default.
-
-### Changed
-
-- `plot_band_array`, `plot_raster`, and `plot_histogram` now lay their subplots
-  out near-square by default rather than one per row. A 4-band raster renders
-  2x2 instead of a 4x1 strip, and four single-band datasets 2x2 instead of 1x4;
-  2 and 3 panels stay a single row, 6 become 2x3, 9 become 3x3. Several
-  datasets *and* several bands still get the semantic grid — rows are bands,
-  columns are datasets — because that is what puts band *i* of one dataset
-  beside band *i* of the next. **Existing multi-panel figures will change
-  shape**; pass `nrows`/`ncols` to pin a layout.
-- `figsize` on those three functions now defaults to `None`, meaning derived:
-  the previous default for a single row of panels, and for a taller grid the
-  same width with the height set to keep the cells roughly square (so a 2x2 of
-  square maps is not squeezed into a 10x5 letterbox). Passing a `figsize`
-  disables the derivation, and single-panel figures are unchanged.
-
-### Changed
-
-- `MissingDependencyError` now names an install command that can actually be
-  run. It previously ended every message with `pip install 'easy-eo[<extra>]'`,
-  which a conda user cannot follow: conda has no extras mechanism, and brackets
-  already mean key-value constraints in its match syntax, so
-  `conda install "easy-eo[stac]"` does not even parse. When conda manages the
-  Easy-EO install the message now gives
-  `conda install -c conda-forge pystac-client planetary-computer` instead, and
-  says not to pip install an extra into a conda-managed environment — that
-  combination works at first and breaks on a later `conda update`, and the old
-  message was what recommended it. Detection reads conda's own record of the
-  `easy-eo` package, so Easy-EO pip-installed into a conda environment still
-  gets the pip command; if the environment cannot be inspected, both commands
-  are shown. Existing pip installs see no change.
 
 ### Added
 
@@ -76,47 +46,34 @@ are called out under a **Breaking** heading.
   its own bar because bands in a grid carry unrelated ranges. `plot_composite`
   is excluded: an RGB composite has no single scalar scale to label.
 
-### Fixed
-
-- `clip_raster_with_vector` now accepts any `os.PathLike` for `vector_file`,
-  not just `str`. It previously raised `ValidationError` for a `pathlib.Path`
-  or a `eeo.datasets` sample handle, so
-  `ds.clip_raster_with_vector(sd.boundary)` failed.
-- The getting-started guide told users to call
-  `plot_histogram(..., sharey=True)`, which has no such parameter — the value
-  fell through `**hist_kwargs` into `matplotlib.pyplot.hist` and raised
-  `AttributeError: Rectangle.set() got an unexpected keyword argument
-  'sharey'`. The example is corrected, and `plot_histogram` does not gain the
-  parameter — see the Breaking note above, which removes the last one.
-- `plot_raster` and `plot_raster_with_histogram` now pass `adjust=False` to
-  `rasterio.plot.show`. rasterio 1.5 extended `adjust=` to 2D arrays, min-max
-  rescaling the band to `[0, 1]` before drawing, which silently voided the
-  display limits set from the percentile stretch: on Python 3.12+ (where the
-  lockfile resolves rasterio 1.5) the image was drawn against limits its pixels
-  no longer used, and the colorbar reported a range that was not there. Scaling
-  is now left entirely to Matplotlib. A caller passing `adjust=True` through
-  `**show_kwargs` still gets rasterio's behaviour.
-- Plotting now excludes a declared nodata value, as the nodata contract
-  ("Mask before compute" in `CODE_STYLE.md`) has always required: a `-9999`
-  fill must not shift a percentile stretch. Every plotting function read
-  unmasked, so a sentinel counted as an ordinary value — it widened the
-  stretch, dragged a colorbar's end to the sentinel, and put a spike in every
-  histogram. The sentinel is now masked before the percentiles are taken, and
-  those pixels render blank instead of as a colour. In `plot_composite` a pixel
-  that is nodata in any channel is transparent in the composite (the contract's
-  contagion rule), on the stretched floating-point path where RGBA is
-  available. Float rasters are unaffected: their nodata is already NaN, which
-  the percentiles ignored. `plot_histogram`'s docstring, which documented the
-  old behaviour ("nodata pixels are counted as ordinary values"), is corrected.
-- Plotting a band whose percentile range is empty (a constant band, or one with
-  a single valid pixel) no longer paints its nodata pixels as real values. The
-  rescaling path mapped such a band to all zeros, turning every NaN into a 0
-  that rendered as the colormap's low end; nodata now stays blank. An
-  all-nodata band, whose percentiles are NaN, likewise falls back to
-  Matplotlib's autoscaling rather than being handed NaN display limits.
-
 ### Changed
 
+- `plot_band_array`, `plot_raster`, and `plot_histogram` now lay their subplots
+  out near-square by default rather than one per row. A 4-band raster renders
+  2x2 instead of a 4x1 strip, and four single-band datasets 2x2 instead of 1x4;
+  2 and 3 panels stay a single row, 6 become 2x3, 9 become 3x3. Several
+  datasets *and* several bands still get the semantic grid — rows are bands,
+  columns are datasets — because that is what puts band *i* of one dataset
+  beside band *i* of the next. **Existing multi-panel figures will change
+  shape**; pass `nrows`/`ncols` to pin a layout.
+- `figsize` on those three functions now defaults to `None`, meaning derived:
+  the previous default for a single row of panels, and for a taller grid the
+  same width with the height set to keep the cells roughly square (so a 2x2 of
+  square maps is not squeezed into a 10x5 letterbox). Passing a `figsize`
+  disables the derivation, and single-panel figures are unchanged.
+- `MissingDependencyError` now names an install command that can actually be
+  run. It previously ended every message with `pip install 'easy-eo[<extra>]'`,
+  which a conda user cannot follow: conda has no extras mechanism, and brackets
+  already mean key-value constraints in its match syntax, so
+  `conda install "easy-eo[stac]"` does not even parse. When conda manages the
+  Easy-EO install the message now gives
+  `conda install -c conda-forge pystac-client planetary-computer` instead, and
+  says not to pip install an extra into a conda-managed environment — that
+  combination works at first and breaks on a later `conda update`, and the old
+  message was what recommended it. Detection reads conda's own record of the
+  `easy-eo` package, so Easy-EO pip-installed into a conda environment still
+  gets the pip command; if the environment cannot be inspected, both commands
+  are shown. Existing pip installs see no change.
 - The visualization notebook (`examples/01_fundamentals/07_visualization.ipynb`)
   and the spectral-indices guide now teach `colorbar=True`, including how a
   band's name becomes the label. The hand-rolled Matplotlib figures elsewhere
@@ -160,6 +117,45 @@ are called out under a **Breaking** heading.
 - README gained a "Before and after" section comparing the same
   clip-to-vector-AOI → NDVI → save task in raw Rasterio/GeoPandas/NumPy and in
   Easy-EO; both versions were executed and produce byte-identical output.
+
+### Fixed
+
+- `clip_raster_with_vector` now accepts any `os.PathLike` for `vector_file`,
+  not just `str`. It previously raised `ValidationError` for a `pathlib.Path`
+  or a `eeo.datasets` sample handle, so
+  `ds.clip_raster_with_vector(sd.boundary)` failed.
+- The getting-started guide told users to call
+  `plot_histogram(..., sharey=True)`, which has no such parameter — the value
+  fell through `**hist_kwargs` into `matplotlib.pyplot.hist` and raised
+  `AttributeError: Rectangle.set() got an unexpected keyword argument
+  'sharey'`. The example is corrected, and `plot_histogram` does not gain the
+  parameter — see the Breaking note above, which removes the last one.
+- `plot_raster` and `plot_raster_with_histogram` now pass `adjust=False` to
+  `rasterio.plot.show`. rasterio 1.5 extended `adjust=` to 2D arrays, min-max
+  rescaling the band to `[0, 1]` before drawing, which silently voided the
+  display limits set from the percentile stretch: on Python 3.12+ (where the
+  lockfile resolves rasterio 1.5) the image was drawn against limits its pixels
+  no longer used, and the colorbar reported a range that was not there. Scaling
+  is now left entirely to Matplotlib. A caller passing `adjust=True` through
+  `**show_kwargs` still gets rasterio's behaviour.
+- Plotting now excludes a declared nodata value, as the nodata contract
+  ("Mask before compute" in `CODE_STYLE.md`) has always required: a `-9999`
+  fill must not shift a percentile stretch. Every plotting function read
+  unmasked, so a sentinel counted as an ordinary value — it widened the
+  stretch, dragged a colorbar's end to the sentinel, and put a spike in every
+  histogram. The sentinel is now masked before the percentiles are taken, and
+  those pixels render blank instead of as a colour. In `plot_composite` a pixel
+  that is nodata in any channel is transparent in the composite (the contract's
+  contagion rule), on the stretched floating-point path where RGBA is
+  available. Float rasters are unaffected: their nodata is already NaN, which
+  the percentiles ignored. `plot_histogram`'s docstring, which documented the
+  old behaviour ("nodata pixels are counted as ordinary values"), is corrected.
+- Plotting a band whose percentile range is empty (a constant band, or one with
+  a single valid pixel) no longer paints its nodata pixels as real values. The
+  rescaling path mapped such a band to all zeros, turning every NaN into a 0
+  that rendered as the colormap's low end; nodata now stays blank. An
+  all-nodata band, whose percentiles are NaN, likewise falls back to
+  Matplotlib's autoscaling rather than being handed NaN display limits.
 
 ## [0.2.0] - 2026-07-29
 
@@ -291,6 +287,7 @@ Initial public beta release.
 - Visualization: `plot_raster`, `plot_composite`,
   `plot_raster_with_histogram`, `plot_band_array`.
 
-[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.1.0b1...v0.2.0
 [0.1.0b1]: https://github.com/Tommy-Burns/easy-eo/releases/tag/v0.1.0b1

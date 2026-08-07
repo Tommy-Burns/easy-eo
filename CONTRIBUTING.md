@@ -308,11 +308,20 @@ needs a review step you cannot skip safely — see step 3.
    `### Breaking` heading in `CHANGELOG.md` means a **minor** bump
    (`0.2.x` → `0.3.0`), not a patch. Patch releases are for changes with no
    Breaking entries.
-2. **Bump it in both places** — they are not linked, and nothing fails if they
-   drift:
-   - `version` in `pyproject.toml` (what PyPI and conda build from)
-   - `__version__` in `eeo/__init__.py` (what `eeo.show_versions()` prints, so
-     a stale value quietly misreports in every bug report)
+2. **Bump it everywhere** — these are not linked to each other, and nothing
+   fails if they drift:
+   - `version` in `pyproject.toml` — the real one. PyPI and conda build from
+     it, and it is what `eeo.show_versions()` reports, via the installed
+     distribution's metadata.
+   - `__version__` in `eeo/__init__.py` — a separate hand-maintained string
+     that nothing derives from and no test pins. Users who check
+     `eeo.__version__` see this one, so a stale value disagrees with
+     `show_versions()` in the same interpreter.
+   - `release` in `docs/source/conf.py` (what the rendered docs display)
+   - then `uv lock`, which rewrites the project's own version in `uv.lock`.
+     Skipping it breaks CI, which installs with `uv sync --frozen`. Check the
+     diff is only that one line — if the re-resolve also bumped dependencies,
+     that is a separate change and does not belong in a release commit.
 3. **Close the changelog section.** Rename `## [Unreleased]` to
    `## [X.Y.Z] - YYYY-MM-DD` and open a fresh, empty `## [Unreleased]` above it.
 4. **Run the full checks** — `pytest`, `ruff check`, `ruff format --check`,
