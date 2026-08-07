@@ -5,10 +5,15 @@
 </p>
 
 [![CI](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
+[![Latest deps](https://github.com/Tommy-Burns/easy-eo/actions/workflows/latest-deps.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/latest-deps.yml)
 [![codecov](https://codecov.io/gh/Tommy-Burns/easy-eo/branch/main/graph/badge.svg)](https://codecov.io/gh/Tommy-Burns/easy-eo)
 [![PyPI](https://img.shields.io/pypi/v/easy-eo.svg)](https://pypi.org/project/easy-eo/)
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/easy-eo.svg)](https://anaconda.org/conda-forge/easy-eo)
 [![Python versions](https://img.shields.io/pypi/pyversions/easy-eo.svg)](https://pypi.org/project/easy-eo/)
+[![Platforms](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Checked with mypy](https://img.shields.io/badge/mypy-checked-2a6db2.svg)](https://mypy-lang.org/)
+<!-- [![Types](https://img.shields.io/pypi/types/easy-eo.svg)](https://peps.python.org/pep-0561/) -->
 [![Documentation Status](https://readthedocs.org/projects/easy-eo/badge/?version=latest)](https://easy-eo.readthedocs.io/en/latest/?badge=latest)
 [![License: MIT](https://img.shields.io/github/license/Tommy-Burns/easy-eo)](https://github.com/Tommy-Burns/easy-eo/blob/main/LICENSE)
 
