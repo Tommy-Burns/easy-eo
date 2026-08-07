@@ -130,6 +130,14 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- The README's images no longer break on PyPI. The logo and all six gallery
+  figures were referenced by repo-relative paths (`.github/assets/...`), which
+  GitHub resolves against the repository but PyPI cannot, so the project page
+  showed alt text where the images should be. They now use absolute
+  `raw.githubusercontent.com` URLs, and the six repo-relative links
+  (`CONTRIBUTING.md`, the tutorial notebooks) are absolute too — those were
+  silently 404ing on PyPI for the same reason. The badges were always fine,
+  being absolute already.
 - `clip_raster_with_vector` now accepts any `os.PathLike` for `vector_file`,
   not just `str`. It previously raised `ValidationError` for a `pathlib.Path`
   or a `eeo.datasets` sample handle, so
