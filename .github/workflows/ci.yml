@@ -58,7 +58,18 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        # 3.14 is tested because conda-forge already resolves it by default for
+        # `conda install easy-eo`, so users are on it whether or not we claim it.
+        # Known cosmetic artifact on 3.14 only: the full suite intermittently
+        # (~30% of runs) prints a few "Error in sys.excepthook: / Original
+        # exception was:" blocks on stderr *after* the summary, with both
+        # tracebacks empty. Tests all pass and the exit code is 0. It is a
+        # CPython 3.14 interpreter-finalization artifact, not ours: 3.13 with
+        # the identical dependency set is clean, no individual test file
+        # reproduces it, and it survives both a forced GC before shutdown and a
+        # teardown-safe rewrite of EEORasterDataset.__del__. Nothing to fix here
+        # — do not chase it if you see it in a log.
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
 
