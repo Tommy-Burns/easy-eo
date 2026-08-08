@@ -351,11 +351,16 @@ conda-forge channel happens automatically. The package appears on anaconda.org
 within roughly 15–60 minutes, plus another 10–20 for CDN sync before
 `conda install` resolves it.
 
-If no PR has appeared after a day, comment on the feedstock:
+If no PR has appeared after a day, ask the bot directly. This one is **not** a
+comment: open a new issue on the feedstock whose **title** is exactly
 
 ```
 @conda-forge-admin, please update version
 ```
+
+The body can be empty. The bot reads the title, checks PyPI for a newer
+version, and opens the PR if it finds one. Posting the phrase as a comment
+instead does nothing.
 
 ### 3. If the release changed dependencies, edit the bot's PR
 
@@ -420,12 +425,19 @@ version bump resets it to `0` by itself.
 - the feedstock's own `README.md`
 
 The only files edited by hand are `recipe/recipe.yaml` and `conda-forge.yml`.
-To regenerate the rest, comment on a feedstock PR or issue:
+To regenerate the rest, comment on a feedstock **pull request**:
 
 ```
 @conda-forge-admin, please rerender        # after a smithy or pinning update
 @conda-forge-admin, please restart ci      # a stuck build
 ```
+
+`please rerender` pushes the regenerated files straight to that PR, so tick
+*Allow edits from maintainers* on it first. Posted as a comment on an **issue**
+instead, it opens a fresh PR containing the rerender. `please restart ci` works
+only on a PR — it closes and reopens it to re-trigger the builds. Note the
+different mechanism for `please update version` in step 2: that one goes in an
+issue *title*, not a comment.
 
 Finally: **work through PRs, not pushes to the feedstock's `main`.** A push
 there builds and uploads immediately, so a mistake ships to users. Bots will
