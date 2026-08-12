@@ -25,3 +25,28 @@ A scene pulled from a catalog becomes the second kind. Easy-EO opens the remote 
 The operations themselves live outside the dataset class. Each is a free function carrying an `@eeo_raster_op` decorator. At import time Easy-EO walks the modules under `eeo.ops`, `eeo.analysis`, `eeo.preprocessing` and `eeo.viz`, binding every decorated function onto the dataset as a method. A user sees one object carrying the whole API, so a clip, a resample and an index chain together in a single expression. A maintainer sees small files grouped by topic, and contributing an operation means writing one decorated function, with no central class to edit.
 
 Where a default could be safe or fast, Easy-EO takes the safe one. Pixels flagged as `nodata` are masked before any statistic, so fill values never reach a mean. Integer bands are promoted to floating point before arithmetic, so a `uint16` subtraction that should go negative cannot wrap round to 65,000. The spectral indices return `float32` and guard the denominator, yielding zero where it would divide by zero instead of raising or emitting `inf`. Reads stay deferred until an operation needs pixels, and statistics over a large raster come from a decimated read capped at 1024 pixels a side, served from the file's overviews when it has them. Band names follow the same reasoning. Operations that preserve band identity, such as clipping, resampling and reprojection, carry the names through; an index synthesizes a new band, so it labels its own output, because inheriting the input's name would mislabel the result.
+
+# Example
+
+Searching a catalog, cropping to an area of interest and computing two indices takes the following, and produces \autoref{fig:indices}.
+
+```python
+import eeo
+from eeo.viz import plot_raster
+
+bbox = (12.02, 43.08, 12.18, 43.18)   # Lake Trasimeno, Italy, WGS 84
+
+scene = eeo.stac_search(
+    "sentinel-2-l2a", bbox=bbox,
+    datetime="2024-06-01/2024-09-30", cloud_cover=10, limit=1,
+)[0].load(["B03", "B04", "B08"], bbox=bbox)
+
+ndvi = scene.ndvi(red="B04", nir="B08", name="NDVI")
+ndwi = scene.ndwi(green="B03", nir="B08", name="NDWI")
+
+plot_raster([ndvi, ndwi], cmap="viridis", ncols=2, colorbar=True)
+```
+
+The load fetches only the 1160 by 1343 pixel window over the lake, out of a granule that is 10980 pixels square in each of these bands, and the three assets are read straight through that window without the full tile being downloaded. Both indices come back as `float32`.
+
+![NDVI and NDWI over Lake Trasimeno, computed from a single Sentinel-2 scene by the code above.\label{fig:indices}](figures/indices.png)
