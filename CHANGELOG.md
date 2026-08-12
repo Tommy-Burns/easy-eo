@@ -29,6 +29,10 @@ are called out under a **Breaking** heading.
   week old, and both can go red for reasons outside the project — an external
   site being down, a fresh advisory in a transitive dependency — which teaches
   readers to ignore every badge in the row.
+- The README badges are now a table grouped under Install, Build & quality,
+  Security, and Project, rather than a single row of thirteen. The URLs moved
+  to reference-style definitions below the table, so adding or changing a badge
+  is a one-line edit instead of an edit inside a very long line.
 - The sdist and wheel attached to a GitHub Release are now signed with sigstore,
   which uses the workflow's own OIDC identity rather than a long-lived key, and
   the `.sigstore.json` bundles are attached alongside them. The copies on PyPI

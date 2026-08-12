@@ -4,20 +4,38 @@
   <img src="https://raw.githubusercontent.com/Tommy-Burns/easy-eo/main/.github/assets/eeo_logo.png" alt="Easy-EO logo" width="200">
 </p>
 
-[![CI](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
-[![Latest deps](https://github.com/Tommy-Burns/easy-eo/actions/workflows/latest-deps.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/latest-deps.yml)
-[![CodeQL](https://github.com/Tommy-Burns/easy-eo/actions/workflows/codeql.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Tommy-Burns/easy-eo/badge)](https://scorecard.dev/viewer/?uri=github.com/Tommy-Burns/easy-eo)
-[![codecov](https://codecov.io/gh/Tommy-Burns/easy-eo/branch/main/graph/badge.svg)](https://codecov.io/gh/Tommy-Burns/easy-eo)
-[![PyPI](https://img.shields.io/pypi/v/easy-eo.svg)](https://pypi.org/project/easy-eo/)
-[![conda-forge](https://img.shields.io/conda/vn/conda-forge/easy-eo.svg)](https://anaconda.org/conda-forge/easy-eo)
-[![Python versions](https://img.shields.io/pypi/pyversions/easy-eo.svg)](https://pypi.org/project/easy-eo/)
-[![Platforms](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Checked with mypy](https://img.shields.io/badge/mypy-checked-2a6db2.svg)](https://mypy-lang.org/)
-[![Documentation Status](https://readthedocs.org/projects/easy-eo/badge/?version=latest)](https://easy-eo.readthedocs.io/en/latest/?badge=latest)
-[![License: MIT](https://img.shields.io/github/license/Tommy-Burns/easy-eo)](https://github.com/Tommy-Burns/easy-eo/blob/main/LICENSE)
-<!-- [![Types](https://img.shields.io/pypi/types/easy-eo.svg)](https://peps.python.org/pep-0561/) -->
+|  |  |
+| :-- | :-- |
+| **Install** | [![PyPI][pypi-badge]][pypi] [![conda-forge][conda-badge]][conda] [![Python versions][pyversions-badge]][pypi] [![Platforms][platforms-badge]][ci] |
+| **Build & quality** | [![CI][ci-badge]][ci] [![Latest deps][latest-deps-badge]][latest-deps] [![Coverage][codecov-badge]][codecov] [![Ruff][ruff-badge]][ruff] [![Checked with mypy][mypy-badge]][mypy] |
+| **Security** | [![CodeQL][codeql-badge]][codeql] [![OpenSSF Scorecard][scorecard-badge]][scorecard] |
+| **Project** | [![Documentation][docs-badge]][docs] [![License: MIT][license-badge]][license] |
+
+[pypi]: https://pypi.org/project/easy-eo/
+[pypi-badge]: https://img.shields.io/pypi/v/easy-eo.svg
+[conda]: https://anaconda.org/conda-forge/easy-eo
+[conda-badge]: https://img.shields.io/conda/vn/conda-forge/easy-eo.svg
+[pyversions-badge]: https://img.shields.io/pypi/pyversions/easy-eo.svg
+[platforms-badge]: https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey.svg
+[ci]: https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml
+[ci-badge]: https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml/badge.svg
+[latest-deps]: https://github.com/Tommy-Burns/easy-eo/actions/workflows/latest-deps.yml
+[latest-deps-badge]: https://github.com/Tommy-Burns/easy-eo/actions/workflows/latest-deps.yml/badge.svg
+[codecov]: https://codecov.io/gh/Tommy-Burns/easy-eo
+[codecov-badge]: https://codecov.io/gh/Tommy-Burns/easy-eo/branch/main/graph/badge.svg
+[ruff]: https://github.com/astral-sh/ruff
+[ruff-badge]: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
+[mypy]: https://mypy-lang.org/
+[mypy-badge]: https://img.shields.io/badge/mypy-checked-2a6db2.svg
+[codeql]: https://github.com/Tommy-Burns/easy-eo/actions/workflows/codeql.yml
+[codeql-badge]: https://github.com/Tommy-Burns/easy-eo/actions/workflows/codeql.yml/badge.svg
+[scorecard]: https://scorecard.dev/viewer/?uri=github.com/Tommy-Burns/easy-eo
+[scorecard-badge]: https://api.scorecard.dev/projects/github.com/Tommy-Burns/easy-eo/badge
+[docs]: https://easy-eo.readthedocs.io/en/latest/?badge=latest
+[docs-badge]: https://readthedocs.org/projects/easy-eo/badge/?version=latest
+[license]: https://github.com/Tommy-Burns/easy-eo/blob/main/LICENSE
+[license-badge]: https://img.shields.io/github/license/Tommy-Burns/easy-eo
+
 
 Easy-EO is a lightweight, extensible Python library for raster-based Earth
 Observation (EO) analysis: chainable raster processing, band algebra, spectral indices, 
