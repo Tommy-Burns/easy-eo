@@ -1,0 +1,41 @@
+name: Dependency audit
+
+# A vulnerability in an unchanged dependency is news that arrives on its own
+# schedule, so the weekly run is the real check; the pull-request trigger is
+# narrowed to dependency changes so an unrelated PR never goes red for it.
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays, 07:00 UTC
+  pull_request:
+    paths:
+      - pyproject.toml
+      - uv.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit locked dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      # Audits what CI and users actually install: every extra, dev included.
+      - name: Export the locked dependency set
+        run: >
+          uv export --frozen --all-extras --no-emit-project
+          --format requirements-txt -o requirements-audit.txt
+
+      # The export is fully resolved and hashed, so --disable-pip skips
+      # resolution entirely. An advisory with no fix available can be waived
+      # with --ignore-vuln <ID> rather than by disabling the job.
+      - name: Audit against the advisory database
+        run: uvx pip-audit -r requirements-audit.txt --disable-pip

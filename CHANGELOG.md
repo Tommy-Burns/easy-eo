@@ -11,6 +11,16 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- Security scanning in CI. CodeQL analyses the Python source on every push and
+  pull request and weekly (so new queries reach unchanged code), and a
+  dependency audit runs `pip-audit` against the fully resolved `uv.lock` set —
+  weekly, and on pull requests that touch `pyproject.toml` or `uv.lock`. The
+  audit is deliberately not gating unrelated pull requests: a new advisory
+  against an unchanged dependency is time-based news, not a regression in the
+  branch that happens to be open.
+
+### Added
+
 - Tagging a release now creates a GitHub Release, with the tag's `CHANGELOG.md`
   section as its notes and the sdist and wheel attached. A tag previously
   published to PyPI and left no Release behind, which matters beyond
