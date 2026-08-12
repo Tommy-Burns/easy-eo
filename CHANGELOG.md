@@ -11,6 +11,15 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- Tagging a release now creates a GitHub Release, with the tag's `CHANGELOG.md`
+  section as its notes and the sdist and wheel attached. A tag previously
+  published to PyPI and left no Release behind, which matters beyond
+  presentation: Zenodo archives on Release events rather than tag pushes, so
+  the planned DOI had nothing to hang off. Release notes are extracted by
+  `scripts/extract_changelog.py`, which fails when the tag has no changelog
+  entry — the notes and the changelog cannot drift apart. Pre-release tags
+  (like `v0.1.0b1`) are marked as such, and re-running the workflow leaves an
+  existing Release untouched.
 - The release workflow now installs the built wheel and sdist into clean
   environments and smoke-tests them before publishing, via
   `scripts/smoke_test_wheel.py`. Previously the artifacts were built,

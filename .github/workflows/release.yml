@@ -127,6 +127,45 @@ jobs:
           # already uploaded, e.g. a re-run or an accidental duplicate tag.
           skip-existing: true
 
+  github-release:
+    name: Create GitHub Release
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      # Fails the release if the tag has no changelog entry, which is the
+      # intent: notes and CHANGELOG.md cannot then drift apart.
+      - name: Extract release notes from the changelog
+        run: python3 scripts/extract_changelog.py "$GITHUB_REF_NAME" --output release-notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; leaving it unchanged."
+            exit 0
+          fi
+          prerelease=()
+          case "${GITHUB_REF_NAME#v}" in
+            *a*|*b*|*rc*|*dev*) prerelease=(--prerelease) ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            "${prerelease[@]}" \
+            dist/*
+
   docs:
     name: Trigger Read the Docs build
     needs: publish
