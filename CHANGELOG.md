@@ -11,6 +11,18 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- The release workflow now installs the built wheel and sdist into clean
+  environments and smoke-tests them before publishing, via
+  `scripts/smoke_test_wheel.py`. Previously the artifacts were built,
+  metadata-checked, and uploaded without ever being installed, so a dropped
+  `py.typed`, a missing `core.pyi`, or a tag disagreeing with `__version__`
+  would have reached PyPI, where a release cannot be withdrawn. The script
+  checks the packaged data files, the public API, the dynamically bound
+  operations, an end-to-end NDVI chain, and the error raised when an optional
+  extra is absent — importing Easy-EO as a user would, and refusing to run
+  against a source checkout. The sdist is covered because conda-forge builds
+  from it.
+
 - The documentation now builds in CI on every pull request, with Sphinx
   warnings treated as errors. Previously it built only on Read the Docs, after
   a merge, so a broken cross-reference or an autodoc target that no longer

@@ -35,9 +35,78 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # Install the artifact that is about to be published and exercise it. The
+  # test suite runs against the source tree, so nothing else here would catch a
+  # dropped package-data file or a tag that disagrees with __version__ — and a
+  # PyPI release cannot be withdrawn.
+  smoke:
+    name: Smoke-test ${{ matrix.package }} (py${{ matrix.python-version }} · ${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Oldest and newest supported Python: the wheel is pure Python, so what
+        # this catches is a dependency that has no wheel for one of the ends.
+        python-version: ["3.10", "3.14"]
+        package: [wheel]
+        # conda-forge builds from the sdist, so it is checked too.
+        include:
+          - os: ubuntu-latest
+            python-version: "3.12"
+            package: sdist
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      # No extras: this is a plain `pip install easy-eo`, which is also what
+      # lets the script check that a missing extra reports the documented error.
+      - name: Install the built ${{ matrix.package }}
+        env:
+          PACKAGE: ${{ matrix.package }}
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          uv venv --python "$PYTHON_VERSION" .smoke-venv
+          if [ "$PACKAGE" = "sdist" ]; then
+            uv pip install --python .smoke-venv dist/*.tar.gz
+          else
+            uv pip install --python .smoke-venv dist/*.whl
+          fi
+
+      # Run from the checkout but as a script, so sys.path[0] is scripts/ and
+      # `import eeo` finds the install rather than the adjacent source tree.
+      # The script fails loudly if that ever stops being true.
+      - name: Smoke-test the installed package
+        run: |
+          if [ -f .smoke-venv/Scripts/python.exe ]; then
+            python_bin=.smoke-venv/Scripts/python.exe
+          else
+            python_bin=.smoke-venv/bin/python
+          fi
+          expect=()
+          case "$GITHUB_REF" in
+            refs/tags/v*) expect=(--expect-version "${GITHUB_REF_NAME#v}") ;;
+          esac
+          "$python_bin" scripts/smoke_test_wheel.py "${expect[@]}"
+
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: smoke
     runs-on: ubuntu-latest
     environment:
       name: pypi
