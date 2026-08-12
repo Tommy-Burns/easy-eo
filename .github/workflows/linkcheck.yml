@@ -45,7 +45,8 @@ jobs:
         with:
           args: >
             --no-progress --max-retries 3
-            README.md CONTRIBUTING.md CHANGELOG.md examples/README.md
+            README.md CONTRIBUTING.md CHANGELOG.md SECURITY.md
+            examples/README.md
           fail: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

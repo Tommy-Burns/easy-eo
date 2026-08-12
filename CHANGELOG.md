@@ -29,6 +29,12 @@ are called out under a **Breaking** heading.
   week old, and both can go red for reasons outside the project — an external
   site being down, a fresh advisory in a transitive dependency — which teaches
   readers to ignore every badge in the row.
+- `SECURITY.md`: supported versions, private vulnerability reporting through
+  GitHub's advisory flow rather than public issues, realistic response targets
+  for a single maintainer, and an explicit scope. It states plainly that
+  Easy-EO implements no raster parsers — opening a file hands it to rasterio
+  and GDAL, which is where the real trust boundary sits — so a parsing crash
+  reached through Easy-EO is normally a GDAL issue.
 - An OpenSSF Scorecard workflow and its README badge. Scorecard rates the
   repository's supply-chain posture — scoped workflow permissions, pinned
   dependencies, vulnerability scanning, release provenance — and publishes the
