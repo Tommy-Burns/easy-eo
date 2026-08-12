@@ -21,6 +21,14 @@ are called out under a **Breaking** heading.
   as broken, with the `\n` escape attached. It is scheduled rather than run on
   pull requests: link rot arrives without a commit, and an external site being
   down should not block a merge.
+- README badges for CodeQL and monthly PyPI downloads. The download badge is
+  served by pepy.tech rather than Shields' `pypi/dm`, which proxies pypistats
+  and renders "rate limited by upstream service" on the README when that
+  service throttles. Badges were deliberately not added for the link check or
+  the dependency audit: both are scheduled, so a badge reports a run up to a
+  week old, and both can go red for reasons outside the project — an external
+  site being down, a fresh advisory in a transitive dependency — which teaches
+  readers to ignore every badge in the row.
 - `scripts/check_colab_links.py`, checking all 51 "Open in Colab" links across
   the notebooks, the READMEs, and the tutorials page. These cannot be checked
   over HTTP: Colab is a single-page app that answers 200 for any URL, including

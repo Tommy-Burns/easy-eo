@@ -6,6 +6,7 @@
 
 [![CI](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/ci.yml)
 [![Latest deps](https://github.com/Tommy-Burns/easy-eo/actions/workflows/latest-deps.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/latest-deps.yml)
+[![CodeQL](https://github.com/Tommy-Burns/easy-eo/actions/workflows/codeql.yml/badge.svg)](https://github.com/Tommy-Burns/easy-eo/actions/workflows/codeql.yml)
 [![codecov](https://codecov.io/gh/Tommy-Burns/easy-eo/branch/main/graph/badge.svg)](https://codecov.io/gh/Tommy-Burns/easy-eo)
 [![PyPI](https://img.shields.io/pypi/v/easy-eo.svg)](https://pypi.org/project/easy-eo/)
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/easy-eo.svg)](https://anaconda.org/conda-forge/easy-eo)
