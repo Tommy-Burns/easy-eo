@@ -154,6 +154,27 @@ jobs:
           uv run --no-sync --with nbmake
           pytest --nbmake --no-cov --nbmake-timeout=900 examples/
 
+  # Sphinx builds on Read the Docs only after a merge or a tag, so a broken
+  # cross-reference, an unresolvable autodoc target, or a docstring that no
+  # longer parses reaches main before anyone sees it. This job builds the same
+  # docs on every PR with warnings promoted to errors.
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Build docs (warnings are errors)
+        run: >
+          uv run --no-sync --with-requirements docs/requirements.txt
+          sphinx-build -W -b html docs/source docs/build/html
+
   min-versions:
     name: Minimum supported versions
     runs-on: ubuntu-latest

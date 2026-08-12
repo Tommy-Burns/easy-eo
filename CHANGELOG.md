@@ -9,6 +9,15 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- The documentation now builds in CI on every pull request, with Sphinx
+  warnings treated as errors. Previously it built only on Read the Docs, after
+  a merge, so a broken cross-reference or an autodoc target that no longer
+  resolved was discovered on the published site. The job installs the package
+  without extras, exactly as Read the Docs does, so it fails on the same things
+  the published build would.
+
 ## [0.3.0] - 2026-08-07
 
 ### Breaking
