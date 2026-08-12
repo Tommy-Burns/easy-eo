@@ -11,7 +11,7 @@ are called out under a **Breaking** heading.
 
 ### Added
 
-- A monthly link check covering the documentation, the Markdown files, and the
+- A weekly link check covering the documentation, the Markdown files, and the
   tutorial notebooks. `sphinx-build -b linkcheck` handles the docs; `lychee`
   handles `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and
   `examples/README.md`; and `scripts/check_notebook_links.py` handles the
