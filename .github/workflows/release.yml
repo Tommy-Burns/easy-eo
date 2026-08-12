@@ -134,6 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write # OIDC identity for keyless signing
     steps:
       - uses: actions/checkout@v7
 
@@ -142,6 +143,20 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      # Signs the files attached to the GitHub Release. The copies on PyPI are
+      # signed separately by the publish job, which attaches PEP 740
+      # attestations by default under Trusted Publishing.
+      #
+      # Pinned to a full version: this action publishes no floating major tag.
+      - name: Sign the release artifacts
+        uses: sigstore/gh-action-sigstore-python@v3.5.0
+        with:
+          inputs: ./dist/*.tar.gz ./dist/*.whl
+          # The release is created by the step below, which attaches the
+          # bundles through its dist/* glob; this input only acts on `release`
+          # events, which this tag-triggered workflow is not.
+          release-signing-artifacts: false
 
       # Fails the release if the tag has no changelog entry, which is the
       # intent: notes and CHANGELOG.md cannot then drift apart.

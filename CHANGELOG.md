@@ -29,6 +29,12 @@ are called out under a **Breaking** heading.
   week old, and both can go red for reasons outside the project — an external
   site being down, a fresh advisory in a transitive dependency — which teaches
   readers to ignore every badge in the row.
+- The sdist and wheel attached to a GitHub Release are now signed with sigstore,
+  which uses the workflow's own OIDC identity rather than a long-lived key, and
+  the `.sigstore.json` bundles are attached alongside them. The copies on PyPI
+  were already signed — `pypa/gh-action-pypi-publish` attaches PEP 740
+  attestations by default under Trusted Publishing — so this closes the gap for
+  anyone who downloads from the Releases page instead.
 - `SECURITY.md`: supported versions, private vulnerability reporting through
   GitHub's advisory flow rather than public issues, realistic response targets
   for a single maintainer, and an explicit scope. It states plainly that
