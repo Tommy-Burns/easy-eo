@@ -33,7 +33,10 @@ are called out under a **Breaking** heading.
   version in a trailing comment, in place of the floating `@v7`-style major
   tags. A major tag is mutable: whoever controls the action repository can move
   it to different code at any time, and a workflow that uses one runs whatever
-  it points to today. Dependabot keeps the SHAs and their comments current.
+  it points to today. Dependabot keeps the SHAs and their version comments
+  current, and its schedule for actions moved from monthly to weekly to match —
+  a pinned action no longer picks up its own patches. Security advisories do
+  not wait for that schedule.
 - The README badges are now a table grouped under Install, Build & quality,
   Security, and Project, rather than a single row of thirteen. The URLs moved
   to reference-style definitions below the table, so adding or changing a badge

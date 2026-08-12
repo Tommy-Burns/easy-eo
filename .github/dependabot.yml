@@ -42,10 +42,14 @@ updates:
           - "*"
 
   # GitHub Actions used in the workflows (checkout, setup-uv, codecov, ...).
+  # Weekly, not monthly: the actions are pinned to commit SHAs, so they no
+  # longer pick up their own patches and this is what keeps them current.
+  # Advisories do not wait for it — Dependabot security updates cover actions
+  # and raise a PR when one is published.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci"
