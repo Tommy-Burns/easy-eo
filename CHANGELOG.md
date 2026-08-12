@@ -18,6 +18,16 @@ are called out under a **Breaking** heading.
   without extras, exactly as Read the Docs does, so it fails on the same things
   the published build would.
 
+### Changed
+
+- `docs/requirements.txt` now pins Sphinx, `sphinx-rtd-theme`, and
+  `sphinx-copybutton` exactly, and the Read the Docs build moved from Python
+  3.10 to 3.12. The two builds were resolving different Sphinx *majors* — 8.1.3
+  on Read the Docs' 3.10, 9.1.0 on anything newer — so a docs check could pass
+  on one toolchain while the published site rendered on another. Dependabot now
+  watches the file and proposes bumps monthly. This affects the documentation
+  toolchain only; the library still supports Python 3.10 and up.
+
 ## [0.3.0] - 2026-08-07
 
 ### Breaking

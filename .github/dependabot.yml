@@ -20,6 +20,27 @@ updates:
       runtime-dependencies:
         dependency-type: "production"
 
+  # The exact pins in docs/requirements.txt, installed by both Read the Docs
+  # and the CI docs job. Pins do not bump themselves, and an unwatched docs
+  # toolchain silently ages out of the versions everyone else is running.
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "documentation"
+    groups:
+      # One PR for the whole docs toolchain: Sphinx and its theme/extensions
+      # are upgraded together or not at all.
+      docs-dependencies:
+        patterns:
+          - "*"
+
   # GitHub Actions used in the workflows (checkout, setup-uv, codecov, ...).
   - package-ecosystem: "github-actions"
     directory: "/"
