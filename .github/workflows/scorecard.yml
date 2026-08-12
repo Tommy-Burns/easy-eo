@@ -1,0 +1,53 @@
+name: Scorecard
+
+# OpenSSF Scorecard rates the repository's supply-chain posture: pinned
+# dependencies, scoped workflow permissions, vulnerability scanning, release
+# provenance. Results are published so the README badge can read them.
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays, 04:00 UTC
+  push:
+    branches: [main]
+  # Re-score when branch protection changes, since it is one of the checks.
+  branch_protection_rule:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload the SARIF to code scanning
+      id-token: write # publish results, which is what the badge reads
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Required by scorecard-action: the checkout token must not be left
+          # in the git config for the analysis step.
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@v2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Publishes to the OpenSSF API. Without this the badge has nothing to
+          # read and renders "invalid repo path".
+          publish_results: true
+
+      - name: Upload results as an artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 5
+
+      # Puts the findings in the repository's Security tab alongside CodeQL's.
+      - name: Upload results to code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif

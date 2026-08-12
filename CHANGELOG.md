@@ -29,6 +29,10 @@ are called out under a **Breaking** heading.
   week old, and both can go red for reasons outside the project — an external
   site being down, a fresh advisory in a transitive dependency — which teaches
   readers to ignore every badge in the row.
+- An OpenSSF Scorecard workflow and its README badge. Scorecard rates the
+  repository's supply-chain posture — scoped workflow permissions, pinned
+  dependencies, vulnerability scanning, release provenance — and publishes the
+  result, so the badge reports a rating rather than another pass/fail tick.
 - `scripts/check_colab_links.py`, checking all 51 "Open in Colab" links across
   the notebooks, the READMEs, and the tutorials page. These cannot be checked
   over HTTP: Colab is a single-page app that answers 200 for any URL, including
