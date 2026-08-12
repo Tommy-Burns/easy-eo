@@ -11,6 +11,17 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- A monthly link check covering the documentation, the Markdown files, and the
+  tutorial notebooks. `sphinx-build -b linkcheck` handles the docs; `lychee`
+  handles `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and
+  `examples/README.md`; and `scripts/check_notebook_links.py` handles the
+  notebooks, whose 16 Colab links each embed a notebook path and so break
+  silently whenever a notebook is renamed. The script resolves relative links
+  against each notebook's real directory and extracts the Markdown prose for
+  `lychee` to check the web links — a checker pointed at raw `.ipynb` JSON
+  reports any URL ending a line as broken, with the `\n` escape attached. It is
+  scheduled rather than run on pull requests: link rot arrives without a commit,
+  and an external site being down should not block a merge.
 - Security scanning in CI. CodeQL analyses the Python source on every push and
   pull request and weekly (so new queries reach unchanged code), and a
   dependency audit runs `pip-audit` against the fully resolved `uv.lock` set —
@@ -48,6 +59,12 @@ are called out under a **Breaking** heading.
   resolved was discovered on the published site. The job installs the package
   without extras, exactly as Read the Docs does, so it fails on the same things
   the published build would.
+
+### Fixed
+
+- The xarray link in the interop guide now points at
+  `https://docs.xarray.dev/en/stable/` rather than relying on the redirect from
+  the bare domain — found by the new link check.
 
 ### Changed
 

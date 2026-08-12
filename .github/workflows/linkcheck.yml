@@ -1,0 +1,51 @@
+name: Link check
+
+# Scheduled link checks of links in the notebooks and docs to make sure they are still intact
+on:
+  schedule:
+    - cron: "0 6 1 * *" # 1st of each month, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install locked environment
+        run: uv sync --frozen
+
+      # Broken links set the exit code on their own.
+      - name: Check documentation links
+        run: >
+          uv run --no-sync --with-requirements docs/requirements.txt
+          sphinx-build -b linkcheck docs/source docs/build/linkcheck
+
+  markdown:
+    name: Markdown links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Sphinx only sees the documentation tree, so the README - which carries
+      # the badges, the PyPI-facing image URLs, and the Colab links - would
+      # otherwise go unchecked.
+      - name: Check markdown links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >
+            --no-progress --max-retries 3
+            README.md CONTRIBUTING.md CHANGELOG.md examples/README.md
+          fail: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

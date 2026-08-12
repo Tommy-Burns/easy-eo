@@ -59,6 +59,11 @@ intersphinx_mapping = {
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
 }
 
+# -- linkcheck ---------------------------------------------------------------
+# Retry once more than the default, so a momentary timeout in the scheduled
+# link check does not report a working link as broken.
+linkcheck_retries = 2
+
 templates_path = ["_templates"]
 exclude_patterns = []
 

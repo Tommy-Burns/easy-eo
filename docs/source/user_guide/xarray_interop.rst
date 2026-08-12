@@ -2,7 +2,7 @@ Working with the xarray Ecosystem
 =================================
 
 Easy-EO covers the everyday raster workflow: open a scene, clip it, compute an
-index, plot it, write it out. `xarray <https://docs.xarray.dev/>`_ covers
+index, plot it, write it out. `xarray <https://docs.xarray.dev/en/stable/>`_ covers
 something different — labelled N-dimensional arrays, parallel computation
 through `dask <https://www.dask.org/>`_, and a large ecosystem of packages built
 on top of that model. Neither replaces the other, so Easy-EO converts between
