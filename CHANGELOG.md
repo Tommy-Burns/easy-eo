@@ -29,6 +29,11 @@ are called out under a **Breaking** heading.
   week old, and both can go red for reasons outside the project — an external
   site being down, a fresh advisory in a transitive dependency — which teaches
   readers to ignore every badge in the row.
+- Every GitHub Action in the workflows is pinned to a full commit SHA with the
+  version in a trailing comment, in place of the floating `@v7`-style major
+  tags. A major tag is mutable: whoever controls the action repository can move
+  it to different code at any time, and a workflow that uses one runs whatever
+  it points to today. Dependabot keeps the SHAs and their comments current.
 - The README badges are now a table grouped under Install, Build & quality,
   Security, and Project, rather than a single row of thirteen. The URLs moved
   to reference-style definitions below the table, so adding or changing a badge

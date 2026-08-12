@@ -14,10 +14,10 @@ jobs:
     name: Build sdist & wheel
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
           python-version: "3.12"
@@ -29,7 +29,7 @@ jobs:
         run: uvx twine check dist/*
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/
@@ -60,16 +60,16 @@ jobs:
             python-version: "3.12"
             package: sdist
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
@@ -115,13 +115,13 @@ jobs:
       id-token: write
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           # skip (don't fail) if this version was
           # already uploaded, e.g. a re-run or an accidental duplicate tag.
@@ -136,10 +136,10 @@ jobs:
       contents: write
       id-token: write # OIDC identity for keyless signing
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
@@ -147,10 +147,8 @@ jobs:
       # Signs the files attached to the GitHub Release. The copies on PyPI are
       # signed separately by the publish job, which attaches PEP 740
       # attestations by default under Trusted Publishing.
-      #
-      # Pinned to a full version: this action publishes no floating major tag.
       - name: Sign the release artifacts
-        uses: sigstore/gh-action-sigstore-python@v3.5.0
+        uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
         with:
           inputs: ./dist/*.tar.gz ./dist/*.whl
           # The release is created by the step below, which attaches the
