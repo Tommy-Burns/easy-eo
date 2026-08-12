@@ -56,6 +56,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Colab answers 200 for any URL, including notebooks and repositories
+      # that do not exist, so these links are checked structurally instead.
+      - name: Check Open in Colab links
+        run: python3 scripts/check_colab_links.py
+
       # Checks relative links in the ipynb
       - name: Check relative links and extract notebook prose
         run: python3 scripts/check_notebook_links.py --output .linkcheck

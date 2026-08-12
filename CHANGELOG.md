@@ -15,13 +15,20 @@ are called out under a **Breaking** heading.
   tutorial notebooks. `sphinx-build -b linkcheck` handles the docs; `lychee`
   handles `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and
   `examples/README.md`; and `scripts/check_notebook_links.py` handles the
-  notebooks, whose 16 Colab links each embed a notebook path and so break
-  silently whenever a notebook is renamed. The script resolves relative links
-  against each notebook's real directory and extracts the Markdown prose for
-  `lychee` to check the web links — a checker pointed at raw `.ipynb` JSON
-  reports any URL ending a line as broken, with the `\n` escape attached. It is
-  scheduled rather than run on pull requests: link rot arrives without a commit,
-  and an external site being down should not block a merge.
+  notebooks. The script resolves relative links against each notebook's real
+  directory and extracts the Markdown prose for `lychee` to check the web
+  links — a checker pointed at raw `.ipynb` JSON reports any URL ending a line
+  as broken, with the `\n` escape attached. It is scheduled rather than run on
+  pull requests: link rot arrives without a commit, and an external site being
+  down should not block a merge.
+- `scripts/check_colab_links.py`, checking all 51 "Open in Colab" links across
+  the notebooks, the READMEs, and the tutorials page. These cannot be checked
+  over HTTP: Colab is a single-page app that answers 200 for any URL, including
+  a notebook path that does not exist and a repository that does not exist, so
+  an ordinary link checker confirms nothing about them. Each link instead has
+  its embedded `<owner>/<repo>`, branch, and notebook path verified against the
+  repository, and a notebook's own badge must open that notebook — a badge
+  copied to a new notebook and left unedited opens the wrong tutorial.
 - Security scanning in CI. CodeQL analyses the Python source on every push and
   pull request and weekly (so new queries reach unchanged code), and a
   dependency audit runs `pip-audit` against the fully resolved `uv.lock` set —
