@@ -1,3 +1,11 @@
+# Summary
+
+Easy-EO is a Python library for raster-based Earth Observation analysis. Everything happens through a single dataset object. It can be clipped to a boundary, reprojected, resampled, reduced to a spectral index or plotted, and each of those returns another dataset, so an analysis can be chained as a sequence of steps.
+
+It also fetches its own data. A search against any SpatioTemporal Asset Catalog returns matching scenes, and loading one reads just the pixels covering the area of interest, so imagery can be worked on without the scenes it comes from being downloaded.
+
+The intended reader is a researcher whose question is about the landscape rather than about file formats: an ecologist comparing vegetation before and after a fire, or a student meeting coordinate reference systems for the first time. Neither has to call the underlying libraries directly, or carry the metadata handling those libraries expect the caller to keep track of.
+
 # Statement of need
 
 Most Earth Observation data no longer arrives as a file on disk. Sentinel-2 and Landsat sit in cloud catalogs, indexed by STAC [@stac_spec] and stored as
@@ -20,11 +28,11 @@ The rest of the field sits further off. rioxarray [@rioxarray] over xarray [@xar
 
 A dataset in Easy-EO does not hold the pixels itself. It keeps a backend adapter, and the adapter is what holds them. Today there are two. One wraps a rasterio dataset opened from a file on disk. The other wraps a NumPy array already in memory.
 
-A scene pulled from a catalog becomes the second kind. Easy-EO opens the remote file, takes only the window over the area of interest, and hands that window to the in-memory adapter, so nothing is written to disk and nothing further down needs to know where the pixels came from. Because every operation is written against the adapter instead of against one kind of storage, clipping a file and clipping an array run the same code. The price is a small extra step on each read. The advantage is that a new adapter, one that streams pixels in chunks as they are needed, could be added later without any of the operations being rewritten.
+A scene pulled from a catalog becomes the second kind. Easy-EO opens the remote file, takes only the window over the area of interest, and hands that window to the in-memory adapter, so nothing is written to disk. Because every operation is written against the adapter instead of against one kind of storage, clipping a file and clipping an array run the same code. The price is a small extra step on each read; the advantage is that a chunked adapter, streaming pixels as they are needed, could be added later without rewriting the operations.
 
 The operations themselves live outside the dataset class. Each is a free function carrying an `@eeo_raster_op` decorator. At import time Easy-EO walks the modules under `eeo.ops`, `eeo.analysis`, `eeo.preprocessing` and `eeo.viz`, binding every decorated function onto the dataset as a method. A user sees one object carrying the whole API, so a clip, a resample and an index chain together in a single expression. A maintainer sees small files grouped by topic, and contributing an operation means writing one decorated function, with no central class to edit.
 
-Where a default could be safe or fast, Easy-EO takes the safe one. Pixels flagged as `nodata` are masked before any statistic, so fill values never reach a mean. Integer bands are promoted to floating point before arithmetic, so a `uint16` subtraction that should go negative cannot wrap round to 65,000. The spectral indices return `float32` and guard the denominator, yielding zero where it would divide by zero instead of raising or emitting `inf`. Reads stay deferred until an operation needs pixels, and statistics over a large raster come from a decimated read capped at 1024 pixels a side, served from the file's overviews when it has them. Band names follow the same reasoning. Operations that preserve band identity, such as clipping, resampling and reprojection, carry the names through; an index synthesizes a new band, so it labels its own output, because inheriting the input's name would mislabel the result.
+Pixels flagged as `nodata` are masked before any statistic, so fill values never reach a mean. Integer bands are promoted to floating point before arithmetic, so a `uint16` subtraction that should go negative cannot wrap round to 65,000. The spectral indices return `float32` and guard the denominator, yielding zero where it would divide by zero instead of raising or emitting `inf`. Reads stay deferred until an operation needs pixels, and statistics over a large raster come from a decimated read capped at 1024 pixels a side, served from the file's overviews when it has them. Band names follow the same reasoning. Operations that preserve band identity, such as clipping, resampling and reprojection, carry the names through; an index synthesizes a new band, so it labels its own output, because inheriting the input's name would mislabel the result.
 
 # Example
 
