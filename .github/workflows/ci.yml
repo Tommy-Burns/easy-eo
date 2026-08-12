@@ -170,6 +170,10 @@ jobs:
           enable-cache: true
           python-version: "3.12"
 
+
+      - name: Install locked environment
+        run: uv sync --frozen
+
       - name: Build docs (warnings are errors)
         run: >
           uv run --no-sync --with-requirements docs/requirements.txt
