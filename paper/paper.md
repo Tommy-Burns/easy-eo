@@ -66,3 +66,10 @@ The load fetches only the 1160 by 1343 pixel window over the lake, out of a gran
 Easy-EO is published on [PyPI](https://pypi.org/project/easy-eo/) and, through a reviewed feedstock, on [conda-forge](https://anaconda.org/conda-forge/easy-eo), so it installs into both of the environments Earth Observation analysts usually use. It has several tutorial notebooks which teach the library from installation through to complete analysis. Each of the notebooks can be opened in Google Colab, so the library can be taught without anyone installing anything.
 
 The notebooks either use the STAC search method or a hosted dataset that ships with the project [@sampledata]: Sentinel-2 bands in plain and cloud-optimized form, a Copernicus elevation tile, and a boundary vector for clip operations. They are downloaded on first use and then cached, so a worked example produces the same output everywhere, and a reader can reproduce any figure in the documentation without registering for a data account.
+
+# Acknowledgements
+
+The Sentinel-2 imagery in \autoref{fig:indices} comes from the Copernicus Programme of the European Union, accessed through Microsoft Planetary Computer.
+Easy-EO is built on rasterio, GDAL, NumPy, GeoPandas and Matplotlib, and owes a great deal to the people who maintain them.
+
+This work received no external funding.
