@@ -1,3 +1,24 @@
+---
+title: 'Easy-EO: chainable raster analysis for Earth Observation in Python'
+tags:
+  - Python
+  - Earth observation
+  - remote sensing
+  - raster
+  - GIS
+  - STAC
+  - spectral indices
+authors:
+  - name: Thomas Burns Botchwey
+    orcid: 0009-0007-0358-0337
+    affiliation: 1
+affiliations:
+  - name: University of Salzburg, Austria
+    index: 1
+date: 13 August 2026
+bibliography: paper.bib
+---
+
 # Summary
 
 Easy-EO is a Python library for raster-based Earth Observation analysis. Everything happens through a single dataset object. It can be clipped to a boundary, reprojected, resampled, reduced to a spectral index or plotted, and each of those returns another dataset, so an analysis can be chained as a sequence of steps.
@@ -73,3 +94,5 @@ The Sentinel-2 imagery in \autoref{fig:indices} comes from the Copernicus Progra
 Easy-EO is built on rasterio, GDAL, NumPy, GeoPandas and Matplotlib, and owes a great deal to the people who maintain them.
 
 This work received no external funding.
+
+# References
