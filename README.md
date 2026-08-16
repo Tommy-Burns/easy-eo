@@ -9,7 +9,7 @@
 | **Install** | [![PyPI][pypi-badge]][pypi] [![conda-forge][conda-badge]][conda] [![Python versions][pyversions-badge]][pypi] [![Platforms][platforms-badge]][ci] |
 | **Build & quality** | [![CI][ci-badge]][ci] [![Latest deps][latest-deps-badge]][latest-deps] [![Coverage][codecov-badge]][codecov] [![Ruff][ruff-badge]][ruff] [![Checked with mypy][mypy-badge]][mypy] |
 | **Security** | [![CodeQL][codeql-badge]][codeql] [![OpenSSF Scorecard][scorecard-badge]][scorecard] |
-| **Project** | [![Documentation][docs-badge]][docs] [![License: MIT][license-badge]][license] |
+| **Project** | [![Documentation][docs-badge]][docs] [![License: MIT][license-badge]][license] [![DOI][doi-badge]][doi] |
 
 [pypi]: https://pypi.org/project/easy-eo/
 [pypi-badge]: https://img.shields.io/pypi/v/easy-eo.svg
@@ -35,6 +35,8 @@
 [docs-badge]: https://readthedocs.org/projects/easy-eo/badge/?version=latest
 [license]: https://github.com/Tommy-Burns/easy-eo/blob/main/LICENSE
 [license-badge]: https://img.shields.io/github/license/Tommy-Burns/easy-eo
+[doi]: https://doi.org/10.5281/zenodo.21967655
+[doi-badge]: https://zenodo.org/badge/DOI/10.5281/zenodo.21967655.svg
 
 
 Easy-EO is a lightweight, extensible Python library for raster-based Earth

@@ -94,6 +94,7 @@ runnable notebooks — each one openable in Colab with nothing to install.
    user_guide/statistical_locations
    user_guide/xarray_interop
    backends
+   citation
 
 .. toctree::
    :maxdepth: 1
