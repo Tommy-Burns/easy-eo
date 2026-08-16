@@ -11,6 +11,14 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- `sentinel2_blue_cog`, `sentinel2_green_cog`, `sentinel2_red_cog` and
+  `sentinel2_nir_cog` on `load_sample_dataset()`. The four per-band
+  Cloud-Optimized GeoTIFFs were already published on the `sample-data-v1`
+  release but were missing from the registry, so the single-band rasters were
+  the only ones without a COG counterpart a user could ask for. Their pinned
+  checksums and sizes were taken from the live release assets. A test now
+  asserts every plain raster in the registry has a COG sibling, so a future
+  upload cannot go unreachable the same way.
 - A weekly link check covering the documentation, the Markdown files, and the
   tutorial notebooks. `sphinx-build -b linkcheck` handles the docs; `lychee`
   handles `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and
