@@ -16,6 +16,9 @@ authors:
     orcid: "https://orcid.org/0009-0007-0358-0337"
     affiliation: "University of Salzburg, Austria"
 license: MIT
+# Zenodo concept DOI: always resolves to the newest archived release, so it
+# never needs updating. Each release also gets its own version DOI.
+doi: "10.5281/zenodo.21967655"
 repository-code: "https://github.com/Tommy-Burns/easy-eo"
 url: "https://easy-eo.readthedocs.io"
 keywords:
