@@ -9,6 +9,12 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- A DOI badge in the README, and the Zenodo DOI in `CITATION.cff`. Both use
+  the concept DOI rather than the version DOI Zenodo offers by default, so
+  they track the newest release instead of pinning to v0.3.1.
+
 ## [0.3.1] - 2026-08-16
 
 ### Added
