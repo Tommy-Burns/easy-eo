@@ -77,9 +77,8 @@ class SampleFile:
 #: The curated samples, keyed by the attribute name they are exposed under on
 #: :class:`eeo.datasets.SampleDataset`. Band files use the library's colour band
 #: names. This is the single source of truth for both the download machinery and
-#: the namespace attributes. Per-band Cloud-Optimized GeoTIFFs are intentionally
-#: absent: only the stacked COG has a checksum pinned today, and fabricating one
-#: would defeat the download verification.
+#: the namespace attributes. Every raster published on the release has both a
+#: plain and a Cloud-Optimized variant here, the latter suffixed ``_cog``.
 SAMPLE_FILES: dict[str, SampleFile] = {
     "sentinel2_stacked": SampleFile(
         Asset(
@@ -111,6 +110,16 @@ SAMPLE_FILES: dict[str, SampleFile] = {
         "Sentinel-2 L2A band B02 (blue), 1024x1024 @ 10 m, EPSG:32633.",
         _S2_ATTRIBUTION,
     ),
+    "sentinel2_blue_cog": SampleFile(
+        Asset(
+            "B02_COG.tif",
+            "555f6fb67522148c05d7bb9a4f49d157cde2d9da00d1304ed953bfd383c9ead1",
+            2293197,
+        ),
+        "raster",
+        "Cloud-Optimized GeoTIFF variant of the blue band (B02).",
+        _S2_ATTRIBUTION,
+    ),
     "sentinel2_green": SampleFile(
         Asset(
             "B03.tif",
@@ -119,6 +128,16 @@ SAMPLE_FILES: dict[str, SampleFile] = {
         ),
         "raster",
         "Sentinel-2 L2A band B03 (green), 1024x1024 @ 10 m, EPSG:32633.",
+        _S2_ATTRIBUTION,
+    ),
+    "sentinel2_green_cog": SampleFile(
+        Asset(
+            "B03_COG.tif",
+            "0f0e6cd16141725fe4dfd749a911f3846429b0cd7c222d543d90848ac1f95833",
+            2404804,
+        ),
+        "raster",
+        "Cloud-Optimized GeoTIFF variant of the green band (B03).",
         _S2_ATTRIBUTION,
     ),
     "sentinel2_red": SampleFile(
@@ -131,6 +150,16 @@ SAMPLE_FILES: dict[str, SampleFile] = {
         "Sentinel-2 L2A band B04 (red), 1024x1024 @ 10 m, EPSG:32633.",
         _S2_ATTRIBUTION,
     ),
+    "sentinel2_red_cog": SampleFile(
+        Asset(
+            "B04_COG.tif",
+            "5781624003c04ae978196df98dd54e742fe38d1bd5b56237ffc4162209eafc28",
+            2436025,
+        ),
+        "raster",
+        "Cloud-Optimized GeoTIFF variant of the red band (B04).",
+        _S2_ATTRIBUTION,
+    ),
     "sentinel2_nir": SampleFile(
         Asset(
             "B08.tif",
@@ -139,6 +168,16 @@ SAMPLE_FILES: dict[str, SampleFile] = {
         ),
         "raster",
         "Sentinel-2 L2A band B08 (nir), 1024x1024 @ 10 m, EPSG:32633.",
+        _S2_ATTRIBUTION,
+    ),
+    "sentinel2_nir_cog": SampleFile(
+        Asset(
+            "B08_COG.tif",
+            "1488f68cad9f37a90ffef9eb62716e2cab77bd7c22954a08e2f2a5d06ce4014d",
+            2504710,
+        ),
+        "raster",
+        "Cloud-Optimized GeoTIFF variant of the nir band (B08).",
         _S2_ATTRIBUTION,
     ),
     "copernicus_dem": SampleFile(
