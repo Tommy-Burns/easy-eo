@@ -298,6 +298,46 @@ def test_namespace_iterates_all_handles():
     assert all(isinstance(h, SamplePath) for h in sd)
 
 
+def test_every_raster_has_a_cog_counterpart():
+    # The release publishes a COG beside every plain raster; the registry must
+    # expose all of them, or a hosted asset is unreachable from user code.
+    pairs = {
+        "sentinel2_stacked": "sentinel2_cog_stacked",
+        "sentinel2_blue": "sentinel2_blue_cog",
+        "sentinel2_green": "sentinel2_green_cog",
+        "sentinel2_red": "sentinel2_red_cog",
+        "sentinel2_nir": "sentinel2_nir_cog",
+        "copernicus_dem": "copernicus_dem_cog",
+    }
+    plain_rasters = {
+        name
+        for name, sample in _registry.SAMPLE_FILES.items()
+        if sample.kind == "raster" and not name.endswith("_cog") and "_cog_" not in name
+    }
+    assert plain_rasters == set(pairs)
+    for plain, cog in pairs.items():
+        assert cog in _registry.SAMPLE_FILES, cog
+        assert _registry.SAMPLE_FILES[cog].kind == "raster"
+        # A COG entry must point at its own asset, not reuse the plain one.
+        assert (
+            _registry.SAMPLE_FILES[cog].asset.remote != _registry.SAMPLE_FILES[plain].asset.remote
+        )
+        assert _registry.SAMPLE_FILES[cog].attribution == _registry.SAMPLE_FILES[plain].attribution
+
+
+def test_single_band_cogs_point_at_the_published_assets():
+    expected = {
+        "sentinel2_blue_cog": "B02_COG.tif",
+        "sentinel2_green_cog": "B03_COG.tif",
+        "sentinel2_red_cog": "B04_COG.tif",
+        "sentinel2_nir_cog": "B08_COG.tif",
+    }
+    for name, remote in expected.items():
+        sample = _registry.SAMPLE_FILES[name]
+        assert sample.asset.remote == remote
+        assert "Sentinel-2" in sample.attribution
+
+
 def test_sample_files_are_single_pinned_assets():
     for name, sample in _registry.SAMPLE_FILES.items():
         assert isinstance(sample, SampleFile), name
@@ -326,3 +366,6 @@ def test_real_download_roundtrip(tmp_path, monkeypatch):
     ds = eeo.load_raster(sd.sentinel2_stacked)
     assert ds.get_count() == 4
     assert ds.band_names == ["blue", "green", "red", "nir"]
+    cog = eeo.load_raster(sd.sentinel2_blue_cog)  # checks a per-band COG checksum
+    assert cog.get_count() == 1
+    assert cog.band_names == ["blue"]
