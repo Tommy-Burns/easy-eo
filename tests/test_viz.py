@@ -1117,6 +1117,67 @@ def test_plot_composite_stretched(rgb_float32_raster):
     plot_composite(rgb_float32_raster, bands=(1, 2, 3), stretch=True)
 
 
+# ---------------------------------------------------------------------
+# save_path / dpi
+# ---------------------------------------------------------------------
+# Every plotting function that writes a file takes the same ``dpi``, so the
+# cases below run against all five rather than the three the API grew it for.
+
+
+def _savers(ds):
+    """Return one zero-argument call per plotting function that can save."""
+    return {
+        "plot_band_array": lambda **kw: plot_band_array(ds, **kw),
+        "plot_raster": lambda **kw: plot_raster(ds, **kw),
+        "plot_histogram": lambda **kw: plot_histogram(ds, **kw),
+        "plot_raster_with_histogram": lambda **kw: plot_raster_with_histogram(ds, **kw),
+        "plot_composite": lambda **kw: plot_composite(ds, bands=(1, 2, 3), **kw),
+    }
+
+
+@pytest.fixture
+def savefig_spy(monkeypatch):
+    """Record the keyword arguments every ``plt.savefig`` call receives."""
+    calls: list[dict] = []
+    monkeypatch.setattr(plt, "savefig", lambda *a, **kw: calls.append(kw))
+    return calls
+
+
+@pytest.mark.parametrize("name", list(_savers(None)))
+def test_dpi_defaults_to_300(rgb_float32_raster, savefig_spy, tmp_path, name):
+    _savers(rgb_float32_raster)[name](save_path=tmp_path / "out.png")
+    assert [c["dpi"] for c in savefig_spy] == [300]
+
+
+@pytest.mark.parametrize("name", list(_savers(None)))
+def test_dpi_is_forwarded_to_savefig(rgb_float32_raster, savefig_spy, tmp_path, name):
+    _savers(rgb_float32_raster)[name](save_path=tmp_path / "out.png", dpi=72)
+    assert [c["dpi"] for c in savefig_spy] == [72]
+
+
+@pytest.mark.parametrize("name", list(_savers(None)))
+def test_dpi_without_save_path_writes_nothing(rgb_float32_raster, savefig_spy, name):
+    # dpi is inert on its own: passing it must not turn on saving.
+    _savers(rgb_float32_raster)[name](dpi=72)
+    assert savefig_spy == []
+
+
+@pytest.mark.parametrize("name", list(_savers(None)))
+def test_dpi_scales_the_written_image(rgb_float32_raster, tmp_path, name):
+    """The point of the argument: a lower dpi really writes a smaller file."""
+    call = _savers(rgb_float32_raster)[name]
+    big, small = tmp_path / "big.png", tmp_path / "small.png"
+    call(save_path=big, figsize=(6, 4), dpi=200)
+    call(save_path=small, figsize=(6, 4), dpi=50)
+
+    big_h, big_w = plt.imread(big).shape[:2]
+    small_h, small_w = plt.imread(small).shape[:2]
+    assert big_w > small_w and big_h > small_h
+    assert small.stat().st_size < big.stat().st_size
+    # 4x the dpi is 4x the linear size, give or take tight-bbox rounding.
+    assert abs(big_w / small_w - 4.0) < 0.2
+
+
 def test_plot_composite_stretch_integer_not_truncated(multiband_uint16, monkeypatch):
     """Regression: stretching an integer raster must not render black.
 
