@@ -11,6 +11,17 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- A `dpi` argument on every plotting function that writes a file —
+  `plot_band_array`, `plot_raster`, `plot_histogram`,
+  `plot_raster_with_histogram` and `plot_composite`. All five hardcoded
+  `dpi=300` in their `savefig` call, so `save_path` could only ever write at
+  print resolution: a 15x5 figure came out near 4500x1500 pixels and well over
+  10 MB, and trimming one for a README or a paper meant re-encoding it
+  afterwards. The default is unchanged at 300, so existing output is
+  byte-identical. Note that raising it much past 200 enlarges the canvas
+  without adding image detail, since bands are read at the on-screen display
+  budget rather than at `dpi`; the visualization guide has a new "Saving
+  Figures" section on choosing a value.
 - `sentinel2_blue_cog`, `sentinel2_green_cog`, `sentinel2_red_cog` and
   `sentinel2_nir_cog` on `load_sample_dataset()`. The four per-band
   Cloud-Optimized GeoTIFFs were already published on the `sample-data-v1`
