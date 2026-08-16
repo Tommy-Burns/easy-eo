@@ -227,6 +227,7 @@ class EEORasterDataset:
         colorbar_label: str | None = ...,
         title: str | None = ...,
         save_path: StrPath | None = ...,
+        dpi: int = ...,
         **imshow_kwargs,
     ) -> None: ...
     def plot_composite(
@@ -239,6 +240,7 @@ class EEORasterDataset:
         pmax: float = ...,
         title: str | None = ...,
         save_path: StrPath | None = ...,
+        dpi: int = ...,
     ) -> None: ...
     def plot_histogram(
         self,
@@ -251,6 +253,7 @@ class EEORasterDataset:
         log: bool = ...,
         title: str | None = ...,
         save_path: StrPath | None = ...,
+        dpi: int = ...,
         **hist_kwargs,
     ) -> None: ...
     def plot_raster(
@@ -268,6 +271,7 @@ class EEORasterDataset:
         colorbar_label: str | None = ...,
         title: str | None = ...,
         save_path: StrPath | None = ...,
+        dpi: int = ...,
         **show_kwargs,
     ) -> None: ...
     def plot_raster_with_histogram(
@@ -283,6 +287,7 @@ class EEORasterDataset:
         colorbar: bool = ...,
         colorbar_label: str | None = ...,
         save_path: StrPath | None = ...,
+        dpi: int = ...,
         title: str | None = ...,
     ) -> None: ...
     def power(self, exponent: int | float) -> EEORasterDataset: ...

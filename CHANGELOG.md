@@ -9,8 +9,29 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-16
+
 ### Added
 
+- A `dpi` argument on every plotting function that writes a file —
+  `plot_band_array`, `plot_raster`, `plot_histogram`,
+  `plot_raster_with_histogram` and `plot_composite`. All five hardcoded
+  `dpi=300` in their `savefig` call, so `save_path` could only ever write at
+  print resolution: a 15x5 figure came out near 4500x1500 pixels and well over
+  10 MB, and trimming one for a README or a paper meant re-encoding it
+  afterwards. The default is unchanged at 300, so existing output is
+  byte-identical. Note that raising it much past 200 enlarges the canvas
+  without adding image detail, since bands are read at the on-screen display
+  budget rather than at `dpi`; the visualization guide has a new "Saving
+  Figures" section on choosing a value.
+- `sentinel2_blue_cog`, `sentinel2_green_cog`, `sentinel2_red_cog` and
+  `sentinel2_nir_cog` on `load_sample_dataset()`. The four per-band
+  Cloud-Optimized GeoTIFFs were already published on the `sample-data-v1`
+  release but were missing from the registry, so the single-band rasters were
+  the only ones without a COG counterpart a user could ask for. Their pinned
+  checksums and sizes were taken from the live release assets. A test now
+  asserts every plain raster in the registry has a COG sibling, so a future
+  upload cannot go unreachable the same way.
 - A weekly link check covering the documentation, the Markdown files, and the
   tutorial notebooks. `sphinx-build -b linkcheck` handles the docs; `lychee`
   handles `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and
@@ -72,9 +93,6 @@ are called out under a **Breaking** heading.
   audit is deliberately not gating unrelated pull requests: a new advisory
   against an unchanged dependency is time-based news, not a regression in the
   branch that happens to be open.
-
-### Added
-
 - Tagging a release now creates a GitHub Release, with the tag's `CHANGELOG.md`
   section as its notes and the sdist and wheel attached. A tag previously
   published to PyPI and left no Release behind, which matters beyond
@@ -95,7 +113,6 @@ are called out under a **Breaking** heading.
   extra is absent — importing Easy-EO as a user would, and refusing to run
   against a source checkout. The sdist is covered because conda-forge builds
   from it.
-
 - The documentation now builds in CI on every pull request, with Sphinx
   warnings treated as errors. Previously it built only on Read the Docs, after
   a merge, so a broken cross-reference or an autodoc target that no longer
@@ -415,7 +432,8 @@ Initial public beta release.
 - Visualization: `plot_raster`, `plot_composite`,
   `plot_raster_with_histogram`, `plot_band_array`.
 
-[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.1.0b1...v0.2.0
 [0.1.0b1]: https://github.com/Tommy-Burns/easy-eo/releases/tag/v0.1.0b1

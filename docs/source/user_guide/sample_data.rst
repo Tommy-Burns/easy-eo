@@ -84,6 +84,9 @@ attribution (``sd.<name>.info()`` / ``sd.<name>.attribution``).
    * - ``sentinel2_blue`` / ``sentinel2_green`` / ``sentinel2_red`` / ``sentinel2_nir``
      - raster
      - The four Sentinel-2 bands as separate single-band files.
+   * - ``sentinel2_blue_cog`` / ``sentinel2_green_cog`` / ``sentinel2_red_cog`` / ``sentinel2_nir_cog``
+     - raster
+     - Cloud-Optimized GeoTIFF variants of the four single-band files.
    * - ``copernicus_dem``
      - raster
      - Copernicus GLO-30 DEM warped onto the same grid (float32 metres).

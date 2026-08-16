@@ -564,6 +564,7 @@ def plot_band_array(
     colorbar_label: str | None = None,
     title: str | None = None,
     save_path: StrPath | None = None,
+    dpi: int = 300,
     **imshow_kwargs,
 ) -> None:
     """Plot raster bands as arrays in row/column (pixel) space.
@@ -614,7 +615,15 @@ def plot_band_array(
     title : str or None, default None
         Optional figure title.
     save_path : str or path-like or None, default None
-        If given, save the figure to this path at 300 dpi.
+        If given, save the figure to this path, at ``dpi``.
+    dpi : int, default 300
+        Resolution of the saved file, in dots per inch; ignored when
+        ``save_path`` is None. The default suits print, but multiplies with
+        ``figsize``: a 15x5 figure lands near 4500x1500 pixels and well over
+        10 MB, so lower it (100-150) for a figure committed to a
+        repository or embedded in a web page. Raising it past roughly 200
+        enlarges the canvas without adding detail, because bands are read at
+        the on-screen display budget (see Notes), not at ``dpi``.
     **imshow_kwargs
         Extra keyword arguments forwarded to ``matplotlib.pyplot.imshow``. An
         explicit ``vmin``/``vmax`` takes precedence over the stretch.
@@ -671,7 +680,7 @@ def plot_band_array(
     plt.tight_layout()
 
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
     plt.show()
     plt.close()
 
@@ -693,6 +702,7 @@ def plot_raster(
     colorbar_label: str | None = None,
     title: str | None = None,
     save_path: StrPath | None = None,
+    dpi: int = 300,
     **show_kwargs,
 ) -> None:
     """Plot raster bands in spatial (CRS-aware) coordinates.
@@ -743,7 +753,15 @@ def plot_raster(
     title : str or None, default None
         Optional figure title.
     save_path : str or path-like or None, default None
-        If given, save the figure to this path at 300 dpi.
+        If given, save the figure to this path, at ``dpi``.
+    dpi : int, default 300
+        Resolution of the saved file, in dots per inch; ignored when
+        ``save_path`` is None. The default suits print, but multiplies with
+        ``figsize``: a 15x5 figure lands near 4500x1500 pixels and well over
+        10 MB, so lower it (100-150) for a figure committed to a
+        repository or embedded in a web page. Raising it past roughly 200
+        enlarges the canvas without adding detail, because bands are read at
+        the on-screen display budget (see Notes), not at ``dpi``.
     **show_kwargs
         Extra keyword arguments forwarded to ``rasterio.plot.show``. An
         explicit ``vmin``/``vmax`` takes precedence over the stretch.
@@ -807,7 +825,7 @@ def plot_raster(
 
     plt.tight_layout()
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
     plt.show()
     plt.close()
 
@@ -825,6 +843,7 @@ def plot_histogram(
     log: bool = False,
     title: str | None = None,
     save_path: StrPath | None = None,
+    dpi: int = 300,
     **hist_kwargs,
 ) -> None:
     """Plot per-band value histograms.
@@ -859,7 +878,13 @@ def plot_histogram(
     title : str or None, default None
         Optional figure title.
     save_path : str or path-like or None, default None
-        If given, save the figure to this path at 300 dpi.
+        If given, save the figure to this path, at ``dpi``.
+    dpi : int, default 300
+        Resolution of the saved file, in dots per inch; ignored when
+        ``save_path`` is None. The default suits print, but multiplies with
+        ``figsize``: a 15x5 figure lands near 4500x1500 pixels and well over
+        10 MB, so lower it (100-150) for a figure committed to a
+        repository or embedded in a web page.
     **hist_kwargs
         Extra keyword arguments forwarded to ``matplotlib.pyplot.hist``.
 
@@ -904,7 +929,7 @@ def plot_histogram(
 
     plt.tight_layout()
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
     plt.show()
     plt.close()
 
@@ -924,6 +949,7 @@ def plot_raster_with_histogram(
     colorbar: bool = False,
     colorbar_label: str | None = None,
     save_path: StrPath | None = None,
+    dpi: int = 300,
     title: str | None = None,
 ) -> None:
     """Plot each band alongside its value histogram.
@@ -960,7 +986,15 @@ def plot_raster_with_histogram(
         Label for the colorbars; None uses each band's name, leaving an
         unnamed band's colorbar unlabelled.
     save_path : str or path-like or None, default None
-        If given, save the figure to this path at 300 dpi.
+        If given, save the figure to this path, at ``dpi``.
+    dpi : int, default 300
+        Resolution of the saved file, in dots per inch; ignored when
+        ``save_path`` is None. The default suits print, but multiplies with
+        ``figsize``: a 15x5 figure lands near 4500x1500 pixels and well over
+        10 MB, so lower it (100-150) for a figure committed to a
+        repository or embedded in a web page. Past roughly 200 the histogram
+        panel keeps sharpening but the image panel does not, because bands are
+        read at the on-screen display budget (see Notes), not at ``dpi``.
     title : str or None, default None
         Optional figure title.
 
@@ -1026,7 +1060,7 @@ def plot_raster_with_histogram(
 
     plt.tight_layout()
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
     plt.show()
     plt.close()
 
@@ -1043,6 +1077,7 @@ def plot_composite(
     pmax: float = 98,
     title: str | None = None,
     save_path: StrPath | None = None,
+    dpi: int = 300,
 ) -> None:
     """Plot a three-band RGB (or false-colour) composite.
 
@@ -1070,7 +1105,15 @@ def plot_composite(
     title : str or None, default None
         Optional figure title.
     save_path : str or path-like or None, default None
-        If given, save the figure to this path at 300 dpi.
+        If given, save the figure to this path, at ``dpi``.
+    dpi : int, default 300
+        Resolution of the saved file, in dots per inch; ignored when
+        ``save_path`` is None. The default suits print, but multiplies with
+        ``figsize``: a 15x5 figure lands near 4500x1500 pixels and well over
+        10 MB, so lower it (100-150) for a figure committed to a
+        repository or embedded in a web page. Raising it past roughly 200
+        enlarges the canvas without adding detail, because bands are read at
+        the on-screen display budget (see Notes), not at ``dpi``.
 
     Returns
     -------
@@ -1138,7 +1181,7 @@ def plot_composite(
 
     plt.tight_layout()
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
 
     plt.show()
     plt.close()

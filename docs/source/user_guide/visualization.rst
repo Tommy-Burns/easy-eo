@@ -145,10 +145,32 @@ Notes:
     - ``plot_composite`` takes no colorbar: an RGB composite maps three bands to
       colour channels, so there is no single scalar scale to label.
 
+Saving Figures
+--------------
+
+Every plotting function writes the figure to disk when given ``save_path``, at
+the resolution ``dpi`` asks for:
+
+.. code-block:: python
+
+   scene.plot_raster(cmap="RdYlGn", save_path="ndvi.png")             # 300 dpi
+   scene.plot_raster(cmap="RdYlGn", save_path="ndvi.png", dpi=120)    # preferably for the web
+
+The default, 300, is a print resolution and multiplies with ``figsize``: a 15x5
+figure lands near 4500x1500 pixels and well over 10 MB. That is the wrong size
+for a figure committed to a repository, embedded in a README, or shown on a web
+page — pass ``dpi=100`` to ``dpi=150`` for those.
+
+Raising ``dpi`` much above 200 buys less than it appears to for the image
+panels. Bands are read decimated to the figure's on-screen display budget
+(``figsize`` times the Matplotlib ``figure.dpi``, oversampled twice over), so
+past that point a larger canvas holds the same pixels. Histogram panels, being
+drawn rather than read, do keep sharpening.
+
 Plot Band Arrays (Array Coordinates)
 ------------------------------------
 
-.. function:: plot_band_array(ds, bands=None, *, cmap="gray", figsize=None, nrows=None, ncols=None, stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, **imshow_kwargs)
+.. function:: plot_band_array(ds, bands=None, *, cmap="gray", figsize=None, nrows=None, ncols=None, stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, dpi=300, **imshow_kwargs)
 
    Plot raster bands as NumPy arrays using row/column coordinates.
 
@@ -168,13 +190,15 @@ Plot Band Arrays (Array Coordinates)
    :param colorbar_label: Colorbar label; ``None`` uses the band's name.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.
+   :param dpi: Resolution of the saved file, in dots per inch (default ``300``).
+       Lower it for a figure committed to a repository or shown on the web.
    :param imshow_kwargs: Additional keyword arguments passed to
        ``matplotlib.pyplot.imshow``.
 
 Plot Raster (Spatial Coordinates)
 ---------------------------------
 
-.. function:: plot_raster(ds, bands=None, *, cmap="gray", figsize=None, nrows=None, ncols=None, stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, **show_kwargs)
+.. function:: plot_raster(ds, bands=None, *, cmap="gray", figsize=None, nrows=None, ncols=None, stretch=True, pmin=2, pmax=98, colorbar=False, colorbar_label=None, title=None, save_path=None, dpi=300, **show_kwargs)
 
    Plot raster bands in spatial (CRS-aware) coordinates.
 
@@ -195,13 +219,15 @@ Plot Raster (Spatial Coordinates)
    :param colorbar_label: Colorbar label; ``None`` uses the band's name.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.
+   :param dpi: Resolution of the saved file, in dots per inch (default ``300``).
+       Lower it for a figure committed to a repository or shown on the web.
    :param show_kwargs: Additional keyword arguments passed to
        ``rasterio.plot.show``.
 
 Plot Histogram
 --------------
 
-.. function:: plot_histogram(ds, bands=None, *, bins=256, figsize=None, nrows=None, ncols=None, log=False, title=None, save_path=None, **hist_kwargs)
+.. function:: plot_histogram(ds, bands=None, *, bins=256, figsize=None, nrows=None, ncols=None, log=False, title=None, save_path=None, dpi=300, **hist_kwargs)
 
    Plot histograms of raster band values.
 
@@ -218,13 +244,15 @@ Plot Histogram
    :param log: Use a logarithmic scale on the y-axis.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.
+   :param dpi: Resolution of the saved file, in dots per inch (default ``300``).
+       Lower it for a figure committed to a repository or shown on the web.
    :param hist_kwargs: Additional keyword arguments passed to
        ``matplotlib.pyplot.hist``.
 
 Plot Raster with Histogram
 --------------------------
 
-.. function:: plot_raster_with_histogram(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), bins=256, pmin=2, pmax=98, stretch=False, colorbar=False, colorbar_label=None, title=None, save_path=None)
+.. function:: plot_raster_with_histogram(ds, bands=None, *, cmap="gray", figsize: tuple[int, int] = (10, 5), bins=256, pmin=2, pmax=98, stretch=False, colorbar=False, colorbar_label=None, title=None, save_path=None, dpi=300)
 
    Plot raster bands alongside their corresponding histograms.
 
@@ -244,11 +272,13 @@ Plot Raster with Histogram
    :param colorbar_label: Colorbar label; ``None`` uses the band's name.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.
+   :param dpi: Resolution of the saved file, in dots per inch (default ``300``).
+       Lower it for a figure committed to a repository or shown on the web.
 
 Plot Composite (RGB / False-Color)
 ----------------------------------
 
-.. function:: plot_composite(ds, bands, *, stretch=True, figsize=(8, 8), pmin=2, pmax=98, title=None, save_path=None)
+.. function:: plot_composite(ds, bands, *, stretch=True, figsize=(8, 8), pmin=2, pmax=98, title=None, save_path=None, dpi=300)
 
    Plot a three-band raster composite (e.g., RGB or false-color).
 
@@ -263,6 +293,8 @@ Plot Composite (RGB / False-Color)
    :param pmax: Upper percentile used when ``stretch=True``.
    :param title: Optional figure title.
    :param save_path: File path if the figure should be saved to disk.
+   :param dpi: Resolution of the saved file, in dots per inch (default ``300``).
+       Lower it for a figure committed to a repository or shown on the web.
 
    .. note::
 
