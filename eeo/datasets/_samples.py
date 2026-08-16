@@ -144,6 +144,8 @@ class SampleDataset:
         Cloud-Optimized GeoTIFF variant of ``sentinel2_stacked``.
     sentinel2_blue, sentinel2_green, sentinel2_red, sentinel2_nir : SamplePath
         The four Sentinel-2 bands as separate single-band GeoTIFFs.
+    sentinel2_blue_cog, sentinel2_green_cog, sentinel2_red_cog, sentinel2_nir_cog : SamplePath
+        Cloud-Optimized GeoTIFF variants of the four single-band files.
     copernicus_dem : SamplePath
         Copernicus GLO-30 DEM warped onto the Sentinel-2 grid (float32 metres).
     copernicus_dem_cog : SamplePath
@@ -156,9 +158,13 @@ class SampleDataset:
     sentinel2_stacked: SamplePath
     sentinel2_cog_stacked: SamplePath
     sentinel2_blue: SamplePath
+    sentinel2_blue_cog: SamplePath
     sentinel2_green: SamplePath
+    sentinel2_green_cog: SamplePath
     sentinel2_red: SamplePath
+    sentinel2_red_cog: SamplePath
     sentinel2_nir: SamplePath
+    sentinel2_nir_cog: SamplePath
     copernicus_dem: SamplePath
     copernicus_dem_cog: SamplePath
     boundary: SamplePath
