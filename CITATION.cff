@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Easy-EO: chainable raster analysis for Earth Observation in Python"
+abstract: >-
+  A Python library for raster-based Earth Observation analysis. Everything
+  happens through a single dataset object that can be clipped, reprojected,
+  resampled, reduced to a spectral index or plotted, with each operation
+  returning another dataset so an analysis chains as a sequence of steps. A
+  search against any SpatioTemporal Asset Catalog returns matching scenes, and
+  loading one reads only the pixels covering the area of interest, so imagery
+  can be worked on without downloading the scenes it comes from.
+authors:
+  - family-names: Botchwey
+    given-names: Thomas Burns
+    orcid: "https://orcid.org/0009-0007-0358-0337"
+    affiliation: "University of Salzburg, Austria"
+license: MIT
+repository-code: "https://github.com/Tommy-Burns/easy-eo"
+url: "https://easy-eo.readthedocs.io"
+keywords:
+  - Python
+  - Earth observation
+  - remote sensing
+  - raster
+  - GIS
+  - STAC
+  - spectral indices
