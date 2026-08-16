@@ -9,6 +9,8 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-16
+
 ### Added
 
 - A `dpi` argument on every plotting function that writes a file —
@@ -91,9 +93,6 @@ are called out under a **Breaking** heading.
   audit is deliberately not gating unrelated pull requests: a new advisory
   against an unchanged dependency is time-based news, not a regression in the
   branch that happens to be open.
-
-### Added
-
 - Tagging a release now creates a GitHub Release, with the tag's `CHANGELOG.md`
   section as its notes and the sdist and wheel attached. A tag previously
   published to PyPI and left no Release behind, which matters beyond
@@ -114,7 +113,6 @@ are called out under a **Breaking** heading.
   extra is absent — importing Easy-EO as a user would, and refusing to run
   against a source checkout. The sdist is covered because conda-forge builds
   from it.
-
 - The documentation now builds in CI on every pull request, with Sphinx
   warnings treated as errors. Previously it built only on Read the Docs, after
   a merge, so a broken cross-reference or an autodoc target that no longer
@@ -434,7 +432,8 @@ Initial public beta release.
 - Visualization: `plot_raster`, `plot_composite`,
   `plot_raster_with_histogram`, `plot_band_array`.
 
-[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.1.0b1...v0.2.0
 [0.1.0b1]: https://github.com/Tommy-Burns/easy-eo/releases/tag/v0.1.0b1
