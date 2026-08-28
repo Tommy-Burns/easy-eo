@@ -186,8 +186,13 @@ def read_onto_common_grid(
     bbox : sequence of float or None
         Area to read as ``(minx, miny, maxx, maxy)`` in **WGS 84 lon/lat
         degrees**, applied when opening the first source. None reads it whole.
-    resampling : rasterio.enums.Resampling
-        Method used when a later source has to be warped onto the grid.
+    resampling : rasterio.enums.Resampling or sequence
+        Method used when a later source has to be warped onto the grid. A
+        sequence gives one method per source, which is how a categorical band
+        travels alongside a continuous one: class numbers and packed bits must
+        be resampled by nearest neighbour whatever the others use, since any
+        blending of them invents classes that were never observed. The first
+        source's entry is unused — it defines the grid and is never warped.
 
     Returns
     -------
@@ -201,8 +206,9 @@ def read_onto_common_grid(
     Raises
     ------
     ValidationError
-        If ``sources`` is empty, if a source needing a crop declares no CRS, or
-        if ``bbox`` does not overlap the first source.
+        If ``sources`` is empty, if ``resampling`` is a sequence of a different
+        length, if a source needing a crop declares no CRS, or if ``bbox`` does
+        not overlap the first source.
 
     Notes
     -----
@@ -211,11 +217,21 @@ def read_onto_common_grid(
     if not sources:
         raise ValidationError("name at least one source to read; got an empty sequence")
 
+    if isinstance(resampling, (list, tuple)):
+        if len(resampling) != len(sources):
+            raise ValidationError(
+                f"expected one resampling method per source, or a single method for "
+                f"all of them; got {len(resampling)} for {len(sources)} sources"
+            )
+        methods = list(resampling)
+    else:
+        methods = [resampling] * len(sources)
+
     href, name = sources[0]
     array, grid, nodata, band_names = _read_first(href, name, bbox)
     arrays = [array]
-    for href, name in sources[1:]:
-        other, other_names = _read_onto_grid(href, name, grid, resampling)
+    for (href, name), method in zip(sources[1:], methods[1:], strict=True):
+        other, other_names = _read_onto_grid(href, name, grid, method)
         arrays.append(other)
         band_names.extend(other_names)
 
