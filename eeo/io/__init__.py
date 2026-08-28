@@ -7,11 +7,12 @@ pulls in no optional dependency; an extra is only required when one of its
 features actually runs.
 """
 
-from .products import load_sentinel2
+from .products import load_landsat, load_sentinel2
 from .stac import PLANETARY_COMPUTER_STAC_URL, STACItem, STACSearchResult, stac_search
 from .xarray import from_xarray
 
 __all__ = [
+    "load_landsat",
     "load_sentinel2",
     "stac_search",
     "STACItem",
