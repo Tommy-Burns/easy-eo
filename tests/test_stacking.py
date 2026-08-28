@@ -182,3 +182,37 @@ class TestReadOntoCommonGrid:
             [(first, "A"), (second, "B")], bbox=None, resampling=Resampling.nearest
         )
         assert array.dtype == np.result_type(np.uint16, np.float32)
+
+    def test_per_source_resampling_length_must_match(self, tmp_path):
+        first = write(tmp_path / "a.tif")
+        second = write(tmp_path / "b.tif", res=RES * 2, size=SIZE // 2)
+        with pytest.raises(ValidationError, match="one resampling method per source"):
+            read_onto_common_grid(
+                [(first, "A"), (second, "B")],
+                bbox=None,
+                resampling=[Resampling.nearest],
+            )
+
+    def test_per_source_resampling_is_applied(self, tmp_path):
+        # A categorical source travelling with a continuous one: the second
+        # gets nearest even though the request as a whole says bilinear.
+        fine = write(tmp_path / "fine.tif", res=RES, fill=1)
+        classes = str(tmp_path / "classes.tif")
+        with rio.open(fine) as src:
+            profile = src.profile
+        profile.update(
+            width=SIZE // 2,
+            height=SIZE // 2,
+            transform=from_origin(ORIGIN[0], ORIGIN[1], RES * 2, RES * 2),
+        )
+        data = np.zeros((1, SIZE // 2, SIZE // 2), dtype="uint16")
+        data[0, : SIZE // 4] = 4
+        data[0, SIZE // 4 :] = 9
+        with rio.open(classes, "w", **profile) as dst:
+            dst.write(data)
+        array, _, _, _ = read_onto_common_grid(
+            [(fine, "A"), (classes, "SCL")],
+            bbox=None,
+            resampling=[Resampling.bilinear, Resampling.nearest],
+        )
+        assert set(np.unique(array[1])) <= {4, 9}
