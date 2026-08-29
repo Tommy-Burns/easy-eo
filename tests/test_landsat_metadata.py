@@ -1,16 +1,15 @@
 """Tests for Landsat product identification (eeo/io/_landsat.py).
 
-One canonical description of a product is rendered into all three metadata
-syntaxes, so "the three agree" is asserted rather than assumed. The group
-layout, key names, and value spellings follow real USGS output, including the
-parts most likely to catch a parser out: a Level-1 section carrying the same
-key names as the Level-2 one with different values, a scene centre time written
-with seven fractional digits, and a WRS row that is zero-padded in the text
-syntax but not in the JSON.
+One canonical description of a product, from :mod:`product_fixtures`, is
+rendered into all three metadata syntaxes, so "the three agree" is asserted
+rather than assumed. The group layout, key names, and value spellings follow
+real USGS output, including the parts most likely to catch a parser out: a
+Level-1 section carrying the same key names as the Level-2 one with different
+values, a scene centre time written with seven fractional digits, and a WRS row
+that is zero-padded in the text syntax but not in the JSON.
 """
 
 import datetime as dt
-import json
 from pathlib import PurePosixPath
 
 import pytest
@@ -18,91 +17,21 @@ import pytest
 from eeo.core.exceptions import ValidationError
 from eeo.io._archive import open_product
 from eeo.io._landsat import find_metadata, read_metadata_groups, read_product
-
-PRODUCT_ID = "LC09_L2SP_193028_20260822_20260823_02_T1"
-L1_PRODUCT_ID = "LC09_L1TP_193028_20260822_20260823_02_T1"
-
-
-def spec(*, level="L2SP", product_id=PRODUCT_ID, row="028", mission_prefix=None):
-    """Describe a product as groups of key-value pairs."""
-    if mission_prefix:
-        product_id = mission_prefix + product_id[4:]
-    return {
-        "PRODUCT_CONTENTS": {
-            "LANDSAT_PRODUCT_ID": product_id,
-            "PROCESSING_LEVEL": level,
-            "COLLECTION_NUMBER": "02",
-            "COLLECTION_CATEGORY": "T1",
-            "FILE_NAME_BAND_4": f"{product_id}_SR_B4.TIF",
-            "FILE_NAME_BAND_ST_B10": f"{product_id}_ST_B10.TIF",
-            "FILE_NAME_QUALITY_L1_PIXEL": f"{product_id}_QA_PIXEL.TIF",
-            "FILE_NAME_METADATA_ODL": f"{product_id}_MTL.txt",
-        },
-        "IMAGE_ATTRIBUTES": {
-            "SPACECRAFT_ID": "LANDSAT_9",
-            "SENSOR_ID": "OLI_TIRS",
-            "WRS_PATH": "193",
-            "WRS_ROW": row,
-            "DATE_ACQUIRED": "2026-08-22",
-            # USGS writes seven fractional digits.
-            "SCENE_CENTER_TIME": "10:04:22.1183580Z",
-        },
-        "LEVEL2_SURFACE_REFLECTANCE_PARAMETERS": {
-            "REFLECTANCE_MULT_BAND_4": "2.75e-05",
-            "REFLECTANCE_ADD_BAND_4": "-0.2",
-        },
-        "LEVEL2_SURFACE_TEMPERATURE_PARAMETERS": {
-            "TEMPERATURE_MULT_BAND_ST_B10": "0.00341802",
-            "TEMPERATURE_ADD_BAND_ST_B10": "149.0",
-        },
-        # The Level-1 record repeats the same key names with different values.
-        # Everything above must win over everything here.
-        "LEVEL1_PROCESSING_RECORD": {
-            "LANDSAT_PRODUCT_ID": L1_PRODUCT_ID,
-            "PROCESSING_LEVEL": "L1TP",
-        },
-        "LEVEL1_RADIOMETRIC_RESCALING": {
-            "REFLECTANCE_MULT_BAND_4": "2.0000E-05",
-            "REFLECTANCE_ADD_BAND_4": "-0.100000",
-        },
-    }
-
-
-def as_odl(groups):
-    lines = ["GROUP = LANDSAT_METADATA_FILE"]
-    for group, members in groups.items():
-        lines.append(f"  GROUP = {group}")
-        lines += [f'    {key} = "{value}"' for key, value in members.items()]
-        lines.append(f"  END_GROUP = {group}")
-    lines += ["END_GROUP = LANDSAT_METADATA_FILE", "END"]
-    return "\n".join(lines)
-
-
-def as_json(groups):
-    return json.dumps({"LANDSAT_METADATA_FILE": groups}, indent=2)
-
-
-def as_xml(groups):
-    body = "".join(
-        f"<{group}>"
-        + "".join(f"<{key}>{value}</{key}>" for key, value in members.items())
-        + f"</{group}>"
-        for group, members in groups.items()
-    )
-    return f"<LANDSAT_METADATA_FILE>{body}</LANDSAT_METADATA_FILE>"
-
-
-RENDERERS = {"xml": as_xml, "json": as_json, "txt": as_odl}
-
-
-def write_product(tmp_path, syntax="xml", **kwargs):
-    """Write a product directory holding one metadata file."""
-    groups = spec(**kwargs)
-    name = groups["PRODUCT_CONTENTS"]["LANDSAT_PRODUCT_ID"]
-    directory = tmp_path / name
-    directory.mkdir(exist_ok=True)
-    (directory / f"{name}_MTL.{syntax}").write_text(RENDERERS[syntax](groups))
-    return directory
+from product_fixtures import (
+    L1_ID as L1_PRODUCT_ID,
+)
+from product_fixtures import (
+    L9_ID as PRODUCT_ID,
+)
+from product_fixtures import (
+    as_xml,
+)
+from product_fixtures import (
+    landsat_groups as spec,
+)
+from product_fixtures import (
+    write_landsat_metadata as write_product,
+)
 
 
 class TestFindMetadata:

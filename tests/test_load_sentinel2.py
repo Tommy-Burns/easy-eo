@@ -1,139 +1,50 @@
 """Tests for load_sentinel2 (eeo/io/products.py).
 
-The fixture is a real ``.SAFE`` tree: genuine JPEG 2000 images written through
-GDAL, laid out in the resolution subdirectories a product uses, under manifests
-of the real shape. So the loader is exercised over actual image reads, actual
-warping between resolutions, and actual georeferencing — nothing about the read
-path is stubbed. Nothing is downloaded.
+The fixture, from :mod:`product_fixtures`, is a real ``.SAFE`` tree: genuine
+JPEG 2000 images written through GDAL, laid out in the resolution
+subdirectories a product uses, under manifests of the real shape — the same
+manifests the metadata tests parse. So the loader is exercised over actual
+image reads, actual warping between resolutions, and actual georeferencing;
+nothing about the read path is stubbed. Nothing is downloaded.
 """
 
 import numpy as np
 import pytest
 import rasterio as rio
-from rasterio.transform import from_origin
+from rasterio.warp import transform_bounds
 
 import eeo
 from eeo.core.exceptions import ValidationError
-
-GRANULE = "L2A_T32TPS_A039516_20240929T101318"
-PRODUCT = "S2B_MSIL2A_20240929T100719_N0511_R022_T32TPS_20240929T133706.SAFE"
-STEM = "T32TPS_20240929T100719"
-ULX, ULY = 300000.0, 5100000.0
-SIZE_10M = 64
-
-# Which bands the fixture writes, and at which resolutions, mirroring a real
-# product: B08 only at 10 m, B01 at 20 m and 60 m though it is sensed at 60,
-# B09 only at 60 m, SCL at 20 m and 60 m.
-LAYOUT = {
-    "B02": (10, 20),
-    "B03": (10, 20),
-    "B04": (10, 20, 60),
-    "B08": (10,),
-    "B05": (20, 60),
-    "B11": (20, 60),
-    "B12": (20, 60),
-    "B8A": (20, 60),
-    "B01": (20, 60),
-    "B09": (60,),
-    "SCL": (20, 60),
-}
-FILL = {
-    "B02": 700,
-    "B03": 900,
-    "B04": 1234,
-    "B08": 4321,
-    "B05": 3000,
-    "B11": 2222,
-    "B12": 1800,
-    "B8A": 4000,
-    "B01": 1100,
-    "B09": 1500,
-}
-
-
-def _write_jp2(path, res, size, band):
-    """Write one georeferenced JPEG 2000 image."""
-    if band == "SCL":
-        # Distinct class numbers in blocks, so any blending is detectable.
-        data = np.zeros((size, size), dtype="uint16")
-        data[: size // 2] = 4  # vegetation
-        data[size // 2 :] = 9  # cloud high probability
-        data = data[None]
-    else:
-        data = np.full((1, size, size), FILL[band], dtype="uint16")
-    # Only the options JP2OpenJPEG accepts: copying a GeoTIFF profile would
-    # carry INTERLEAVE and tiling keys the driver rejects.
-    #
-    # REVERSIBLE and QUALITY are both required, and only together: the writer
-    # is lossy by default and stays lossy with either one alone, which quietly
-    # rewrites a class number 4 as 3 and would make a resampling test read as a
-    # loader bug. Real products are losslessly encoded, so the fixture must be
-    # too or it is testing the compressor rather than the reader.
-    profile = {
-        "driver": "JP2OpenJPEG",
-        "height": size,
-        "width": size,
-        "count": 1,
-        "dtype": "uint16",
-        "crs": "EPSG:32632",
-        "transform": from_origin(ULX, ULY, res, res),
-        "nodata": 0,
-        "REVERSIBLE": "YES",
-        "QUALITY": "100",
-    }
-    with rio.open(path, "w", **profile) as dst:
-        dst.write(data)
-
-
-def build_safe(tmp_path, *, level="2A", product_type="S2MSI2A", layout=None, omit_file=None):
-    """Build a .SAFE tree with real JPEG 2000 images and return its path."""
-    layout = LAYOUT if layout is None else layout
-    safe = tmp_path / PRODUCT
-    img = safe / "GRANULE" / GRANULE / "IMG_DATA"
-    entries = []
-    for band, resolutions in layout.items():
-        for res in resolutions:
-            (img / f"R{res}m").mkdir(parents=True, exist_ok=True)
-            relative = f"GRANULE/{GRANULE}/IMG_DATA/R{res}m/{STEM}_{band}_{res}m"
-            entries.append(relative)
-            if omit_file == (band, res):
-                continue
-            _write_jp2(safe / f"{relative}.jp2", res, SIZE_10M * 10 // res, band)
-
-    files = "".join(f"<IMAGE_FILE>{e}</IMAGE_FILE>" for e in entries)
-    (safe / f"MTD_MSIL{level}.xml").write_text(
-        f'<?xml version="1.0"?>'
-        f'<n1:Level-{level}_User_Product xmlns:n1="https://psd-15.sentinel2.eo.esa.int/'
-        f'PSD/User_Product_Level-{level}.xsd"><n1:General_Info><Product_Info>'
-        f"<PRODUCT_START_TIME>2024-09-29T10:07:19.024Z</PRODUCT_START_TIME>"
-        f"<PRODUCT_URI>{PRODUCT}</PRODUCT_URI>"
-        f"<PRODUCT_TYPE>{product_type}</PRODUCT_TYPE>"
-        f"<PROCESSING_BASELINE>05.11</PROCESSING_BASELINE>"
-        f'<Product_Organisation><Granule_List><Granule granuleIdentifier="{GRANULE}">'
-        f"{files}</Granule></Granule_List></Product_Organisation></Product_Info>"
-        f"<Product_Image_Characteristics><QUANTIFICATION_VALUES_LIST>"
-        f'<BOA_QUANTIFICATION_VALUE unit="none">10000</BOA_QUANTIFICATION_VALUE>'
-        f"</QUANTIFICATION_VALUES_LIST><BOA_ADD_OFFSET_VALUES_LIST>"
-        f'<BOA_ADD_OFFSET band_id="3">-1000</BOA_ADD_OFFSET>'
-        f"</BOA_ADD_OFFSET_VALUES_LIST><Spectral_Information_List>"
-        f'<Spectral_Information bandId="3" physicalBand="B4"/>'
-        f"</Spectral_Information_List></Product_Image_Characteristics>"
-        f"</n1:General_Info></n1:Level-{level}_User_Product>"
-    )
-    (safe / "GRANULE" / GRANULE / "MTD_TL.xml").write_text(
-        '<?xml version="1.0"?>'
-        '<n1:Level-2A_Tile_ID xmlns:n1="https://psd-15.sentinel2.eo.esa.int/'
-        'PSD/S2_PDI_Level-2A_Tile_Metadata.xsd"><n1:General_Info>'
-        "<SENSING_TIME>2024-09-29T10:17:59.919283Z</SENSING_TIME></n1:General_Info>"
-        "<n1:Geometric_Info><Tile_Geocoding>"
-        "<HORIZONTAL_CS_CODE>EPSG:32632</HORIZONTAL_CS_CODE>"
-        "</Tile_Geocoding></n1:Geometric_Info></n1:Level-2A_Tile_ID>"
-    )
-    return safe
+from product_fixtures import (
+    S2_FILL as FILL,
+)
+from product_fixtures import (
+    S2_GRANULE as GRANULE,
+)
+from product_fixtures import (
+    S2_LAYOUT as LAYOUT,
+)
+from product_fixtures import (
+    S2_SENSING_TIME,
+    build_safe,
+)
+from product_fixtures import (
+    S2_SIZE_10M as SIZE_10M,
+)
+from product_fixtures import (
+    S2_STEM as STEM,
+)
+from product_fixtures import (
+    S2_ULX as ULX,
+)
+from product_fixtures import (
+    S2_ULY as ULY,
+)
 
 
 @pytest.fixture
 def safe(tmp_path):
+    """A whole Level-2A product, images included."""
     return build_safe(tmp_path)
 
 
@@ -170,7 +81,7 @@ class TestValuesAndNaming:
         scene = eeo.load_sentinel2(safe, ["red"])
         assert scene.get_crs().to_string() == "EPSG:32632"
         assert scene.get_transform()[0] == 10.0
-        assert scene.timestamp.isoformat() == "2024-09-29T10:17:59.919283+00:00"
+        assert scene.timestamp.isoformat() == S2_SENSING_TIME
 
     def test_provenance_is_recorded(self, safe):
         attrs = eeo.load_sentinel2(safe, ["red"]).attrs
@@ -250,8 +161,6 @@ class TestCropping:
     """A bbox bounds what is read."""
 
     def test_bbox_reads_a_window(self, safe):
-        from rasterio.warp import transform_bounds
-
         bounds = transform_bounds(
             "EPSG:32632", "EPSG:4326", ULX, ULY - 200, ULX + 200, ULY, densify_pts=21
         )

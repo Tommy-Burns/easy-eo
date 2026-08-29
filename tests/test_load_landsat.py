@@ -1,136 +1,48 @@
 """Tests for load_landsat (eeo/io/products.py).
 
-The fixture is a real Collection 2 Level-2 product: genuine GeoTIFFs written
-through GDAL on one 30 m grid, beside a metadata file of the real shape, with
-the fill values USGS actually declares — 0 in the imagery and 1 in the quality
-rasters, which is what makes the choice of leading band observable. Two
-products are built, Landsat 9 and Landsat 7, because the whole point of naming
-bands is that ``"red"`` reaches band 4 on one and band 3 on the other.
+The fixture, from :mod:`product_fixtures`, is a real Collection 2 Level-2
+product: genuine GeoTIFFs written through GDAL on one 30 m grid, beside a
+metadata file of the real shape, with the fill values USGS actually declares —
+0 in the imagery and 1 in the quality rasters, which is what makes the choice
+of leading band observable. Two products are built, Landsat 9 and Landsat 7,
+because the whole point of naming bands is that ``"red"`` reaches band 4 on one
+and band 3 on the other.
 
 Nothing is downloaded.
 """
 
 import datetime as dt
-import json
 
 import numpy as np
 import pytest
-import rasterio as rio
-from rasterio.transform import from_origin
 from rasterio.warp import transform_bounds
 
 import eeo
 from eeo.core.exceptions import ValidationError
-
-L9_ID = "LC09_L2SP_193028_20260822_20260823_02_T1"
-L7_ID = "LE07_L2SP_193028_20231024_20231119_02_T2"
-
-CRS = "EPSG:32633"
-ULX, ULY = 300000.0, 5100000.0
-RES = 30.0
-SIZE = 64
-
-#: Bands each sensor's product holds, with the digital number filling each one.
-#: Distinct per band so a mix-up in ordering shows up as a wrong value.
-OLI_BANDS = {
-    "SR_B1": 8000,
-    "SR_B2": 8100,
-    "SR_B3": 9000,
-    "SR_B4": 10000,
-    "SR_B5": 25000,
-    "SR_B6": 15000,
-    "SR_B7": 12000,
-    "ST_B10": 44000,
-    "QA_PIXEL": 21824,
-    "QA_RADSAT": 0,
-    "SR_QA_AEROSOL": 96,
-}
-TM_BANDS = {
-    "SR_B1": 8100,
-    "SR_B2": 9000,
-    "SR_B3": 10000,
-    "SR_B4": 25000,
-    "SR_B5": 15000,
-    "SR_B7": 12000,
-    "ST_B6": 44000,
-    "QA_PIXEL": 5440,
-    "QA_RADSAT": 0,
-    "SR_ATMOS_OPACITY": 120,
-    "SR_CLOUD_QA": 0,
-}
-
-#: Fill differs between the imagery and the quality rasters, exactly as USGS
-#: declares it: surface reflectance and temperature use 0, QA_PIXEL uses 1.
-QUALITY_FILL = {"QA_PIXEL"}
-
-
-def _write_tif(path, token, table):
-    """Write one georeferenced 30 m GeoTIFF for a band."""
-    with rio.open(
-        path,
-        "w",
-        driver="GTiff",
-        height=SIZE,
-        width=SIZE,
-        count=1,
-        dtype="uint16",
-        crs=CRS,
-        transform=from_origin(ULX, ULY, RES, RES),
-        nodata=1 if token in QUALITY_FILL else 0,
-    ) as dst:
-        dst.write(np.full((1, SIZE, SIZE), table[token], dtype="uint16"))
-
-
-def spec(product_id, tokens, *, level="L2SP", spacecraft="LANDSAT_9"):
-    """Describe a product as the groups of key-value pairs its metadata holds."""
-    date = "2026-08-22" if product_id.startswith("LC09") else "2023-10-24"
-    return {
-        "PRODUCT_CONTENTS": {
-            "LANDSAT_PRODUCT_ID": product_id,
-            "PROCESSING_LEVEL": level,
-            "COLLECTION_NUMBER": "02",
-            "COLLECTION_CATEGORY": product_id[-2:],
-            **{f"FILE_NAME_{token}": f"{product_id}_{token}.TIF" for token in tokens},
-            "FILE_NAME_METADATA_ODL": f"{product_id}_MTL.txt",
-        },
-        "IMAGE_ATTRIBUTES": {
-            "SPACECRAFT_ID": spacecraft,
-            "WRS_PATH": "193",
-            "WRS_ROW": "028",
-            "DATE_ACQUIRED": date,
-            "SCENE_CENTER_TIME": "10:04:22.1183580Z",
-        },
-        "LEVEL2_SURFACE_REFLECTANCE_PARAMETERS": {
-            "REFLECTANCE_MULT_BAND_4": "2.75e-05",
-            "REFLECTANCE_ADD_BAND_4": "-0.2",
-        },
-        "LEVEL2_SURFACE_TEMPERATURE_PARAMETERS": {
-            "TEMPERATURE_MULT_BAND_ST_B10": "0.00341802",
-            "TEMPERATURE_ADD_BAND_ST_B10": "149.0",
-        },
-    }
-
-
-def build_product(tmp_path, *, product_id=L9_ID, tokens=None, level="L2SP", omit_file=None):
-    """Build a product directory of real GeoTIFFs and return its path.
-
-    ``omit_file`` names a band the metadata lists but the directory does not
-    hold — the state a truncated download leaves behind.
-    """
-    table = OLI_BANDS if product_id.startswith("LC0") else TM_BANDS
-    if tokens is None:
-        tokens = list(table)
-    spacecraft = f"LANDSAT_{product_id[3]}"
-    directory = tmp_path / product_id
-    directory.mkdir()
-    groups = spec(product_id, tokens, level=level, spacecraft=spacecraft)
-    (directory / f"{product_id}_MTL.json").write_text(
-        json.dumps({"LANDSAT_METADATA_FILE": groups}, indent=2)
-    )
-    for token in tokens:
-        if token != omit_file:
-            _write_tif(directory / f"{product_id}_{token}.TIF", token, table)
-    return directory
+from product_fixtures import (
+    L7_ID,
+    L9_ID,
+    OLI_BANDS,
+    TM_BANDS,
+)
+from product_fixtures import (
+    LANDSAT_CRS as CRS,
+)
+from product_fixtures import (
+    LANDSAT_RES as RES,
+)
+from product_fixtures import (
+    LANDSAT_SIZE as SIZE,
+)
+from product_fixtures import (
+    LANDSAT_ULX as ULX,
+)
+from product_fixtures import (
+    LANDSAT_ULY as ULY,
+)
+from product_fixtures import (
+    build_landsat as build_product,
+)
 
 
 @pytest.fixture

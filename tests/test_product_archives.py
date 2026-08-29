@@ -1,10 +1,10 @@
 """Tests for reading a product out of the archive it was downloaded as.
 
-The fixtures are the real ones: this module packs the same ``.SAFE`` tree
-``test_load_sentinel2`` builds, and the same Landsat product directory
-``test_load_landsat`` builds, into a zip and a tar. Importing them rather than
-copying them is deliberate — an archive test that quietly drifted from the
-directory test would be asserting that two different products agree.
+The fixtures are the real ones: this module packs the same ``.SAFE`` tree and
+the same Landsat product directory the loader tests use, from
+:mod:`product_fixtures`, into a zip and a tar. An archive fixture that drifted
+from the directory fixture would be asserting that two different products
+agree.
 
 The central claim is that the container makes no difference: the same request
 against a directory and against the archive of that directory must return the
@@ -25,27 +25,20 @@ from rasterio.warp import transform_bounds
 import eeo
 from eeo.core.exceptions import ValidationError
 from eeo.io._archive import ArchiveSource, DirectorySource, open_product
-from test_load_landsat import L9_ID, OLI_BANDS
-from test_load_landsat import build_product as build_landsat
-from test_load_sentinel2 import FILL, PRODUCT, build_safe
-
-
-def pack_zip(tree, archive, *, base):
-    """Zip a directory tree, naming members relative to ``base``."""
-    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zipped:
-        for path in sorted(tree.rglob("*")):
-            if path.is_file():
-                zipped.write(path, path.relative_to(base).as_posix())
-    return archive
-
-
-def pack_tar(tree, archive, *, base, compress=False):
-    """Tar a directory tree, naming members relative to ``base``."""
-    with tarfile.open(archive, "w:gz" if compress else "w") as tarred:
-        for path in sorted(tree.rglob("*")):
-            if path.is_file():
-                tarred.add(path, arcname=path.relative_to(base).as_posix())
-    return archive
+from product_fixtures import (
+    L9_ID,
+    OLI_BANDS,
+    build_landsat,
+    build_safe,
+    pack_tar,
+    pack_zip,
+)
+from product_fixtures import (
+    S2_FILL as FILL,
+)
+from product_fixtures import (
+    S2_PRODUCT as PRODUCT,
+)
 
 
 @pytest.fixture

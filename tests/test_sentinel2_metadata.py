@@ -1,10 +1,9 @@
 """Tests for Sentinel-2 product identification (eeo/io/_sentinel2.py).
 
-The manifests here are trimmed but structurally faithful: the same namespaced
-root with an unnamespaced body, the same element names, the same ``band_id``
-indirection between the offset list and the spectral information list, and the
-same ``HORIZONTAL_CS_CODE`` in a granule's tile manifest. Nothing is downloaded
-and no image file is written — this layer never opens one.
+The manifests come from :mod:`product_fixtures`: trimmed but structurally
+faithful, and shared with the loader tests so the two cannot drift into
+describing different products. Nothing is downloaded and no image file is
+written — this layer never opens one.
 """
 
 import datetime as dt
@@ -13,100 +12,21 @@ import pytest
 
 from eeo.core.exceptions import ValidationError
 from eeo.io._sentinel2 import Sentinel2Product, find_manifest, read_product
-
-PRODUCT_URI = "S2B_MSIL2A_20240830T100559_N0511_R022_T32TPS_20240830T134009.SAFE"
-GRANULE_ID = "L2A_T32TPS_A038765_20240830T100558"
-IMAGE = f"GRANULE/{GRANULE_ID}/IMG_DATA/R10m/T32TPS_20240830T100559_B04_10m"
-
-# Spectral_Information spells single-digit bands "B1"; the image files use "B01".
-SPECTRAL = """
-      <Spectral_Information_List>
-        <Spectral_Information bandId="0" physicalBand="B1"/>
-        <Spectral_Information bandId="3" physicalBand="B4"/>
-        <Spectral_Information bandId="8" physicalBand="B8A"/>
-        <Spectral_Information bandId="12" physicalBand="B12"/>
-      </Spectral_Information_List>"""
-
-OFFSETS = """
-      <BOA_ADD_OFFSET_VALUES_LIST>
-        <BOA_ADD_OFFSET band_id="0">-1000</BOA_ADD_OFFSET>
-        <BOA_ADD_OFFSET band_id="3">-1000</BOA_ADD_OFFSET>
-        <BOA_ADD_OFFSET band_id="8">-1000</BOA_ADD_OFFSET>
-        <BOA_ADD_OFFSET band_id="12">-1000</BOA_ADD_OFFSET>
-      </BOA_ADD_OFFSET_VALUES_LIST>"""
-
-
-def manifest_xml(
-    *,
-    level="2A",
-    product_type="S2MSI2A",
-    baseline="05.11",
-    quantification="10000",
-    offsets=OFFSETS,
-    start_time="2024-08-30T10:05:59.024Z",
-    uri=PRODUCT_URI,
-):
-    """Build a product manifest with the parts under test made adjustable."""
-    type_element = f"<PRODUCT_TYPE>{product_type}</PRODUCT_TYPE>" if product_type else ""
-    quant = (
-        f"""
-      <QUANTIFICATION_VALUES_LIST>
-        <BOA_QUANTIFICATION_VALUE unit="none">{quantification}</BOA_QUANTIFICATION_VALUE>
-      </QUANTIFICATION_VALUES_LIST>"""
-        if quantification
-        else ""
-    )
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<n1:Level-{level}_User_Product
-    xmlns:n1="https://psd-15.sentinel2.eo.esa.int/PSD/User_Product_Level-{level}.xsd">
-  <n1:General_Info>
-    <Product_Info>
-      <PRODUCT_START_TIME>{start_time}</PRODUCT_START_TIME>
-      <PRODUCT_URI>{uri}</PRODUCT_URI>
-      <PROCESSING_LEVEL>Level-{level}</PROCESSING_LEVEL>
-      {type_element}
-      <PROCESSING_BASELINE>{baseline}</PROCESSING_BASELINE>
-      <Product_Organisation>
-        <Granule_List>
-          <Granule granuleIdentifier="{GRANULE_ID}" imageFormat="JPEG2000">
-            <IMAGE_FILE>{IMAGE}</IMAGE_FILE>
-          </Granule>
-        </Granule_List>
-      </Product_Organisation>
-    </Product_Info>
-    <Product_Image_Characteristics>{quant}{offsets}{SPECTRAL}
-    </Product_Image_Characteristics>
-  </n1:General_Info>
-</n1:Level-{level}_User_Product>
-"""
-
-
-TILE_XML = """<?xml version="1.0" encoding="UTF-8"?>
-<n1:Level-2A_Tile_ID
-    xmlns:n1="https://psd-15.sentinel2.eo.esa.int/PSD/S2_PDI_Level-2A_Tile_Metadata.xsd">
-  <n1:General_Info>
-    <TILE_ID>S2B_OPER_MSI_L2A_TL_2BPS_20240830T134009_A038765_T32TPS_N05.11</TILE_ID>
-    <SENSING_TIME>2024-08-30T10:06:21.919283Z</SENSING_TIME>
-  </n1:General_Info>
-  <n1:Geometric_Info>
-    <Tile_Geocoding>
-      <HORIZONTAL_CS_NAME>WGS84 / UTM zone 32N</HORIZONTAL_CS_NAME>
-      <HORIZONTAL_CS_CODE>EPSG:32632</HORIZONTAL_CS_CODE>
-      <Size resolution="10"><NROWS>10980</NROWS><NCOLS>10980</NCOLS></Size>
-    </Tile_Geocoding>
-  </n1:Geometric_Info>
-</n1:Level-2A_Tile_ID>
-"""
-
-
-def write_safe(tmp_path, *, manifest_name="MTD_MSIL2A.xml", tile_xml=TILE_XML, **kwargs):
-    """Write a minimal .SAFE tree and return its directory."""
-    safe = tmp_path / PRODUCT_URI
-    (safe / "GRANULE" / GRANULE_ID).mkdir(parents=True)
-    (safe / manifest_name).write_text(manifest_xml(**kwargs))
-    if tile_xml is not None:
-        (safe / "GRANULE" / GRANULE_ID / "MTD_TL.xml").write_text(tile_xml)
-    return safe
+from product_fixtures import (
+    S2_GRANULE as GRANULE_ID,
+)
+from product_fixtures import (
+    S2_IMAGE as IMAGE,
+)
+from product_fixtures import (
+    S2_OFFSETS as OFFSETS,
+)
+from product_fixtures import (
+    S2_TILE_XML as TILE_XML,
+)
+from product_fixtures import (
+    write_safe,
+)
 
 
 class TestFindManifest:
