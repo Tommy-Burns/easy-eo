@@ -9,6 +9,8 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-29
+
 ### Added
 
 - `eeo.load_sentinel2()` and `eeo.load_landsat()`, for reading a product you
@@ -54,6 +56,21 @@ are called out under a **Breaking** heading.
 - A "Citing Easy-EO" documentation page covering the software DOI, the
   separate sample-data DOI, and the Copernicus attribution that citing the
   deposit does not replace.
+
+### Fixed
+
+- Pointing either loader at the folder a product was *downloaded* into now
+  works. A folder holding an unpacked product was already accepted, but one
+  holding the `.zip` or `.tar` itself was refused as holding nothing — which
+  is the state a download is in before you touch it. Resolving to a single
+  archive in the folder follows the same "exactly one, or refuse by name" rule
+  the multiple-products case uses, and an unpacked product beside its own
+  archive still wins, being the cheaper of the two to read.
+- Composed transforms no longer use affine's `*` operator, which affine 3.0
+  deprecates in favour of `@`. The library builds them directly instead, so it
+  raises no deprecation warning on affine 3 while still working on affine 2.4,
+  which has no `@` at all. Nothing about the values changes: the coefficients
+  are identical, verified against real Sentinel-2 and Landsat scenes.
 
 ## [0.3.1] - 2026-08-16
 
@@ -478,7 +495,8 @@ Initial public beta release.
 - Visualization: `plot_raster`, `plot_composite`,
   `plot_raster_with_histogram`, `plot_band_array`.
 
-[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.1.0b1...v0.2.0

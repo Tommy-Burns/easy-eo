@@ -225,6 +225,16 @@ class TestMalformedProducts:
         assert "B01" not in product.band_offsets
         assert product.band_offsets["B04"] == -1000.0
 
+    def test_spectral_entries_missing_their_ids_are_skipped(self, tmp_path):
+        # A Spectral_Information entry with no bandId, or no physicalBand, maps
+        # nothing to nothing. Skipping it drops the offsets that referenced it
+        # rather than keying them by None.
+        from product_fixtures import S2_SPECTRAL
+
+        partial = S2_SPECTRAL.replace('bandId="3" ', "", 1).replace('physicalBand="B8A"', "", 1)
+        product = read_product(write_safe(tmp_path, spectral=partial))
+        assert set(product.band_offsets) == {"B01", "B12"}
+
     def test_offsets_for_an_unlisted_band_are_skipped(self, tmp_path):
         # band_id 99 appears in no Spectral_Information entry, so there is no
         # band name to key it by.

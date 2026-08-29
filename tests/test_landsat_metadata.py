@@ -72,6 +72,47 @@ class TestFindMetadata:
             find_metadata(tmp_path / "empty")
 
 
+class TestMalformedODL:
+    """The text parser survives a file whose GROUP nesting is broken.
+
+    A truncated download can leave either of these behind. Neither should
+    raise from an empty stack — the readable groups are kept and the
+    unattributable lines are dropped, so the caller fails later on a missing
+    field with a message naming it, rather than here on an IndexError.
+    """
+
+    def _read(self, tmp_path, text):
+        directory = tmp_path / "product"
+        directory.mkdir()
+        (directory / "X_MTL.txt").write_text(text)
+        source = open_product(directory, "Landsat")
+        return read_metadata_groups(source, PurePosixPath("X_MTL.txt"))
+
+    def test_an_unmatched_end_group_is_ignored(self, tmp_path):
+        groups = self._read(
+            tmp_path,
+            "END_GROUP = NEVER_OPENED\n"
+            "GROUP = PRODUCT_CONTENTS\n"
+            '  LANDSAT_PRODUCT_ID = "LC09_L2SP_193028_20260822_20260823_02_T1"\n'
+            "END_GROUP = PRODUCT_CONTENTS\n"
+            "END\n",
+        )
+        assert groups["PRODUCT_CONTENTS"]["LANDSAT_PRODUCT_ID"].startswith("LC09")
+
+    def test_a_key_outside_any_group_is_dropped(self, tmp_path):
+        # There is no group to file it under, so it is not guessed at.
+        groups = self._read(
+            tmp_path,
+            'ORPHANED_KEY = "no group to file this under"\n'
+            "GROUP = PRODUCT_CONTENTS\n"
+            '  PROCESSING_LEVEL = "L2SP"\n'
+            "END_GROUP = PRODUCT_CONTENTS\n"
+            "END\n",
+        )
+        assert groups == {"PRODUCT_CONTENTS": {"PROCESSING_LEVEL": "L2SP"}}
+        assert not any("ORPHANED_KEY" in members for members in groups.values())
+
+
 class TestIdentityComesFromTheMetadata:
     """A renamed directory must not change what the product is."""
 
