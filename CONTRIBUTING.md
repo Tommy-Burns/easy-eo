@@ -188,6 +188,12 @@ pytest                       # full suite; coverage is measured automatically
 pytest tests/test_ops.py -x  # a single file, stop at first failure
 ```
 
+You can check the lines that changed
+```bash
+pytest --cov-report=xml
+uvx --from diff-cover diff-cover coverage.xml --compare-branch=main --fail-under=100
+```
+
 Coverage is enforced: the run fails if total coverage drops below the
 project threshold. Bug fixes must include a regression test, and new features
 must include tests (see `CODE_STYLE.md`).

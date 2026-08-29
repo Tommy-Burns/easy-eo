@@ -37,11 +37,15 @@ repos:
   # numpydoc section/signature validation (config in [tool.numpydoc_validation]).
   # Scoped to the public operation API; internal helpers use concise docstrings
   # that ruff's D-rules already cover.
+  #
+  # This pattern must match the file list in the CI "numpydoc" step. When it
+  # drifted, eeo/io/ was checked in CI but not here, so a missing Parameters
+  # section passed every local hook and failed the build.
   - repo: https://github.com/numpy/numpydoc
     rev: v1.10.0
     hooks:
       - id: numpydoc-validation
-        files: ^(eeo/(ops|analysis|preprocessing|viz)/|eeo/core/loader\.py|eeo/_show_versions\.py)
+        files: ^(eeo/(ops|analysis|preprocessing|viz|io)/|eeo/core/loader\.py|eeo/_show_versions\.py)
 
   # mypy runs against the whole `eeo` package (per its pyproject config), not
   # just the changed files, so it can resolve intra-package imports. It runs
