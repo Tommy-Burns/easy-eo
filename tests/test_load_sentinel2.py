@@ -8,6 +8,8 @@ image reads, actual warping between resolutions, and actual georeferencing;
 nothing about the read path is stubbed. Nothing is downloaded.
 """
 
+import shutil
+
 import numpy as np
 import pytest
 import rasterio as rio
@@ -222,3 +224,46 @@ class TestChaining:
         out = tmp_path / "stack.tif"
         eeo.load_sentinel2(safe, ["red", "nir"]).save_raster(out)
         assert eeo.load_raster(out).band_names == ["red", "nir"]
+
+
+class TestFindingTheProduct:
+    """What the loader accepts as a path to a product."""
+
+    def test_the_folder_the_safe_was_unpacked_into(self, tmp_path, safe):
+        # Unzipping leaves a folder holding the .SAFE. Pointing at that folder
+        # must load the same scene as pointing at the .SAFE itself.
+        from_parent = eeo.load_sentinel2(tmp_path, ["red"])
+        from_safe = eeo.load_sentinel2(safe, ["red"])
+        np.testing.assert_array_equal(from_parent.to_array(), from_safe.to_array())
+        assert from_parent.attrs["product"] == from_safe.attrs["product"]
+
+    def test_a_folder_holding_two_products_is_refused(self, tmp_path, safe):
+        twin = tmp_path / "S2A_MSIL2A_20200101T100000_N0212_R022_T32TPS_20200101T120000.SAFE"
+        shutil.copytree(safe, twin)
+        with pytest.raises(ValidationError, match="holds 2 Sentinel-2 products"):
+            eeo.load_sentinel2(tmp_path, ["red"])
+
+
+class TestPartialOverlap:
+    """A bbox reaching past the tile returns the overlap, not padding."""
+
+    def test_a_bbox_straddling_the_edge_is_clipped(self, safe):
+        extent = SIZE_10M * 10
+        # Half the requested window lies west and south of the tile.
+        straddling = transform_bounds(
+            "EPSG:32632",
+            "EPSG:4326",
+            ULX - extent / 2,
+            ULY - extent / 2,
+            ULX + extent / 2,
+            ULY,
+            densify_pts=21,
+        )
+        scene = eeo.load_sentinel2(safe, ["red"], bbox=straddling)
+        height, width = scene.to_array().shape[-2:]
+        assert 0 < height < SIZE_10M and 0 < width < SIZE_10M
+        # The window starts at the tile's own corner, not at the requested one.
+        assert scene.get_transform()[2] == ULX
+        assert scene.get_transform()[5] == ULY
+        # Every pixel returned is real data, not fill.
+        assert np.all(scene.to_array()[0] == FILL["B04"])

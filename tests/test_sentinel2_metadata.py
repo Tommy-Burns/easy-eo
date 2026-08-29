@@ -7,6 +7,7 @@ written — this layer never opens one.
 """
 
 import datetime as dt
+import shutil
 
 import pytest
 
@@ -43,6 +44,24 @@ class TestFindManifest:
     def test_manifest_given_directly(self, tmp_path):
         safe = write_safe(tmp_path)
         assert find_manifest(safe / "MTD_MSIL2A.xml").name == "MTD_MSIL2A.xml"
+
+    def test_two_products_in_one_folder_are_refused(self, tmp_path):
+        # A download folder with several scenes in it. Picking the first would
+        # load a different date than the caller believes they asked for.
+        safe = write_safe(tmp_path)
+        twin = tmp_path / "S2A_MSIL2A_20200101T100000_N0212_R022_T32TPS_20200101T120000.SAFE"
+        shutil.copytree(safe, twin)
+        with pytest.raises(ValidationError, match="holds 2 Sentinel-2 products"):
+            find_manifest(tmp_path)
+
+    def test_the_refusal_names_both_products(self, tmp_path):
+        safe = write_safe(tmp_path)
+        twin = tmp_path / "S2A_MSIL2A_20200101T100000_N0212_R022_T32TPS_20200101T120000.SAFE"
+        shutil.copytree(safe, twin)
+        with pytest.raises(ValidationError) as raised:
+            find_manifest(tmp_path)
+        assert safe.name in str(raised.value)
+        assert twin.name in str(raised.value)
 
     def test_missing_path_rejected(self, tmp_path):
         with pytest.raises(ValidationError, match="no such Sentinel-2 product"):

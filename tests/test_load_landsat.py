@@ -15,6 +15,7 @@ import datetime as dt
 
 import numpy as np
 import pytest
+import rasterio as rio
 from rasterio.warp import transform_bounds
 
 import eeo
@@ -64,6 +65,15 @@ class TestLoading:
     def test_values_are_the_stored_digital_numbers(self, product):
         got = eeo.load_landsat(product, ["red"]).to_array()[0]
         assert np.all(got == OLI_BANDS["SR_B4"])
+
+    def test_the_values_match_the_file_on_disk_unscaled(self, product):
+        # The claim the whole "raw digital numbers by default" decision rests
+        # on: a load returns what the file holds, the values a GIS shows, with
+        # no scale or offset applied anywhere in the chain.
+        direct = product / f"{L9_ID}_SR_B4.TIF"
+        with rio.open(direct) as src:
+            stored = src.read(1)
+        np.testing.assert_array_equal(eeo.load_landsat(product, ["red"]).to_array()[0], stored)
 
     def test_band_names_are_the_common_names(self, product):
         assert eeo.load_landsat(product, ["red", "nir08"]).band_names == ["red", "nir08"]
@@ -245,3 +255,52 @@ class TestRefusals:
 
     def test_level_override_agreeing_with_the_metadata_is_accepted(self, product):
         assert eeo.load_landsat(product, ["red"], level="L2SP").band_names == ["red"]
+
+
+class TestFindingTheProduct:
+    """What the loader accepts as a path, and what it refuses."""
+
+    def test_the_folder_the_product_was_extracted_into(self, tmp_path, product):
+        from_parent = eeo.load_landsat(tmp_path, ["red"])
+        from_directory = eeo.load_landsat(product, ["red"])
+        np.testing.assert_array_equal(from_parent.to_array(), from_directory.to_array())
+
+    def test_a_folder_holding_two_products_is_refused(self, tmp_path, product):
+        build_product(tmp_path, product_id=L7_ID)
+        with pytest.raises(ValidationError, match="holds 2 Landsat products"):
+            eeo.load_landsat(tmp_path, ["red"])
+
+    def test_a_renamed_directory_still_reports_its_own_scene(self, tmp_path, product):
+        # The band table follows the metadata's product id, so a folder named
+        # after another mission must not change which band "red" resolves to.
+        renamed = product.rename(tmp_path / L7_ID)
+        loaded = eeo.load_landsat(renamed, ["red"])
+        assert loaded.attrs["product"] == L9_ID
+        assert loaded.attrs["mission"] == "Landsat 9"
+        assert loaded.to_array()[0].max() == OLI_BANDS["SR_B4"]
+
+    def test_no_bands_is_refused(self, product):
+        with pytest.raises(ValidationError, match="at least one band"):
+            eeo.load_landsat(product, [])
+
+
+class TestPartialOverlap:
+    """A bbox reaching past the scene returns the overlap, not padding."""
+
+    def test_a_bbox_straddling_the_edge_is_clipped(self, product):
+        extent = SIZE * RES
+        straddling = transform_bounds(
+            CRS,
+            "EPSG:4326",
+            ULX - extent / 2,
+            ULY - extent / 2,
+            ULX + extent / 2,
+            ULY,
+            densify_pts=21,
+        )
+        scene = eeo.load_landsat(product, ["red"], bbox=straddling)
+        height, width = scene.to_array().shape[-2:]
+        assert 0 < height < SIZE and 0 < width < SIZE
+        assert scene.get_transform()[2] == ULX
+        assert scene.get_transform()[5] == ULY
+        assert np.all(scene.to_array()[0] == OLI_BANDS["SR_B4"])

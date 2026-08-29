@@ -56,6 +56,12 @@ class TestFindMetadata:
         named = directory / f"{PRODUCT_ID}_MTL.txt"
         assert find_metadata(named) == PurePosixPath(named.name)
 
+    def test_two_products_in_one_folder_are_refused(self, tmp_path):
+        write_product(tmp_path)
+        write_product(tmp_path, mission_prefix="LE07")
+        with pytest.raises(ValidationError, match="holds 2 Landsat products"):
+            find_metadata(tmp_path)
+
     def test_missing_path_rejected(self, tmp_path):
         with pytest.raises(ValidationError, match="no such Landsat product"):
             find_metadata(tmp_path / "absent")
@@ -64,6 +70,25 @@ class TestFindMetadata:
         (tmp_path / "empty").mkdir()
         with pytest.raises(ValidationError, match="holds no Landsat metadata file"):
             find_metadata(tmp_path / "empty")
+
+
+class TestIdentityComesFromTheMetadata:
+    """A renamed directory must not change what the product is."""
+
+    def test_a_renamed_directory_is_ignored(self, tmp_path):
+        # Renaming a folder is something users do; it must not be able to
+        # change the mission, the level, or the scene the reader reports.
+        directory = write_product(tmp_path)
+        renamed = directory.rename(tmp_path / "landsat_scene")
+        product = read_product(renamed)
+        assert product.product_id == PRODUCT_ID
+        assert product.mission == 9
+        assert product.level == "L2SP"
+
+    def test_a_directory_named_after_another_mission_is_ignored(self, tmp_path):
+        directory = write_product(tmp_path)
+        renamed = directory.rename(tmp_path / "LE07_L2SP_193028_20231024_20231119_02_T2")
+        assert read_product(renamed).mission == 9
 
 
 class TestSyntaxesAgree:
