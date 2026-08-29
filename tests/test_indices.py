@@ -2,8 +2,8 @@
 
 import numpy as np
 import pytest
-from affine import Affine
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 from eeo import load_array
 from eeo.core.core import EEORasterDataset
@@ -12,7 +12,7 @@ from eeo.core.exceptions import AlignmentError, ValidationError
 UTM_CRS = CRS.from_epsg(32633)
 
 # A north-up 2x2 grid shared by every band raster below.
-_TRANSFORM = Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(10.0, -10.0)
+_TRANSFORM = from_origin(500_000.0, 4_200_000.0, 10.0, 10.0)
 
 # Deterministic band values chosen so every index is hand-computable and no
 # denominator is zero.
@@ -167,7 +167,7 @@ def test_zero_denominator_maps_to_zero():
 def test_mismatched_grid_raises_without_auto_align():
     coarse = load_array(
         np.ones((1, 1), dtype=np.float32),
-        transform=Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(20.0, -20.0),
+        transform=from_origin(500_000.0, 4_200_000.0, 20.0, 20.0),
         crs=UTM_CRS,
     ).to_rasterio()
     with pytest.raises(AlignmentError):
@@ -177,7 +177,7 @@ def test_mismatched_grid_raises_without_auto_align():
 def test_mismatched_grid_auto_aligns_by_default():
     coarse = load_array(
         np.full((1, 1), 0.2, dtype=np.float32),
-        transform=Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(20.0, -20.0),
+        transform=from_origin(500_000.0, 4_200_000.0, 20.0, 20.0),
         crs=UTM_CRS,
     ).to_rasterio()
     result = _band(NIR).ndvi(coarse)  # auto_align=True by default

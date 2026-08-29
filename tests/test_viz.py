@@ -3,11 +3,11 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from affine import Affine
 from matplotlib.axes import Axes
 from matplotlib.colors import Normalize
 from matplotlib.figure import Figure
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 from eeo import load_array
 from eeo.core.adapters import RasterioAdapter
@@ -54,7 +54,7 @@ def rgb_float32_raster():
 
     return load_array(
         array,
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
     )
 
@@ -240,7 +240,7 @@ def ndvi_like_raster():
 
     return load_array(
         array,
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
     )
 
@@ -330,7 +330,7 @@ def test_stretch_keeps_nodata_unpainted_when_range_is_empty(monkeypatch):
     array[0, 0] = 1.0  # single valid pixel: p2 == p98, so no limits apply
     ds = load_array(
         array,
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
     )
     calls = _capture_imshow(monkeypatch)
@@ -351,7 +351,7 @@ def test_stretch_limits_are_computed_per_band(monkeypatch):
     band2 = band1 * 10.0 + 100.0
     ds = load_array(
         np.stack([band1, band2]),
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
     )
     calls = _capture_imshow(monkeypatch)
@@ -406,7 +406,7 @@ def test_display_out_shape_caps_large_raster():
 def test_read_band_for_display_decimates_and_rescales_transform():
     ds = load_array(
         np.zeros((600, 600), dtype=np.float32),
-        transform=Affine.translation(0, 600) * Affine.scale(1, -1),
+        transform=from_origin(0, 600, 1, 1),
         crs=CRS.from_epsg(32633),
     ).to_rasterio()
 
@@ -423,7 +423,7 @@ def test_read_band_for_display_decimates_and_rescales_transform():
 def test_read_band_for_display_numpy_backend_reads_full():
     ds = load_array(
         np.zeros((600, 600), dtype=np.float32),
-        transform=Affine.translation(0, 600) * Affine.scale(1, -1),
+        transform=from_origin(0, 600, 1, 1),
         crs=CRS.from_epsg(32633),
     )
 
@@ -454,7 +454,7 @@ def large_rgb_raster():
     )
     ds = load_array(
         np.stack([base, 0.5 * base, 0.25 * base]),
-        transform=Affine.translation(0, LARGE_SIDE) * Affine.scale(1, -1),
+        transform=from_origin(0, LARGE_SIDE, 1, 1),
         crs=CRS.from_epsg(32633),
     ).to_rasterio()
     yield ds
@@ -720,7 +720,7 @@ def test_reflow_fill_order_is_dataset_major(multiband_uint16, monkeypatch):
     """Every band of the first dataset, then every band of the next."""
     second = load_array(
         np.zeros((2, 6, 6), dtype=np.float32) + 5.0,
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
     )
     titles = []
@@ -776,7 +776,7 @@ def test_mask_nodata_for_display_nan_nodata_needs_no_mask():
     array = np.array([[1.0, np.nan], [3.0, 4.0]], dtype=np.float32)
     ds = load_array(
         array,
-        transform=Affine.translation(0, 2) * Affine.scale(1, -1),
+        transform=from_origin(0, 2, 1, 1),
         crs=CRS.from_epsg(4326),
         nodata=np.nan,
     )
@@ -868,7 +868,7 @@ def test_composite_makes_nodata_transparent(monkeypatch):
     array[0, :2, :2] = -9999.0  # nodata in the red channel only
     ds = load_array(
         array,
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
         nodata=-9999.0,
     )
@@ -890,7 +890,7 @@ def test_composite_stretch_ignores_nodata(monkeypatch):
     array[:, 0, 0] = -9999.0
     ds = load_array(
         array,
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
         nodata=-9999.0,
     )
@@ -957,7 +957,7 @@ def test_colorbar_labelled_from_band_name(plot_func, monkeypatch):
     """A named band labels its own colorbar; ``colorbar_label`` overrides it."""
     ds = load_array(
         np.linspace(-0.4, 0.9, 36, dtype=np.float32).reshape(6, 6),
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
         band_names=["NDVI"],
     )
@@ -997,7 +997,7 @@ def test_colorbar_extend_one_sided(monkeypatch):
     array = np.linspace(0.0, 1.0, 36, dtype=np.float32).reshape(6, 6)
     ds = load_array(
         array,
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
     )
     bars = _capture_colorbars(monkeypatch)
@@ -1013,7 +1013,7 @@ def test_colorbar_per_band_in_a_grid(monkeypatch):
     band2 = band1 * 10.0 + 100.0
     ds = load_array(
         np.stack([band1, band2]),
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
     )
     bars = _capture_colorbars(monkeypatch)
@@ -1056,7 +1056,7 @@ def test_colorbar_all_nodata_band(monkeypatch):
     """An all-NaN band has no finite values; the bar falls back to no arrowheads."""
     ds = load_array(
         np.full((6, 6), np.nan, dtype=np.float32),
-        transform=Affine.translation(0, 6) * Affine.scale(1, -1),
+        transform=from_origin(0, 6, 1, 1),
         crs=CRS.from_epsg(4326),
     )
     bars = _capture_colorbars(monkeypatch)

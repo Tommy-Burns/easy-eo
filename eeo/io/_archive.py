@@ -109,23 +109,77 @@ class ProductSource(ABC):
 
     @abstractmethod
     def exists(self, relative: PurePosixPath | str) -> bool:
-        """Whether the source holds a file at this relative path."""
+        """Report whether the source holds a file at a relative path.
+
+        Parameters
+        ----------
+        relative : PurePosixPath or str
+            Path within the source.
+
+        Returns
+        -------
+        bool
+            True if a file sits there. Directories do not count.
+        """
 
     @abstractmethod
     def glob(self, pattern: str) -> list[PurePosixPath]:
-        """Relative paths of the files matching a glob pattern, sorted."""
+        """Find the files matching a glob pattern.
+
+        Parameters
+        ----------
+        pattern : str
+            Glob pattern, read as :meth:`pathlib.Path.glob` reads it: anchored
+            at the source root, with ``*`` stopping at a separator.
+
+        Returns
+        -------
+        list of PurePosixPath
+            Matching files, relative to the source, sorted.
+        """
 
     @abstractmethod
     def read_bytes(self, relative: PurePosixPath | str) -> bytes:
-        """Read one file whole. For metadata, never for imagery."""
+        """Read one file whole. For metadata, never for imagery.
+
+        Parameters
+        ----------
+        relative : PurePosixPath or str
+            Path within the source.
+
+        Returns
+        -------
+        bytes
+            The file's contents.
+        """
 
     @abstractmethod
     def href(self, relative: PurePosixPath | str) -> str:
-        """Return what rasterio should open to read this file."""
+        """Return what rasterio should open to read this file.
+
+        Parameters
+        ----------
+        relative : PurePosixPath or str
+            Path within the source.
+
+        Returns
+        -------
+        str
+            A path or virtual filesystem URL rasterio can open.
+        """
 
 
 class DirectorySource(ProductSource):
-    """A product unpacked into a directory."""
+    """A product unpacked into a directory.
+
+    Parameters
+    ----------
+    root : Path
+        The directory paths are resolved against.
+    named_entry : PurePosixPath or None, default None
+        The file the caller named, when they named one rather than the
+        directory. A reader honours it instead of searching.
+    """
 
     def __init__(self, root: Path, named_entry: PurePosixPath | None = None) -> None:
         self.root = root
@@ -160,6 +214,16 @@ class ArchiveSource(ProductSource):
     each metadata read, of which there are one or two. Imagery is never read
     through here — :meth:`href` hands GDAL a virtual filesystem path and GDAL
     addresses the member directly.
+
+    Parameters
+    ----------
+    archive : Path
+        The ``.zip`` or ``.tar`` file.
+    suffix : str
+        Which of the two it is, lowercased, as the key into the virtual
+        filesystem table.
+    entries : tuple of str
+        The archive's file members, listed once at construction.
     """
 
     def __init__(self, archive: Path, suffix: str, entries: tuple[str, ...]) -> None:
@@ -232,9 +296,25 @@ def nested_archive(source: ProductSource, mission: str) -> ProductSource | None:
     at the folder is what people do. One archive there is unambiguous; several
     are refused the same way several products are.
 
-    Returns None when the source is not a directory, when the caller named a
-    specific file, or when the directory holds no archive at all — in each case
-    there is nothing to resolve to and the caller's own search stands.
+    Parameters
+    ----------
+    source : ProductSource
+        Where the caller pointed. Only a directory source can hold an archive.
+    mission : str
+        How to name the mission in any error, e.g. ``"Sentinel-2"``.
+
+    Returns
+    -------
+    ProductSource or None
+        A source for the archive, or None when there is nothing to resolve to:
+        the source is not a directory, the caller named a specific file, or the
+        directory holds no archive at all. In each of those the caller's own
+        search stands.
+
+    Raises
+    ------
+    ValidationError
+        If the directory holds more than one archive.
     """
     if not isinstance(source, DirectorySource) or source.named_entry is not None:
         return None

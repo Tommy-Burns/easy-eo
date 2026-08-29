@@ -285,7 +285,9 @@ def _transform_from(da: Any, y_dim: str, x_dim: str) -> Affine:
     y_geometry = _axis_geometry(da, y_dim)
     x_res, x_origin = (stored.a, stored.c) if x_geometry is None else x_geometry
     y_res, y_origin = (stored.e, stored.f) if y_geometry is None else y_geometry
-    derived = Affine.translation(x_origin, y_origin) * Affine.scale(x_res, y_res)
+    # Composed directly rather than as translation * scale: affine 3
+    # deprecates `*` for composition and affine 2 has no `@`.
+    derived = Affine(x_res, 0.0, x_origin, 0.0, y_res, y_origin)
 
     if np.allclose(tuple(derived)[:6], tuple(stored)[:6], rtol=1e-9, atol=0):
         return stored

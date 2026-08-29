@@ -541,9 +541,23 @@ def _read_band_for_display(
     array = ds.read(band, out_shape=out_shape)
     height, width = ds.get_shape()
     out_height, out_width = out_shape
+    # Scaled directly rather than as transform * scale: affine 3 deprecates
+    # `*` for composition and affine 2 has no `@`.
+    # An Affine maps (col, row) -> (x, y) as x = a*col + b*row + c and
+    # y = d*col + e*row + f, so scaling the pixel grid multiplies the
+    # col terms (a, d) by scale_x and the row terms (b, e) by scale_y.
+    # The origin (c, f) is untouched: a pure scale has no translation.
+    scale_x, scale_y = width / out_width, height / out_height
     return (
         _mask_nodata_for_display(ds, array),
-        transform * Affine.scale(width / out_width, height / out_height),
+        Affine(
+            transform.a * scale_x,
+            transform.b * scale_y,
+            transform.c,
+            transform.d * scale_x,
+            transform.e * scale_y,
+            transform.f,
+        ),
     )
 
 

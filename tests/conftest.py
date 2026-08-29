@@ -27,6 +27,7 @@ import numpy as np
 import pytest
 from affine import Affine
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 from eeo import load_array
 
@@ -107,7 +108,7 @@ def _silence_agg_show_warning():
 
 def _north_up(origin_x: float = ORIGIN_X, origin_y: float = ORIGIN_Y, res: float = RES) -> Affine:
     """Return a north-up affine transform with square pixels."""
-    return Affine.translation(origin_x, origin_y) * Affine.scale(res, -res)
+    return from_origin(origin_x, origin_y, res, res)
 
 
 def _gradient(shape: tuple[int, int], dtype) -> np.ndarray:
@@ -187,7 +188,7 @@ def crs_mismatch_pair():
     ).to_rasterio()
     geo = load_array(
         _gradient((6, 6), np.float32),
-        transform=Affine.translation(12.0, 42.0) * Affine.scale(0.0001, -0.0001),
+        transform=from_origin(12.0, 42.0, 0.0001, 0.0001),
         crs=GEO_CRS,
     ).to_rasterio()
     yield utm, geo
@@ -238,6 +239,6 @@ def raster_3x3():
     """
     return load_array(
         np.arange(1, 10, dtype=np.float32).reshape(3, 3),
-        transform=Affine.translation(0, 3) * Affine.scale(1, -1),
+        transform=from_origin(0, 3, 1, 1),
         crs=GEO_CRS,
     )

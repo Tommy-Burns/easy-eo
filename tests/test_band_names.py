@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 import rasterio as rio
-from affine import Affine
 from rasterio.crs import CRS
 from rasterio.io import MemoryFile
+from rasterio.transform import from_origin
 
 from eeo import load_array, load_raster
 from eeo.common import resolve_band_index
@@ -14,7 +14,7 @@ from eeo.core.exceptions import ValidationError
 from eeo.viz.plot import _band_label, _normalize_bands
 
 CRS_4326 = CRS.from_epsg(4326)
-TRANSFORM = Affine.translation(0, 4) * Affine.scale(1, -1)
+TRANSFORM = from_origin(0, 4, 1, 1)
 
 
 def _numpy_ds(count=3, **kwargs):

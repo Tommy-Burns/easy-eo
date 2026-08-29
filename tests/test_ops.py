@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-from affine import Affine
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 from eeo import load_array
 
@@ -12,7 +12,7 @@ from eeo import load_array
 # for hand-checkable algebra (a + b is constant 5). General-purpose rasters
 # live in conftest.py.
 
-GRID = Affine.translation(0, 2) * Affine.scale(1, -1)
+GRID = from_origin(0, 2, 1, 1)
 
 
 @pytest.fixture
