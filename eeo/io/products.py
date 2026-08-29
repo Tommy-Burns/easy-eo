@@ -124,8 +124,9 @@ def load_sentinel2(
         Bands to load, in the order they should become bands of the result.
         Named by common name (``"red"``, ``"nir"``, ``"swir16"``, ``"scl"``) or
         by the product's own id (``"B04"``, ``"B8A"``). **There is no default**:
-        a full Level-2A product is roughly 2.9 GB of imagery at 10 m, so the
-        set to read is always an explicit choice.
+        a Level-2A product holds several gigabytes of imagery — one 10 m band
+        alone is about 241 MB — so the set to read is always an explicit
+        choice.
     bbox : sequence of float or None, default None
         Area to read, as ``(minx, miny, maxx, maxy)`` in **WGS 84 lon/lat
         degrees**. None reads the whole 110 km tile, which for a 10 m band is

@@ -30,9 +30,10 @@ This needs the optional ``stac`` extra:
 
 .. seealso::
 
-   :doc:`spectral_indices` for the indices computed here, :doc:`band_names` for
-   addressing bands by name, and :doc:`sample_data` for working offline from a
-   bundled sample instead.
+   :doc:`loading_downloaded_scenes` for reading a product you have already
+   downloaded, :doc:`spectral_indices` for the indices computed here,
+   :doc:`band_names` for addressing bands by name, and :doc:`sample_data` for
+   working offline from a bundled sample instead.
 
 -----
 
@@ -60,6 +61,15 @@ That is the whole workflow. The scene it reads is a Sentinel-2 tile of roughly
 11,000 × 11,000 pixels per band — around 240 MB — but only the window covering
 your bounding box is fetched, so the load moves a few megabytes and finishes in
 seconds.
+
+.. important::
+
+   That NDVI is computed over the assets' **stored integers**, not reflectance.
+   A multiplicative scale cancels in a normalised difference but an additive
+   offset does not, so the result is biased toward zero — on real farmland,
+   0.438 where reflectance gives 0.668. See
+   :ref:`What the values mean <what-the-values-mean>` for the conversion and
+   when it matters.
 
 -----
 
