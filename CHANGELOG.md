@@ -11,6 +11,43 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- `eeo.load_sentinel2()` and `eeo.load_landsat()`, for reading a product you
+  have already downloaded rather than one in a catalog. Both return the same
+  `EEORasterDataset` a STAC load does — same grid, same band names, same
+  values — so a workflow does not care which route the data took; they share
+  one reader with `STACItem.load` for exactly that reason. `load_landsat` is
+  one function for Landsat 4, 5, 7, 8 and 9, not one per satellite: the
+  mission is read from the product's own metadata and only decides which band
+  table the names resolve against, so `["red", "nir08"]` is the same request
+  on a sensor where red is band 4 and one where it is band 3. Bands are always
+  named explicitly — a full Sentinel-2 product is several gigabytes, so a
+  default of "everything" would turn a two-band NDVI into a load that does not
+  fit in memory. Only surface reflectance is read: Sentinel-2 Level-2A and
+  Landsat `L2SP`/`L2SR`, with Level-1C and the Level-1 products refused by
+  name and told which product to download instead. The level comes from the
+  metadata rather than the filename, so a renamed product cannot mislead the
+  reader.
+- Either loader reads a product as it was downloaded — a `.SAFE` directory or
+  a Copernicus `.zip`, a Landsat directory or a USGS `.tar` — without
+  unpacking it first. A compressed archive is refused with the command to
+  extract it: it holds no index, so reading one band would decompress every
+  byte before it, once per band, and accepting that silently would make a load
+  mysteriously slow rather than honestly refuse. Pointing at a folder that
+  holds more than one product is also refused, by name, rather than loading
+  whichever sorts first.
+- A "Loading Downloaded Scenes" guide beside the STAC one, covering where the
+  products come from, what a path can be, why bands are named rather than
+  numbered, resolution selection, and the supported-level boundary. It carries
+  a "What the values mean" section documenting something that was true before
+  and undocumented: **a load returns the product's stored integers, not
+  reflectance** — the values a GIS shows, since the assets declare a scale of
+  1.0 and an offset of 0.0 to GDAL and nothing in the chain decodes them. That
+  matters because a multiplicative scale cancels in a normalised difference
+  while an additive offset does not, so an index over digital numbers is
+  biased toward zero: measured on Sentinel-2 farmland, the same NDVI came out
+  at 0.438 over DN against 0.668 over reflectance. The STAC guide's quickstart
+  now says which convention its NDVI is in and links across.
+
 - A DOI badge in the README, and the Zenodo DOI in `CITATION.cff`. Both use
   the concept DOI rather than the version DOI Zenodo offers by default, so
   they track the newest release instead of pinning to v0.3.1.
