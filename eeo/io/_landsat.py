@@ -177,10 +177,19 @@ def find_metadata(source: StrPath | ProductSource) -> PurePosixPath:
         return opened.named_entry
 
     # A USGS tar holds its files at the root; a directory the product was
-    # unpacked into holds them one level down.
+    # unpacked into holds them one level down. Either way there must be exactly
+    # one — a download folder holding several scenes has no defensible answer,
+    # and picking the alphabetically first would silently analyse the wrong one.
     for depth in ("", "*/"):
         for suffix in _METADATA_SUFFIXES:
             matches = opened.glob(f"{depth}*{suffix}")
+            if len(matches) > 1:
+                raise ValidationError(
+                    f"{str(opened.location)!r} holds {len(matches)} Landsat products, so "
+                    f"which one to load cannot be told from the path alone: "
+                    f"{', '.join(sorted(found.name for found in matches))}. "
+                    f"Name the one you mean."
+                )
             if matches:
                 return matches[0]
 

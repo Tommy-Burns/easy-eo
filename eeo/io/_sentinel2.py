@@ -206,9 +206,19 @@ def find_manifest(source: StrPath | ProductSource) -> PurePosixPath:
         if opened.exists(name):
             return PurePosixPath(name)
 
-    # A user may point at the folder, or the zip, the .SAFE sits inside.
+    # A user may point at the folder, or the zip, the .SAFE sits inside. That
+    # is only unambiguous while there is one: a download folder holding several
+    # scenes has no defensible answer, and picking the alphabetically first
+    # would silently analyse the wrong date.
     for name in _MANIFESTS:
         nested = opened.glob(f"*.SAFE/{name}")
+        if len(nested) > 1:
+            raise ValidationError(
+                f"{str(opened.location)!r} holds {len(nested)} Sentinel-2 products, so "
+                f"which one to load cannot be told from the path alone: "
+                f"{', '.join(sorted(found.parent.name for found in nested))}. "
+                f"Name the one you mean."
+            )
         if nested:
             return nested[0]
 
