@@ -117,9 +117,10 @@ def load_sentinel2(
     Parameters
     ----------
     path : str or pathlib.Path
-        A ``.SAFE`` directory, a directory or ``.zip`` holding one, or the
-        product manifest itself. A Copernicus download is read as it arrives,
-        zipped, without being unpacked first.
+        A ``.SAFE`` directory, a ``.zip``, a directory holding either of those,
+        or the product manifest itself. A Copernicus download is read as it
+        arrives, zipped, without being unpacked first — including when it is
+        still sitting in the folder it was downloaded into.
     bands : sequence of str
         Bands to load, in the order they should become bands of the result.
         Named by common name (``"red"``, ``"nir"``, ``"swir16"``, ``"scl"``) or
@@ -283,11 +284,12 @@ def load_landsat(
     Parameters
     ----------
     path : str or pathlib.Path
-        A product directory, a directory or ``.tar`` holding one, or the
-        ``*_MTL.xml``, ``*_MTL.json``, or ``*_MTL.txt`` metadata file itself. A
-        USGS download is read as it arrives, tarred, without being unpacked
-        first — and an uncompressed tar costs nothing to read this way, since
-        its members are stored whole.
+        A product directory, a ``.tar``, a directory holding either of those,
+        or the ``*_MTL.xml``, ``*_MTL.json``, or ``*_MTL.txt`` metadata file
+        itself. A USGS download is read as it arrives, tarred, without being
+        unpacked first — including when it is still sitting in the folder it
+        was downloaded into — and an uncompressed tar costs nothing to read
+        this way, since its members are stored whole.
     bands : sequence of str
         Bands to load, in the order they should become bands of the result.
         Named by common name (``"red"``, ``"nir08"``, ``"swir16"``,

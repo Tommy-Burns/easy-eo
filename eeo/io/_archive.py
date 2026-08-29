@@ -44,6 +44,7 @@ import tarfile
 import zipfile
 from abc import ABC, abstractmethod
 from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 
 from eeo.core.exceptions import ValidationError
 from eeo.core.types import StrPath
@@ -209,6 +210,50 @@ def _archive_entries(archive: Path, suffix: str) -> tuple[str, ...]:
             return tuple(member.name for member in tarred.getmembers() if member.isfile())
     except (OSError, zipfile.BadZipFile, tarfile.TarError) as err:
         raise ValidationError(f"{archive.name} is not a readable archive: {err}") from err
+
+
+class Located(NamedTuple):
+    """A product's metadata file, and the source it was actually found in.
+
+    The source is returned alongside the path because finding a product can
+    change where the rest of it will be read from: pointing at a folder that
+    holds an archive resolves to that archive, and every later read has to go
+    there rather than to the folder.
+    """
+
+    source: ProductSource
+    path: PurePosixPath
+
+
+def nested_archive(source: ProductSource, mission: str) -> ProductSource | None:
+    """Open the one archive sitting inside a directory, if there is exactly one.
+
+    A download that has not been unpacked still lives in a folder, and pointing
+    at the folder is what people do. One archive there is unambiguous; several
+    are refused the same way several products are.
+
+    Returns None when the source is not a directory, when the caller named a
+    specific file, or when the directory holds no archive at all — in each case
+    there is nothing to resolve to and the caller's own search stands.
+    """
+    if not isinstance(source, DirectorySource) or source.named_entry is not None:
+        return None
+
+    archives = sorted(
+        entry
+        for entry in source.root.iterdir()
+        if entry.is_file() and entry.suffix.lower() in _ARCHIVE_VSI
+    )
+    if not archives:
+        return None
+    if len(archives) > 1:
+        raise ValidationError(
+            f"{str(source.root)!r} holds {len(archives)} archives, so which one to "
+            f"load cannot be told from the path alone: "
+            f"{', '.join(archive.name for archive in archives)}. "
+            f"Name the one you mean."
+        )
+    return open_product(archives[0], mission)
 
 
 def open_product(path: StrPath, mission: str) -> ProductSource:

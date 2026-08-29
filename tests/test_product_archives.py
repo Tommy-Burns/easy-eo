@@ -14,6 +14,7 @@ disagree about where the product is.
 Nothing is downloaded.
 """
 
+import shutil
 import tarfile
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -288,3 +289,51 @@ class TestGlobParityForSingleCharacters:
         packed = open_product(safe_zip, "Sentinel-2")
         assert loose.glob(f"{PRODUCT}?MTD_MSIL2A.xml") == []
         assert packed.glob(f"{PRODUCT}?MTD_MSIL2A.xml") == []
+
+
+class TestAFolderHoldingAnArchive:
+    """A download that has not been unpacked still lives in a folder.
+
+    Pointing at that folder is what people actually do — the archive is the
+    only thing in it, so there is nothing ambiguous to resolve.
+    """
+
+    def test_a_folder_holding_a_zip_loads(self, tmp_path, safe):
+        folder = tmp_path / "downloads"
+        folder.mkdir()
+        pack_zip(safe, folder / f"{PRODUCT[:-5]}.zip", base=safe.parent)
+        shutil.rmtree(safe)
+        assert eeo.load_sentinel2(folder, ["red"]).attrs["product"] == PRODUCT
+
+    def test_it_matches_naming_the_zip_directly(self, tmp_path, safe):
+        folder = tmp_path / "downloads"
+        folder.mkdir()
+        archive = pack_zip(safe, folder / f"{PRODUCT[:-5]}.zip", base=safe.parent)
+        shutil.rmtree(safe)
+        np.testing.assert_array_equal(
+            eeo.load_sentinel2(folder, ["red"]).to_array(),
+            eeo.load_sentinel2(archive, ["red"]).to_array(),
+        )
+
+    def test_a_folder_holding_a_tar_loads(self, tmp_path, scene):
+        folder = tmp_path / "downloads"
+        folder.mkdir()
+        pack_tar(scene, folder / f"{L9_ID}.tar", base=scene)
+        shutil.rmtree(scene)
+        assert eeo.load_landsat(folder, ["red"]).attrs["product"] == L9_ID
+
+    def test_a_folder_holding_two_archives_is_refused(self, tmp_path, scene):
+        folder = tmp_path / "downloads"
+        folder.mkdir()
+        pack_tar(scene, folder / f"{L9_ID}.tar", base=scene)
+        pack_tar(scene, folder / "another_scene.tar", base=scene)
+        shutil.rmtree(scene)
+        with pytest.raises(ValidationError, match="holds 2 archives"):
+            eeo.load_landsat(folder, ["red"])
+
+    def test_an_unpacked_product_wins_over_an_archive_beside_it(self, tmp_path, safe):
+        # Having unzipped it, the folder holds both. The unpacked one is
+        # cheaper to read and is what the user is looking at.
+        pack_zip(safe, tmp_path / f"{PRODUCT[:-5]}.zip", base=safe.parent)
+        loaded = eeo.load_sentinel2(tmp_path, ["red"])
+        assert loaded.attrs["product"] == PRODUCT

@@ -45,7 +45,7 @@ from xml.etree import ElementTree as ET
 
 from eeo.core.exceptions import ValidationError
 from eeo.core.types import StrPath
-from eeo.io._archive import ProductSource, open_product
+from eeo.io._archive import Located, ProductSource, nested_archive, open_product
 
 #: Product manifests, newest level first, as found at a ``.SAFE`` root.
 _MANIFESTS = ("MTD_MSIL2A.xml", "MTD_MSIL1C.xml")
@@ -172,7 +172,7 @@ def _parse_time(value: str, *, source: str) -> dt.datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
 
 
-def find_manifest(source: StrPath | ProductSource) -> PurePosixPath:
+def find_manifest(source: StrPath | ProductSource) -> Located:
     """Locate a Sentinel-2 product manifest within a source.
 
     Parameters
@@ -183,10 +183,12 @@ def find_manifest(source: StrPath | ProductSource) -> PurePosixPath:
 
     Returns
     -------
-    PurePosixPath
-        The manifest's path **relative to the source**. Its parent is the
-        ``.SAFE`` root, which every image path in the manifest is written
-        relative to.
+    Located
+        The source the manifest was found in, and its path **relative to that
+        source**. The path's parent is the ``.SAFE`` root, which every image
+        path in the manifest is written relative to. The source is not always
+        the one passed in: pointing at a folder that holds a ``.zip`` resolves
+        to the zip.
 
     Raises
     ------
@@ -195,16 +197,16 @@ def find_manifest(source: StrPath | ProductSource) -> PurePosixPath:
 
     Examples
     --------
-    >>> find_manifest("S2B_MSIL2A_20240830T100559.SAFE")  # doctest: +SKIP
+    >>> find_manifest("S2B_MSIL2A_20240830T100559.SAFE").path  # doctest: +SKIP
     PurePosixPath('MTD_MSIL2A.xml')
     """
     opened = source if isinstance(source, ProductSource) else open_product(source, "Sentinel-2")
     if opened.named_entry is not None:
-        return opened.named_entry
+        return Located(opened, opened.named_entry)
 
     for name in _MANIFESTS:
         if opened.exists(name):
-            return PurePosixPath(name)
+            return Located(opened, PurePosixPath(name))
 
     # A user may point at the folder, or the zip, the .SAFE sits inside. That
     # is only unambiguous while there is one: a download folder holding several
@@ -220,11 +222,16 @@ def find_manifest(source: StrPath | ProductSource) -> PurePosixPath:
                 f"Name the one you mean."
             )
         if nested:
-            return nested[0]
+            return Located(opened, nested[0])
+
+    # The folder may hold the product still zipped, which is how it arrives.
+    archive = nested_archive(opened, "Sentinel-2")
+    if archive is not None:
+        return find_manifest(archive)
 
     raise ValidationError(
         f"{str(opened.location)!r} holds no Sentinel-2 product manifest; expected one of "
-        f"{', '.join(_MANIFESTS)} at the root of a .SAFE directory"
+        f"{', '.join(_MANIFESTS)} at the root of a .SAFE directory, or a .zip holding one"
     )
 
 
@@ -370,8 +377,9 @@ def read_product(path: StrPath | ProductSource, *, level: str | None = None) -> 
     >>> product.level, product.tile_id, product.processing_baseline  # doctest: +SKIP
     ('L2A', 'T32TPS', '05.11')
     """
-    source = path if isinstance(path, ProductSource) else open_product(path, "Sentinel-2")
-    manifest = find_manifest(source)
+    source, manifest = find_manifest(
+        path if isinstance(path, ProductSource) else open_product(path, "Sentinel-2")
+    )
     try:
         root = ET.fromstring(source.read_bytes(manifest))
     except ET.ParseError as err:

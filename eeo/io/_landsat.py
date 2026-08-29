@@ -43,7 +43,7 @@ from xml.etree import ElementTree as ET
 
 from eeo.core.exceptions import ValidationError
 from eeo.core.types import StrPath
-from eeo.io._archive import ProductSource, open_product
+from eeo.io._archive import Located, ProductSource, nested_archive, open_product
 
 #: Metadata syntaxes, in the order they are preferred when several are present.
 _METADATA_SUFFIXES = ("_MTL.xml", "_MTL.json", "_MTL.txt")
@@ -146,7 +146,7 @@ class LandsatProduct:
     groups: dict[str, dict[str, str]]
 
 
-def find_metadata(source: StrPath | ProductSource) -> PurePosixPath:
+def find_metadata(source: StrPath | ProductSource) -> Located:
     """Locate a Landsat product's metadata file within a source.
 
     Parameters
@@ -157,10 +157,12 @@ def find_metadata(source: StrPath | ProductSource) -> PurePosixPath:
 
     Returns
     -------
-    PurePosixPath
-        The metadata file's path **relative to the source**, preferring
-        ``_MTL.xml`` over ``_MTL.json`` over ``_MTL.txt`` when more than one is
-        present. Its parent is the product root.
+    Located
+        The source the metadata was found in, and its path **relative to that
+        source**, preferring ``_MTL.xml`` over ``_MTL.json`` over ``_MTL.txt``
+        when more than one is present. The path's parent is the product root.
+        The source is not always the one passed in: pointing at a folder that
+        holds a ``.tar`` resolves to the tar.
 
     Raises
     ------
@@ -169,12 +171,12 @@ def find_metadata(source: StrPath | ProductSource) -> PurePosixPath:
 
     Examples
     --------
-    >>> find_metadata("LC09_L2SP_193028_20260822_02_T1")  # doctest: +SKIP
+    >>> find_metadata("LC09_L2SP_193028_20260822_02_T1").path  # doctest: +SKIP
     PurePosixPath('LC09_L2SP_193028_20260822_20260823_02_T1_MTL.xml')
     """
     opened = source if isinstance(source, ProductSource) else open_product(source, "Landsat")
     if opened.named_entry is not None:
-        return opened.named_entry
+        return Located(opened, opened.named_entry)
 
     # A USGS tar holds its files at the root; a directory the product was
     # unpacked into holds them one level down. Either way there must be exactly
@@ -191,11 +193,16 @@ def find_metadata(source: StrPath | ProductSource) -> PurePosixPath:
                     f"Name the one you mean."
                 )
             if matches:
-                return matches[0]
+                return Located(opened, matches[0])
+
+    # The folder may hold the product still tarred, which is how it arrives.
+    archive = nested_archive(opened, "Landsat")
+    if archive is not None:
+        return find_metadata(archive)
 
     raise ValidationError(
         f"{str(opened.location)!r} holds no Landsat metadata file; expected one ending in "
-        f"{', '.join(_METADATA_SUFFIXES)}"
+        f"{', '.join(_METADATA_SUFFIXES)}, or a .tar holding one"
     )
 
 
@@ -363,8 +370,9 @@ def read_product(path: StrPath | ProductSource, *, level: str | None = None) -> 
     >>> product.mission, product.level, product.wrs_row  # doctest: +SKIP
     (9, 'L2SP', '028')
     """
-    source = path if isinstance(path, ProductSource) else open_product(path, "Landsat")
-    metadata = find_metadata(source)
+    source, metadata = find_metadata(
+        path if isinstance(path, ProductSource) else open_product(path, "Landsat")
+    )
     groups = read_metadata_groups(source, metadata)
 
     detected = groups.get(_CONTENTS, {}).get("PROCESSING_LEVEL", "").strip().upper()

@@ -79,10 +79,10 @@ Either loader accepts the product as it arrived, unpacked or not:
 
    # the product itself
    eeo.load_sentinel2(path="S2B_MSIL2A_….SAFE", bands=["red"])
-   # the folder it was unpacked into
-   eeo.load_sentinel2(path="downloads/", bands=["red"])
    # still zipped, as downloaded
-   eeo.load_sentinel2(path="S2B_MSIL2A_….zip", bands=["red"])
+   eeo.load_sentinel2(path="S2B_MSIL2A_….SAFE.zip", bands=["red"])
+   # the folder it was unpacked into, or downloaded into still zipped
+   eeo.load_sentinel2(path="downloads/", bands=["red"])
    # the manifest itself
    eeo.load_sentinel2(path="S2B_MSIL2A_….SAFE/MTD_MSIL2A.xml", bands=["red"])
 
@@ -100,9 +100,14 @@ A **compressed** archive is refused rather than read slowly:
    byte before it, once per band. Extract it first — `tar -xf LC09_….tar.gz` —
    and pass the 'LC09_….tar' directory.
 
-Pointing at a folder is only unambiguous while it holds **one** product. A
-folder with several is refused by name rather than loading whichever sorts
-first, which would silently analyse the wrong date.
+A folder counts as holding the product whether it was unpacked there or is
+still the ``.zip`` or ``.tar`` you downloaded into it — so pointing at the
+folder works either way, and an unpacked product beside its own archive wins,
+being the cheaper of the two to read.
+
+Pointing at a folder is only unambiguous while it holds **one** product,
+though. A folder with several is refused by name rather than loading whichever
+sorts first, which would silently analyse the wrong date.
 
 -----
 

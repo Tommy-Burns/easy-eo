@@ -40,13 +40,13 @@ class TestFindMetadata:
     @pytest.mark.parametrize("syntax", ["xml", "json", "txt"])
     def test_each_syntax_is_found(self, tmp_path, syntax):
         directory = write_product(tmp_path, syntax)
-        assert find_metadata(directory).suffix == f".{syntax}"
+        assert find_metadata(directory).path.suffix == f".{syntax}"
 
     def test_xml_wins_when_several_are_present(self, tmp_path):
         directory = write_product(tmp_path, "txt")
         write_product(tmp_path, "json")
         write_product(tmp_path, "xml")
-        assert find_metadata(directory).suffix == ".xml"
+        assert find_metadata(directory).path.suffix == ".xml"
 
     def test_a_named_file_wins_over_the_preferred_suffix(self, tmp_path):
         # Naming the .txt must select it even though .xml is preferred when
@@ -54,7 +54,7 @@ class TestFindMetadata:
         write_product(tmp_path, "xml")
         directory = write_product(tmp_path, "txt")
         named = directory / f"{PRODUCT_ID}_MTL.txt"
-        assert find_metadata(named) == PurePosixPath(named.name)
+        assert find_metadata(named).path == PurePosixPath(named.name)
 
     def test_two_products_in_one_folder_are_refused(self, tmp_path):
         write_product(tmp_path)

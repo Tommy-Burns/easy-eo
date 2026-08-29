@@ -35,15 +35,15 @@ class TestFindManifest:
 
     def test_safe_directory(self, tmp_path):
         safe = write_safe(tmp_path)
-        assert find_manifest(safe).name == "MTD_MSIL2A.xml"
+        assert find_manifest(safe).path.name == "MTD_MSIL2A.xml"
 
     def test_directory_holding_a_safe(self, tmp_path):
         write_safe(tmp_path)
-        assert find_manifest(tmp_path).name == "MTD_MSIL2A.xml"
+        assert find_manifest(tmp_path).path.name == "MTD_MSIL2A.xml"
 
     def test_manifest_given_directly(self, tmp_path):
         safe = write_safe(tmp_path)
-        assert find_manifest(safe / "MTD_MSIL2A.xml").name == "MTD_MSIL2A.xml"
+        assert find_manifest(safe / "MTD_MSIL2A.xml").path.name == "MTD_MSIL2A.xml"
 
     def test_two_products_in_one_folder_are_refused(self, tmp_path):
         # A download folder with several scenes in it. Picking the first would
