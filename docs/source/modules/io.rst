@@ -1,10 +1,12 @@
 IO Module
 =========
 
-Data access and exchange beyond the local filesystem: STAC search and xarray
-interop. Each needs its optional extra (``pip install "easy-eo[stac]"`` /
+Data access and exchange beyond the local filesystem: STAC search, loaders
+for products downloaded to disk, and xarray interop. STAC and xarray each need
+their optional extra (``pip install "easy-eo[stac]"`` /
 ``pip install "easy-eo[xarray]"``); without it, the call raises
-:class:`~eeo.MissingDependencyError` with the install command.
+:class:`~eeo.MissingDependencyError` with the install command. The product
+loaders need no extra.
 
 :func:`eeo.stac_search` finds scenes and :meth:`eeo.io.STACItem.load` reads
 them. Searches go to Microsoft Planetary Computer
@@ -39,6 +41,30 @@ STAC search
     :members:
 
 .. autodata:: eeo.io.PLANETARY_COMPUTER_STAC_URL
+
+Downloaded products
+-------------------
+
+:func:`eeo.load_sentinel2` reads a Copernicus ``.SAFE`` product and
+:func:`eeo.load_landsat` a USGS Collection 2 Level-2 one — one function for
+Landsat 4, 5, 7, 8, and 9, since the mission only selects which band table the
+names resolve against. Either accepts the product unpacked or still in the
+``.zip`` or ``.tar`` it was downloaded as, and both return the same dataset a
+catalog load does:
+
+.. code-block:: python
+
+    import eeo
+
+    scene = eeo.load_sentinel2(path="S2B_MSIL2A_….SAFE", bands=["red", "nir"])
+    ndvi = scene.ndvi(red="red", nir="nir")
+
+Values are the product's stored integers, not reflectance —
+see :doc:`../user_guide/loading_downloaded_scenes`.
+
+.. autofunction:: eeo.load_sentinel2
+
+.. autofunction:: eeo.load_landsat
 
 xarray interop
 --------------

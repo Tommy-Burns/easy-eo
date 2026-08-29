@@ -9,9 +9,9 @@ and on both backends, so no op silently drops or mislabels a name.
 import geopandas as gpd
 import numpy as np
 import pytest
-from affine import Affine
 from matplotlib.axes import Axes
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 from shapely.geometry import box
 
 from eeo import load_array, load_raster
@@ -19,7 +19,7 @@ from eeo.core.decorators import _OP_REGISTRY
 from eeo.core.exceptions import ValidationError
 
 UTM_CRS = CRS.from_epsg(32633)
-TRANSFORM = Affine.translation(500_000, 4_200_000) * Affine.scale(10, -10)
+TRANSFORM = from_origin(500_000, 4_200_000, 10, 10)
 
 # A 6-band scene covers every index's band requirements at once.
 SCENE_NAMES = ["blue", "green", "red", "nir", "swir", "extra"]

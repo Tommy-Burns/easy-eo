@@ -129,7 +129,19 @@ def resample(
         scale_x = ds.get_width() / new_width
         scale_y = ds.get_height() / new_height
 
-        transform = ds.get_transform() * Affine.scale(scale_x, scale_y)
+        # Scaled directly rather than as transform * scale: affine 3
+        # deprecates `*` for composition and affine 2 has no `@`. An Affine
+        # maps (col, row) -> (x, y), so the col terms (a, d) take scale_x and
+        # the row terms (b, e) take scale_y; the origin (c, f) is untouched.
+        base = ds.get_transform()
+        transform = Affine(
+            base.a * scale_x,
+            base.b * scale_y,
+            base.c,
+            base.d * scale_x,
+            base.e * scale_y,
+            base.f,
+        )
 
         # Save or return EEORasterDataset
         # Update metadata

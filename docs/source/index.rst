@@ -85,6 +85,7 @@ runnable notebooks — each one openable in Colab with nothing to install.
    user_guide/core_dataset
    user_guide/sample_data
    user_guide/loading_satellite_data
+   user_guide/loading_downloaded_scenes
    user_guide/band_names
    user_guide/ops
    user_guide/spectral_indices

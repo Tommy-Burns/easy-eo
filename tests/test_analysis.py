@@ -2,8 +2,8 @@ import math
 
 import numpy as np
 import pytest
-from affine import Affine
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 from eeo import load_array
 from eeo.core.exceptions import ValidationError
@@ -31,7 +31,7 @@ def test_normalized_difference_returns_ndarray(raster_3x3):
 # divide-by-zero safety
 def test_normalized_difference_divide_by_zero():
     zeros = np.zeros((3, 3), dtype=np.float32)
-    transform = Affine.translation(0, 3) * Affine.scale(1, -1)
+    transform = from_origin(0, 3, 1, 1)
     crs = CRS.from_epsg(4326)
 
     ds1 = load_array(zeros, transform=transform, crs=crs)
@@ -208,7 +208,7 @@ def test_normalized_difference_nodata_is_contagious():
     a[:2, :2] = -9999.0
     b = np.arange(1, 37, dtype=np.float32).reshape(6, 6)
     b[4:, 4:] = -9999.0
-    transform = Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(10.0, -10.0)
+    transform = from_origin(500_000.0, 4_200_000.0, 10.0, 10.0)
     crs = CRS.from_epsg(32633)
     ds_a = load_array(a, transform=transform, crs=crs, nodata=-9999.0).to_rasterio()
     ds_b = load_array(b, transform=transform, crs=crs, nodata=-9999.0).to_rasterio()

@@ -3,6 +3,7 @@ import pytest
 import rasterio as rio
 from affine import Affine
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 from eeo import load_array, load_raster
 from eeo.core.adapters import RasterioAdapter
@@ -12,7 +13,7 @@ from eeo.core.exceptions import BackendError, ValidationError
 
 def _write_tiny_tif(path):
     data = np.array([[1, 2], [3, 4]], dtype=np.uint8)
-    transform = Affine.translation(0, 2) * Affine.scale(1, -1)
+    transform = from_origin(0, 2, 1, 1)
 
     with rio.open(
         path,
@@ -50,7 +51,7 @@ def test_load_raster_success(tmp_path):
     path = tmp_path / "test.tif"
 
     data = np.array([[1, 2], [3, 4]], dtype=np.uint8)
-    transform = Affine.translation(0, 2) * Affine.scale(1, -1)
+    transform = from_origin(0, 2, 1, 1)
     crs = CRS.from_epsg(4326)
 
     with rio.open(

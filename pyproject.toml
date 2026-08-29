@@ -214,6 +214,12 @@ filterwarnings = [
     # with a class-based Config, which pydantic 2 deprecates on import. Out of
     # our control until planetary-computer migrates.
     "ignore:Support for class-based `config` is deprecated:DeprecationWarning",
+    # affine 3.0 deprecates `*` for composing transforms in favour of `@`, and
+    # rasterio's own helpers (from_origin, from_bounds) still use `*`. The
+    # affine floor, 2.4, has no `@` at all, so neither we nor rasterio can
+    # switch until that floor rises. Our own code composes transforms directly
+    # and never raises this; every occurrence comes from inside rasterio.
+    'ignore:Use `@` matmul instead of `\*` mul operator:PendingDeprecationWarning',
 ]
 
 # ---------------------

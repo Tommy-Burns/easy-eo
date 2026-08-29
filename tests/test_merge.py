@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 import rasterio as rio
-from affine import Affine
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 from eeo import load_array, load_raster
 from eeo.core.exceptions import CRSMismatchError
@@ -12,7 +12,7 @@ from eeo.ops.merge import mosaic
 def _write_tile(tmp_path, name, origin_x, value, res=10.0, nodata=None):
     path = tmp_path / name
     array = np.full((3, 3), value, dtype=np.float32)
-    transform = Affine.translation(origin_x, 30.0) * Affine.scale(res, -res)
+    transform = from_origin(origin_x, 30.0, res, res)
     with rio.open(
         path,
         "w",
@@ -100,7 +100,7 @@ def test_mosaic_preserves_nodata_value_and_dtype(tmp_path):
 
 def test_stack_preserves_nodata_and_dtype():
     """Stacking carries the base raster's nodata value and keeps its dtype."""
-    transform = Affine.translation(0.0, 30.0) * Affine.scale(10.0, -10.0)
+    transform = from_origin(0.0, 30.0, 10.0, 10.0)
     crs = CRS.from_epsg(32633)
     a = load_array(
         np.arange(1, 10, dtype=np.uint16).reshape(3, 3), transform=transform, crs=crs, nodata=0

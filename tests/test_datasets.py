@@ -15,8 +15,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import rasterio
-from affine import Affine
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 import eeo
 from eeo.datasets import _cache, _registry, _samples
@@ -25,7 +25,7 @@ from eeo.datasets._registry import Asset, SampleFile
 from eeo.datasets._samples import SampleDataset, SamplePath, load_sample_dataset
 
 UTM = CRS.from_epsg(32633)
-TRANSFORM = Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(10.0, -10.0)
+TRANSFORM = from_origin(500_000.0, 4_200_000.0, 10.0, 10.0)
 
 
 # --------------------------------------------------------------------------- #

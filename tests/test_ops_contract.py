@@ -11,13 +11,13 @@ import math
 
 import numpy as np
 import pytest
-from affine import Affine
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 from eeo import load_array
 
 UTM = CRS.from_epsg(32633)
-GRID = Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(10.0, -10.0)
+GRID = from_origin(500_000.0, 4_200_000.0, 10.0, 10.0)
 
 
 def _rio(array, *, nodata=None):

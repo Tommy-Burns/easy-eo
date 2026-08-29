@@ -9,14 +9,14 @@ from datetime import datetime
 
 import numpy as np
 import pytest
-from affine import Affine
 from rasterio.crs import CRS
+from rasterio.transform import from_origin
 
 from eeo import load_array
 
 TS = datetime(2023, 6, 1, 10, 30)
 UTM = CRS.from_epsg(32633)
-GRID = Affine.translation(500_000.0, 4_200_000.0) * Affine.scale(10.0, -10.0)
+GRID = from_origin(500_000.0, 4_200_000.0, 10.0, 10.0)
 
 
 def test_defaults_are_empty():
