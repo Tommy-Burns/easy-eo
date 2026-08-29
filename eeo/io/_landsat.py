@@ -38,11 +38,12 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import PurePosixPath
 from xml.etree import ElementTree as ET
 
 from eeo.core.exceptions import ValidationError
 from eeo.core.types import StrPath
+from eeo.io._archive import ProductSource, open_product
 
 #: Metadata syntaxes, in the order they are preferred when several are present.
 _METADATA_SUFFIXES = ("_MTL.xml", "_MTL.json", "_MTL.txt")
@@ -83,10 +84,15 @@ class LandsatProduct:
 
     Attributes
     ----------
-    path : Path
-        The directory holding the product.
-    metadata : Path
-        The metadata file that was read.
+    source : ProductSource
+        Where the product's files are read from — a directory, a tar, or a zip.
+    root : PurePosixPath
+        The product's root within that source. Every file the metadata names
+        sits directly under it.
+    name : str
+        The product's name, normally the directory's or the archive's.
+    metadata : PurePosixPath
+        The metadata file that was read, relative to :attr:`source`.
     product_id : str
         Full ``LANDSAT_PRODUCT_ID``, e.g.
         ``"LC09_L2SP_193028_20260822_20260823_02_T1"``.
@@ -120,8 +126,10 @@ class LandsatProduct:
         above.
     """
 
-    path: Path
-    metadata: Path
+    source: ProductSource
+    root: PurePosixPath
+    name: str
+    metadata: PurePosixPath
     product_id: str
     level: str
     mission: int
@@ -138,19 +146,21 @@ class LandsatProduct:
     groups: dict[str, dict[str, str]]
 
 
-def find_metadata(path: StrPath) -> Path:
-    """Locate a Landsat product's metadata file.
+def find_metadata(source: StrPath | ProductSource) -> PurePosixPath:
+    """Locate a Landsat product's metadata file within a source.
 
     Parameters
     ----------
-    path : str or pathlib.Path
-        A product directory, or a metadata file directly.
+    source : str or pathlib.Path or ProductSource
+        A product directory, a directory or archive holding one, a metadata
+        file directly, or an already-opened source.
 
     Returns
     -------
-    Path
-        The metadata file, preferring ``_MTL.xml`` over ``_MTL.json`` over
-        ``_MTL.txt`` when more than one is present.
+    PurePosixPath
+        The metadata file's path **relative to the source**, preferring
+        ``_MTL.xml`` over ``_MTL.json`` over ``_MTL.txt`` when more than one is
+        present. Its parent is the product root.
 
     Raises
     ------
@@ -160,21 +170,22 @@ def find_metadata(path: StrPath) -> Path:
     Examples
     --------
     >>> find_metadata("LC09_L2SP_193028_20260822_02_T1")  # doctest: +SKIP
-    PosixPath('LC09_L2SP_193028_20260822_02_T1/..._MTL.xml')
+    PurePosixPath('LC09_L2SP_193028_20260822_20260823_02_T1_MTL.xml')
     """
-    candidate = Path(path)
-    if not candidate.exists():
-        raise ValidationError(f"no such Landsat product: {str(path)!r}")
-    if candidate.is_file():
-        return candidate
+    opened = source if isinstance(source, ProductSource) else open_product(source, "Landsat")
+    if opened.named_entry is not None:
+        return opened.named_entry
 
-    for suffix in _METADATA_SUFFIXES:
-        matches = sorted(candidate.glob(f"*{suffix}"))
-        if matches:
-            return matches[0]
+    # A USGS tar holds its files at the root; a directory the product was
+    # unpacked into holds them one level down.
+    for depth in ("", "*/"):
+        for suffix in _METADATA_SUFFIXES:
+            matches = opened.glob(f"{depth}*{suffix}")
+            if matches:
+                return matches[0]
 
     raise ValidationError(
-        f"{str(path)!r} holds no Landsat metadata file; expected one ending in "
+        f"{str(opened.location)!r} holds no Landsat metadata file; expected one ending in "
         f"{', '.join(_METADATA_SUFFIXES)}"
     )
 
@@ -221,14 +232,19 @@ def _parse_xml(text: str) -> dict[str, dict[str, str]]:
     }
 
 
-def read_metadata_groups(metadata: Path) -> dict[str, dict[str, str]]:
+def read_metadata_groups(
+    source: ProductSource, metadata: PurePosixPath
+) -> dict[str, dict[str, str]]:
     """Parse a Landsat metadata file of any syntax into groups.
 
     Parameters
     ----------
-    metadata : Path
-        An ``_MTL.xml``, ``_MTL.json``, or ``_MTL.txt`` file. The syntax is
-        chosen by suffix, since all three carry identical content.
+    source : ProductSource
+        Where to read the file from.
+    metadata : PurePosixPath
+        An ``_MTL.xml``, ``_MTL.json``, or ``_MTL.txt`` file, relative to
+        ``source``. The syntax is chosen by suffix, since all three carry
+        identical content.
 
     Returns
     -------
@@ -241,7 +257,7 @@ def read_metadata_groups(metadata: Path) -> dict[str, dict[str, str]]:
     ValidationError
         If the file cannot be parsed in its syntax.
     """
-    text = metadata.read_text(errors="replace")
+    text = source.read_bytes(metadata).decode(errors="replace")
     parsers = {".xml": _parse_xml, ".json": _parse_json}
     parser = parsers.get(metadata.suffix.lower(), _parse_odl)
     try:
@@ -302,13 +318,14 @@ def _acquired(groups: Mapping[str, Mapping[str, str]]) -> dt.datetime:
     return parsed.replace(tzinfo=dt.timezone.utc)
 
 
-def read_product(path: StrPath, *, level: str | None = None) -> LandsatProduct:
+def read_product(path: StrPath | ProductSource, *, level: str | None = None) -> LandsatProduct:
     """Identify a Landsat Collection 2 product and read its metadata.
 
     Parameters
     ----------
-    path : str or pathlib.Path
-        A product directory, or a metadata file directly.
+    path : str or pathlib.Path or ProductSource
+        A product directory, a directory or archive holding one, a metadata
+        file, or an already-opened source.
     level : str or None, default None
         Assert the processing level rather than detecting it. Exists for a
         product whose metadata is damaged; when the metadata states a level and
@@ -337,8 +354,9 @@ def read_product(path: StrPath, *, level: str | None = None) -> LandsatProduct:
     >>> product.mission, product.level, product.wrs_row  # doctest: +SKIP
     (9, 'L2SP', '028')
     """
-    metadata = find_metadata(path)
-    groups = read_metadata_groups(metadata)
+    source = path if isinstance(path, ProductSource) else open_product(path, "Landsat")
+    metadata = find_metadata(source)
+    groups = read_metadata_groups(source, metadata)
 
     detected = groups.get(_CONTENTS, {}).get("PROCESSING_LEVEL", "").strip().upper()
     if level is not None:
@@ -378,11 +396,14 @@ def read_product(path: StrPath, *, level: str | None = None) -> LandsatProduct:
     band_files = {}
     for key, value in groups.get(_CONTENTS, {}).items():
         if key.startswith("FILE_NAME_") and value.upper().endswith(".TIF"):
-            token = Path(value).stem
+            token = PurePosixPath(value).stem
             band_files[token.removeprefix(f"{product_id}_")] = value
 
+    root = metadata.parent
     return LandsatProduct(
-        path=metadata.parent,
+        source=source,
+        root=root,
+        name=root.name or source.name,
         metadata=metadata,
         product_id=product_id,
         level=detected,

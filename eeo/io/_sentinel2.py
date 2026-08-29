@@ -40,14 +40,18 @@ import datetime as dt
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import PurePosixPath
 from xml.etree import ElementTree as ET
 
 from eeo.core.exceptions import ValidationError
 from eeo.core.types import StrPath
+from eeo.io._archive import ProductSource, open_product
 
 #: Product manifests, newest level first, as found at a ``.SAFE`` root.
 _MANIFESTS = ("MTD_MSIL2A.xml", "MTD_MSIL1C.xml")
+
+#: The granule's own manifest, which carries the projection.
+_TILE_MANIFEST = "MTD_TL.xml"
 
 #: ``<PRODUCT_TYPE>`` values mapped to the short level names used in messages.
 _PRODUCT_TYPES = {"S2MSI2A": "L2A", "S2MSI1C": "L1C"}
@@ -66,10 +70,15 @@ class Sentinel2Product:
 
     Attributes
     ----------
-    path : Path
-        The ``.SAFE`` directory.
-    manifest : Path
-        The product manifest that was read.
+    source : ProductSource
+        Where the product's files are read from — a directory, a zip, or a tar.
+    root : PurePosixPath
+        The ``.SAFE`` root within that source. Every image path the manifest
+        lists is written relative to it.
+    name : str
+        The product's name, normally the ``.SAFE`` directory's.
+    manifest : PurePosixPath
+        The product manifest that was read, relative to :attr:`source`.
     level : str
         Processing level, ``"L2A"`` or ``"L1C"``.
     product_type : str
@@ -90,14 +99,16 @@ class Sentinel2Product:
         file spelling (``"B04"``, ``"B8A"``). Empty for products predating
         baseline 04.00, which carry no offset element because they have none.
     image_files : tuple of str
-        Image paths the manifest lists, relative to :attr:`path` and without
+        Image paths the manifest lists, relative to :attr:`root` and without
         their file extension, in manifest order.
-    granule : Path or None
+    granule : PurePosixPath or None
         The granule directory whose tile manifest was read.
     """
 
-    path: Path
-    manifest: Path
+    source: ProductSource
+    root: PurePosixPath
+    name: str
+    manifest: PurePosixPath
     level: str
     product_type: str
     tile_id: str
@@ -107,7 +118,7 @@ class Sentinel2Product:
     quantification_value: float | None
     band_offsets: dict[str, float]
     image_files: tuple[str, ...]
-    granule: Path | None
+    granule: PurePosixPath | None
 
 
 def _local(tag: str) -> str:
@@ -161,19 +172,21 @@ def _parse_time(value: str, *, source: str) -> dt.datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
 
 
-def find_manifest(path: StrPath) -> Path:
-    """Locate a Sentinel-2 product manifest.
+def find_manifest(source: StrPath | ProductSource) -> PurePosixPath:
+    """Locate a Sentinel-2 product manifest within a source.
 
     Parameters
     ----------
-    path : str or pathlib.Path
-        A ``.SAFE`` directory, a directory holding one, or a manifest file
-        directly.
+    source : str or pathlib.Path or ProductSource
+        A ``.SAFE`` directory, a directory or archive holding one, a manifest
+        file directly, or an already-opened source.
 
     Returns
     -------
-    Path
-        The manifest file.
+    PurePosixPath
+        The manifest's path **relative to the source**. Its parent is the
+        ``.SAFE`` root, which every image path in the manifest is written
+        relative to.
 
     Raises
     ------
@@ -183,35 +196,31 @@ def find_manifest(path: StrPath) -> Path:
     Examples
     --------
     >>> find_manifest("S2B_MSIL2A_20240830T100559.SAFE")  # doctest: +SKIP
-    PosixPath('S2B_MSIL2A_20240830T100559.SAFE/MTD_MSIL2A.xml')
+    PurePosixPath('MTD_MSIL2A.xml')
     """
-    candidate = Path(path)
-    if not candidate.exists():
-        raise ValidationError(f"no such Sentinel-2 product: {str(path)!r}")
-
-    if candidate.is_file():
-        return candidate
+    opened = source if isinstance(source, ProductSource) else open_product(source, "Sentinel-2")
+    if opened.named_entry is not None:
+        return opened.named_entry
 
     for name in _MANIFESTS:
-        manifest = candidate / name
-        if manifest.is_file():
-            return manifest
+        if opened.exists(name):
+            return PurePosixPath(name)
 
-    # A user may point at the folder the .SAFE was unpacked into.
-    nested = sorted(candidate.glob("*.SAFE"))
-    for safe in nested:
-        for name in _MANIFESTS:
-            manifest = safe / name
-            if manifest.is_file():
-                return manifest
+    # A user may point at the folder, or the zip, the .SAFE sits inside.
+    for name in _MANIFESTS:
+        nested = opened.glob(f"*.SAFE/{name}")
+        if nested:
+            return nested[0]
 
     raise ValidationError(
-        f"{str(path)!r} holds no Sentinel-2 product manifest; expected one of "
+        f"{str(opened.location)!r} holds no Sentinel-2 product manifest; expected one of "
         f"{', '.join(_MANIFESTS)} at the root of a .SAFE directory"
     )
 
 
-def _detect_level(root: ET.Element, manifest: Path, override: str | None) -> tuple[str, str]:
+def _detect_level(
+    root: ET.Element, manifest: PurePosixPath, override: str | None
+) -> tuple[str, str]:
     """Determine the processing level, preferring the document over the filename.
 
     Returns
@@ -292,20 +301,26 @@ def _band_offsets(root: ET.Element) -> dict[str, float]:
     return offsets
 
 
-def _granule_directory(safe: Path, image_files: tuple[str, ...]) -> Path | None:
-    """Find the granule directory, from the manifest's paths or the layout."""
+def _granule(
+    source: ProductSource, root: PurePosixPath, image_files: tuple[str, ...]
+) -> PurePosixPath | None:
+    """Find the granule whose tile manifest can be read.
+
+    Prefers the granule the manifest's own image paths name, and falls back to
+    searching the layout for a product whose manifest lists none.
+    """
     for relative in image_files:
-        parts = Path(relative).parts
+        parts = PurePosixPath(relative).parts
         if len(parts) >= 2 and parts[0] == "GRANULE":
-            granule = safe / parts[0] / parts[1]
-            if granule.is_dir():
+            granule = root / parts[0] / parts[1]
+            if source.exists(granule / _TILE_MANIFEST):
                 return granule
 
-    granules = sorted(p for p in (safe / "GRANULE").glob("*") if p.is_dir())
-    return granules[0] if granules else None
+    found = source.glob(str(root / "GRANULE" / "*" / _TILE_MANIFEST))
+    return found[0].parent if found else None
 
 
-def read_product(path: StrPath, *, level: str | None = None) -> Sentinel2Product:
+def read_product(path: StrPath | ProductSource, *, level: str | None = None) -> Sentinel2Product:
     """Identify a Sentinel-2 product and read its metadata.
 
     Reads the product manifest and, where present, the granule's tile manifest
@@ -313,8 +328,9 @@ def read_product(path: StrPath, *, level: str | None = None) -> Sentinel2Product
 
     Parameters
     ----------
-    path : str or pathlib.Path
-        A ``.SAFE`` directory, a directory holding one, or a manifest file.
+    path : str or pathlib.Path or ProductSource
+        A ``.SAFE`` directory, a directory or archive holding one, a manifest
+        file, or an already-opened source.
     level : str or None, default None
         Assert the processing level rather than detecting it. Exists for a
         product whose manifest is damaged; when the manifest states a level and
@@ -344,9 +360,10 @@ def read_product(path: StrPath, *, level: str | None = None) -> Sentinel2Product
     >>> product.level, product.tile_id, product.processing_baseline  # doctest: +SKIP
     ('L2A', 'T32TPS', '05.11')
     """
-    manifest = find_manifest(path)
+    source = path if isinstance(path, ProductSource) else open_product(path, "Sentinel-2")
+    manifest = find_manifest(source)
     try:
-        root = ET.parse(manifest).getroot()
+        root = ET.fromstring(source.read_bytes(manifest))
     except ET.ParseError as err:
         raise ValidationError(f"{manifest.name} is not readable XML: {err}") from err
 
@@ -362,7 +379,7 @@ def read_product(path: StrPath, *, level: str | None = None) -> Sentinel2Product
     image_files = tuple(
         element.text.strip() for element in _iter_named(root, "IMAGE_FILE") if element.text
     )
-    granule = _granule_directory(safe, image_files)
+    granule = _granule(source, safe, image_files)
 
     quantification = _text(root, "BOA_QUANTIFICATION_VALUE")
     if quantification is not None:
@@ -379,9 +396,10 @@ def read_product(path: StrPath, *, level: str | None = None) -> Sentinel2Product
     # the product manifest carries the datatake's start. Prefer the tile's.
     crs = None
     tile_time = None
-    if granule is not None and (tile_manifest := granule / "MTD_TL.xml").is_file():
+    if granule is not None:
+        tile_manifest = granule / _TILE_MANIFEST
         try:
-            tile_root = ET.parse(tile_manifest).getroot()
+            tile_root = ET.fromstring(source.read_bytes(tile_manifest))
         except ET.ParseError as err:
             raise ValidationError(f"{tile_manifest.name} is not readable XML: {err}") from err
         crs = _text(tile_root, "HORIZONTAL_CS_CODE")
@@ -389,8 +407,8 @@ def read_product(path: StrPath, *, level: str | None = None) -> Sentinel2Product
 
     if crs is None:
         raise ValidationError(
-            f"the product states no projection; expected HORIZONTAL_CS_CODE in the "
-            f"granule's MTD_TL.xml under {safe / 'GRANULE'}"
+            f"the product states no projection; expected HORIZONTAL_CS_CODE in a "
+            f"granule's {_TILE_MANIFEST} under {source.location}"
         )
 
     when = tile_time or _text(root, "PRODUCT_START_TIME")
@@ -400,11 +418,14 @@ def read_product(path: StrPath, *, level: str | None = None) -> Sentinel2Product
             f"PRODUCT_START_TIME"
         )
 
-    uri = _text(root, "PRODUCT_URI") or manifest.parent.name
+    name = safe.name or source.name
+    uri = _text(root, "PRODUCT_URI") or name
     tile_match = re.search(r"_(T\d{2}[A-Z]{3})_", uri)
 
     return Sentinel2Product(
-        path=safe,
+        source=source,
+        root=safe,
+        name=name,
         manifest=manifest,
         level=detected,
         product_type=product_type,

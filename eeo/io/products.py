@@ -27,12 +27,17 @@ There is one loader per mission family, not one per satellite. Landsat 8 and 9
 share a product format exactly, and Landsat 4, 5, and 7 differ from them only
 in which band number carries which wavelength — a difference the band table
 already holds, so four functions would be four copies of one.
+
+Either loader reads a product as it was downloaded — the unpacked directory,
+or the archive it arrived in — because :mod:`eeo.io._archive` answers the
+questions about *where a file is* that identifying a product asks. A compressed
+archive is the one container refused, and refused with instructions; see that
+module for why.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 from eeo.common import normalize_resampling_method
@@ -69,15 +74,15 @@ _LANDSAT_RESOLUTION = 30
 _IMAGE_SUFFIXES = (".jp2", ".JP2", ".tif", ".TIF", ".tiff", ".TIFF")
 
 
-def _image_path(safe: Path, relative: str) -> str:
+def _image_path(product: Sentinel2Product, relative: str) -> str:
     """Resolve a manifest image path, which is recorded without its extension."""
     for suffix in _IMAGE_SUFFIXES:
-        candidate = safe / f"{relative}{suffix}"
-        if candidate.is_file():
-            return str(candidate)
+        candidate = product.root / f"{relative}{suffix}"
+        if product.source.exists(candidate):
+            return product.source.href(candidate)
     raise ValidationError(
         f"the manifest lists an image the product does not hold: "
-        f"{relative!r} (tried {', '.join(_IMAGE_SUFFIXES)} under {safe})"
+        f"{relative!r} (tried {', '.join(_IMAGE_SUFFIXES)} in {product.source.location})"
     )
 
 
@@ -95,7 +100,7 @@ def _band_source(product: Sentinel2Product, band: BandInfo, resolution: int) -> 
             f"this product holds no {band.common_name!r} ({band.band_id}) band at all"
         )
     chosen = resolution if resolution in available else available[0]
-    return _image_path(product.path, sentinel2_band_file(product.image_files, band, chosen)), chosen
+    return _image_path(product, sentinel2_band_file(product.image_files, band, chosen)), chosen
 
 
 def load_sentinel2(
@@ -112,8 +117,9 @@ def load_sentinel2(
     Parameters
     ----------
     path : str or pathlib.Path
-        A ``.SAFE`` directory, a directory holding one, or its product
-        manifest.
+        A ``.SAFE`` directory, a directory or ``.zip`` holding one, or the
+        product manifest itself. A Copernicus download is read as it arrives,
+        zipped, without being unpacked first.
     bands : sequence of str
         Bands to load, in the order they should become bands of the result.
         Named by common name (``"red"``, ``"nir"``, ``"swir16"``, ``"scl"``) or
@@ -156,11 +162,21 @@ def load_sentinel2(
         not present, ``resolution`` is not 10, 20, or 60, no requested band
         exists at ``resolution``, or ``bbox`` does not overlap the tile.
 
+    See Also
+    --------
+    load_landsat : The same call for a USGS Collection 2 Level-2 product.
+
     Notes
     -----
     Holds the requested window in memory. A ``bbox`` is what keeps that
     bounded; without one, an all-band load of a whole tile will not fit on a
     laptop.
+
+    Reading straight from the ``.zip`` costs something: a deflated member is
+    decompressed from its own start, so a small window of one band still pays
+    for the image ahead of it. It is bounded by the size of one image, and it
+    saves unpacking a product to read two bands of it. Unpack first if the same
+    scene will be read many times.
 
     Examples
     --------
@@ -220,7 +236,7 @@ def load_sentinel2(
         nodata=nodata,
         timestamp=product.sensing_time,
         attrs={
-            "product": product.path.name,
+            "product": product.name,
             "mission": "Sentinel-2",
             "level": product.level,
             "tile": product.tile_id,
@@ -239,13 +255,13 @@ def load_sentinel2(
 def _landsat_image_path(product: LandsatProduct, band: BandInfo) -> str:
     """Resolve one Landsat band to a file, which the metadata names in full."""
     filename = landsat_band_file(product.band_files, band)
-    candidate = product.path / filename
-    if not candidate.is_file():
+    candidate = product.root / filename
+    if not product.source.exists(candidate):
         raise ValidationError(
             f"the metadata lists {filename!r} for {band.common_name!r}, but the "
-            f"product directory does not hold it ({product.path})"
+            f"product does not hold it ({product.source.location})"
         )
-    return str(candidate)
+    return product.source.href(candidate)
 
 
 def load_landsat(
@@ -266,8 +282,11 @@ def load_landsat(
     Parameters
     ----------
     path : str or pathlib.Path
-        A product directory, or its ``*_MTL.xml``, ``*_MTL.json``, or
-        ``*_MTL.txt`` metadata file.
+        A product directory, a directory or ``.tar`` holding one, or the
+        ``*_MTL.xml``, ``*_MTL.json``, or ``*_MTL.txt`` metadata file itself. A
+        USGS download is read as it arrives, tarred, without being unpacked
+        first — and an uncompressed tar costs nothing to read this way, since
+        its members are stored whole.
     bands : sequence of str
         Bands to load, in the order they should become bands of the result.
         Named by common name (``"red"``, ``"nir08"``, ``"swir16"``,

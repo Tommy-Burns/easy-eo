@@ -24,9 +24,12 @@ Notes
 The GDAL configuration in :data:`_GDAL_HTTP_ENV` is tuned for cloud-optimized
 GeoTIFFs over HTTP. ``GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR`` stops an object
 store from listing a whole container to answer a directory probe, but it also
-stops GDAL from finding a local file's siblings — which a multi-file product
-format relies on. A local-product reader must revisit this setting rather than
-inherit it unexamined.
+stops GDAL from finding a local file's siblings, which a multi-file format
+would rely on. The local-product loaders in :mod:`eeo.io.products` are
+unaffected and share this setting deliberately: each band is a self-contained
+JPEG 2000 or GeoTIFF named in full by the product's own metadata, so nothing is
+ever discovered by probing a directory. A format that did resolve a sidecar by
+sibling lookup would have to override this rather than inherit it.
 """
 
 from __future__ import annotations

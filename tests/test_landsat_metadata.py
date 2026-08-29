@@ -11,10 +11,12 @@ syntax but not in the JSON.
 
 import datetime as dt
 import json
+from pathlib import PurePosixPath
 
 import pytest
 
 from eeo.core.exceptions import ValidationError
+from eeo.io._archive import open_product
 from eeo.io._landsat import find_metadata, read_metadata_groups, read_product
 
 PRODUCT_ID = "LC09_L2SP_193028_20260822_20260823_02_T1"
@@ -117,10 +119,13 @@ class TestFindMetadata:
         write_product(tmp_path, "xml")
         assert find_metadata(directory).suffix == ".xml"
 
-    def test_metadata_given_directly(self, tmp_path):
-        directory = write_product(tmp_path, "json")
-        path = directory / f"{PRODUCT_ID}_MTL.json"
-        assert find_metadata(path) == path
+    def test_a_named_file_wins_over_the_preferred_suffix(self, tmp_path):
+        # Naming the .txt must select it even though .xml is preferred when
+        # searching, because the caller has already chosen.
+        write_product(tmp_path, "xml")
+        directory = write_product(tmp_path, "txt")
+        named = directory / f"{PRODUCT_ID}_MTL.txt"
+        assert find_metadata(named) == PurePosixPath(named.name)
 
     def test_missing_path_rejected(self, tmp_path):
         with pytest.raises(ValidationError, match="no such Landsat product"):
@@ -148,7 +153,8 @@ class TestSyntaxesAgree:
 
     def test_groups_are_unwrapped(self, tmp_path):
         directory = write_product(tmp_path, "json")
-        groups = read_metadata_groups(directory / f"{PRODUCT_ID}_MTL.json")
+        source = open_product(directory, "Landsat")
+        groups = read_metadata_groups(source, PurePosixPath(f"{PRODUCT_ID}_MTL.json"))
         assert "LANDSAT_METADATA_FILE" not in groups
         assert "PRODUCT_CONTENTS" in groups
 
