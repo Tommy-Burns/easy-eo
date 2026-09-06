@@ -9,6 +9,31 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- `eeo.SCLClass`, the twelve classes of the Sentinel-2 Level-2A scene
+  classification as a named enumeration, with `eeo.scl_mask()` reporting which
+  pixels of an `SCL` band fall in a given set of them. Reading the band is the
+  only honest way to know which pixels of a scene are a view of the ground, and
+  until now a user had to carry ESA's class table around in their head and
+  compare raw numbers. What counts as cloud is a judgement rather than a fact,
+  so the defaults are exported as named constants — `eeo.SCL_CLOUDY` is cloud
+  shadow, both cloud probabilities and thin cirrus (3, 8, 9, 10), and
+  `eeo.SCL_NODATA` is the two classes that hold no measurement at all (0, 1) —
+  which lets a user disagree in their own code and a published analysis state
+  exactly what it masked. Medium-probability cloud is masked by default because
+  excluding it leaves a ring of half-cloud around every cloud edge, and cirrus
+  because a contaminated measurement is still a wrong one; the set errs towards
+  discarding some clear ground rather than admitting cloud. Classes may be named
+  as enum members, as their numbers, or by name (`"cloud_shadows"`). Member
+  names follow the Scene Classification table Copernicus publishes, so class 2
+  is `CAST_SHADOWS` and class 5 is `NOT_VEGETATED` rather than the older
+  `DARK_FEATURES` and the informal "bare soil"; both older spellings still
+  resolve, because that is what existing scripts and tutorials say. Decoding is
+  deliberately separate from the loaders: `SCL` means the same thing whether a
+  scene arrived from a STAC catalog or from a folder on disk, so interpreting it
+  must not be written once per load path.
+
 ## [0.4.0] - 2026-08-29
 
 ### Added
