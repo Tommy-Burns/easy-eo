@@ -11,6 +11,34 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- `eeo.QAPixelFlag`, `eeo.QAConfidenceField` and `eeo.QAConfidence`, unpacking
+  the Landsat Collection 2 `QA_PIXEL` band, with `eeo.qa_pixel_flag()`,
+  `eeo.qa_pixel_confidence()` and `eeo.qa_pixel_mask()` reading it. Bit
+  assignments are transcribed from the USGS product guides (LSDS-1619 Table 6-2
+  for Landsat 8-9, LSDS-1618 Table 5-5 for Landsat 4-7) and the tests decode
+  every pixel value in those guides' own value-interpretation tables, so the
+  bit positions, the two-bit field offsets and the per-sensor differences are
+  all checked against the mission's documentation rather than against our
+  reading of it. A mission number is **required**, because the same bit is not
+  the same flag on every Landsat: bit 2 is cirrus on Landsat 8-9 and Unused on
+  4, 5 and 7, whose sensors have no cirrus band, as are bits 14-15. Asking for
+  cirrus on a Landsat 7 scene raises rather than quietly reporting a constant
+  `False` as though it were a measurement; the default mask drops it instead,
+  so that one default works on every mission.
+- `qa_pixel_mask()` masks from cloud *confidence* (bits 8-9) at Medium and
+  above by default, not only from the single-bit cloud flag. The flag is set
+  where confidence is High and nowhere else, so a flags-only mask passes
+  medium-confidence cloud through untouched — USGS's own table lists pixel
+  value 22080 as "Mid conf cloud" with no flag set at all. This is also what
+  USGS means in advising that the confidence fields, rather than the
+  clear/cloud bits, are the truer measure of cloud extent, and it makes a
+  Landsat scene mask no more leniently than a Sentinel-2 one, where
+  `SCL_CLOUDY` already includes medium-probability cloud. Pass
+  `min_cloud_confidence=None` for the flags alone, or `QAConfidence.HIGH` to
+  reproduce the flag's own threshold. Only cloud confidence is thresholded:
+  for cloud shadow, snow/ice and cirrus the value 2 is Reserved rather than
+  Medium, so `>= High` is the only threshold above Low that exists there, and
+  their flag bits already report it.
 - `eeo.SCLClass`, the twelve classes of the Sentinel-2 Level-2A scene
   classification as a named enumeration, with `eeo.scl_mask()` reporting which
   pixels of an `SCL` band fall in a given set of them. Reading the band is the
