@@ -247,15 +247,25 @@ class TestMaskCloudsOnRealScenes:
         assert np.isnan(ndvi)[nodata_pixels].all(), "a masked pixel reached the index"
         assert np.isfinite(ndvi).any(), "the whole scene was masked"
 
-    def test_sentinel2_masks_once_given_a_nodata_value(self, sentinel2_scene):
-        # The product is uint16 and the loader declares no nodata (see the
-        # note in the CHANGELOG), so the value has to be supplied.
+    def test_sentinel2_carries_the_fill_value_esa_declares(self, sentinel2_scene):
+        # The JP2s declare no nodata; the manifest does. A real product is the
+        # only place that distinction shows up — the fixture cannot prove that
+        # ESA really states it this way.
         ds = eeo.load_sentinel2(str(sentinel2_scene), bands=["red", "scl"])
-        with pytest.raises(ValidationError, match="declares no nodata value"):
-            ds.mask_clouds()
-        out = ds.mask_clouds(nodata=0)
+        assert ds.get_metadata()["nodata"] == 0
+
+    def test_sentinel2_masks_without_being_told_the_fill_value(self, sentinel2_scene):
+        ds = eeo.load_sentinel2(str(sentinel2_scene), bands=["red", "scl"])
+        out = ds.mask_clouds()
         assert out.get_metadata()["nodata"] == 0
         assert out.band_names == ds.band_names
+
+    def test_both_missions_agree_on_the_fill_value(self, sentinel2_scene, landsat_scene):
+        # The contract WP-25 states: a workflow does not care which route or
+        # which mission the data came from.
+        s2 = eeo.load_sentinel2(str(sentinel2_scene), bands=["red"])
+        ls = eeo.load_landsat(str(landsat_scene), bands=["red"])
+        assert s2.get_metadata()["nodata"] == ls.get_metadata()["nodata"] == 0
 
     def test_sentinel2_masks_exactly_the_flagged_classes(self, sentinel2_scene):
         ds = eeo.load_sentinel2(str(sentinel2_scene), bands=["red", "scl"])

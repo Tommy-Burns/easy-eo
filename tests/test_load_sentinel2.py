@@ -267,3 +267,47 @@ class TestPartialOverlap:
         assert scene.get_transform()[5] == ULY
         # Every pixel returned is real data, not fill.
         assert np.all(scene.to_array()[0] == FILL["B04"])
+
+
+class TestNodata:
+    """A load must carry the fill value ESA declares.
+
+    The JP2s themselves declare none — the fixture's images are written
+    without a nodata tag for that reason — so this is entirely a question of
+    whether the loader reads the manifest. Before 25.12 it did not, and a
+    Sentinel-2 load reported ``nodata=None``: by the nodata contract's rule 5
+    every fill pixel then counts as a measurement, and `mask_clouds` cannot
+    run at all because there is no value a masked pixel could take.
+    """
+
+    def test_the_images_themselves_declare_no_nodata(self, safe):
+        # The premise. If this ever fails, the fixture has drifted away from
+        # what a real product looks like and the rest of this class is
+        # testing nothing.
+        path = safe / "GRANULE" / GRANULE / "IMG_DATA" / "R10m" / f"{STEM}_B04_10m.jp2"
+        with rio.open(path) as src:
+            assert src.nodata is None
+
+    def test_a_load_reports_the_declared_fill_value(self, safe):
+        ds = eeo.load_sentinel2(safe, bands=["red", "nir"])
+        assert ds.get_metadata()["nodata"] == 0
+
+    @pytest.mark.parametrize("bands", [["red"], ["red", "scl"], ["scl", "red"], ["scl"]])
+    def test_the_value_does_not_depend_on_band_order(self, safe, bands):
+        # The first source read supplies nodata, so a value that came from an
+        # image tag would vary with which band led.
+        assert eeo.load_sentinel2(safe, bands=bands).get_metadata()["nodata"] == 0
+
+    def test_a_product_declaring_nothing_still_loads(self, tmp_path):
+        # No nodata anywhere is a legitimate product, not an error, and must
+        # not be silently assigned a sentinel.
+        safe = build_safe(tmp_path, special_values="")
+        assert eeo.load_sentinel2(safe, bands=["red"]).get_metadata()["nodata"] is None
+
+    def test_the_scene_can_be_masked_without_being_told_the_fill_value(self, safe):
+        # The end the fix exists for: mask_clouds refused outright before,
+        # because an integer raster with no declared nodata has no value a
+        # masked pixel could hold.
+        out = eeo.load_sentinel2(safe, bands=["red", "scl"]).mask_clouds()
+        assert out.get_metadata()["nodata"] == 0
+        assert (out.read()[0] == 0).any(), "the fixture's cloudy half was not masked"

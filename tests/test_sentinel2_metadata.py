@@ -23,10 +23,11 @@ from product_fixtures import (
     S2_OFFSETS as OFFSETS,
 )
 from product_fixtures import (
-    S2_TILE_XML as TILE_XML,
+    S2_SPECIAL_VALUES_REORDERED,
+    write_safe,
 )
 from product_fixtures import (
-    write_safe,
+    S2_TILE_XML as TILE_XML,
 )
 
 
@@ -247,3 +248,50 @@ class TestMalformedProducts:
         safe = write_safe(tmp_path, tile_xml=tile, start_time="")
         with pytest.raises(ValidationError, match="states no acquisition time"):
             read_product(safe)
+
+
+class TestSpecialValues:
+    """The nodata value ESA states in the manifest rather than in the JP2s.
+
+    A Sentinel-2 JP2 carries no nodata tag of its own, so this is the only
+    place a reader can learn which digital number means "no measurement".
+    Getting it wrong is invisible: fill is averaged into statistics as though
+    it were reflectance.
+    """
+
+    def test_nodata_is_read_from_the_manifest(self, tmp_path):
+        assert read_product(write_safe(tmp_path)).nodata == 0
+
+    def test_the_saturated_entry_is_not_mistaken_for_nodata(self, tmp_path):
+        # Both entries live in Special_Values elements of the same shape; only
+        # the SPECIAL_VALUE_TEXT separates them.
+        assert read_product(write_safe(tmp_path)).nodata != 65535
+
+    def test_the_entries_are_paired_not_positional(self, tmp_path):
+        # ESA writes NODATA first today. A reader that took the first
+        # SPECIAL_VALUE_INDEX it saw would pass on the real ordering and
+        # return the saturation value on this one.
+        safe = write_safe(tmp_path, special_values=S2_SPECIAL_VALUES_REORDERED)
+        assert read_product(safe).nodata == 0
+
+    def test_a_product_declaring_none_reports_none(self, tmp_path):
+        # Not a failure, and not an excuse to assume 0: a value the product
+        # never stated is not one this reader may invent.
+        assert read_product(write_safe(tmp_path, special_values="")).nodata is None
+
+    def test_a_non_numeric_index_is_refused(self, tmp_path):
+        broken = """
+      <Special_Values>
+        <SPECIAL_VALUE_TEXT>NODATA</SPECIAL_VALUE_TEXT>
+        <SPECIAL_VALUE_INDEX>none</SPECIAL_VALUE_INDEX>
+      </Special_Values>"""
+        safe = write_safe(tmp_path, special_values=broken)
+        with pytest.raises(ValidationError, match="not a whole number"):
+            read_product(safe)
+
+    def test_an_entry_without_an_index_reports_none(self, tmp_path):
+        partial = """
+      <Special_Values>
+        <SPECIAL_VALUE_TEXT>NODATA</SPECIAL_VALUE_TEXT>
+      </Special_Values>"""
+        assert read_product(write_safe(tmp_path, special_values=partial)).nodata is None

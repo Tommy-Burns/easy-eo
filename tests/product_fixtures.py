@@ -109,6 +109,31 @@ S2_OFFSETS = """
         <BOA_ADD_OFFSET band_id="12">-1000</BOA_ADD_OFFSET>
       </BOA_ADD_OFFSET_VALUES_LIST>"""
 
+#: Ordered as the real manifest writes it, NODATA first. A parser that took
+#: the first SPECIAL_VALUE_INDEX by position would pass on this block, so the
+#: tests also use S2_SPECIAL_VALUES_REORDERED to catch that.
+S2_SPECIAL_VALUES = """
+      <Special_Values>
+        <SPECIAL_VALUE_TEXT>NODATA</SPECIAL_VALUE_TEXT>
+        <SPECIAL_VALUE_INDEX>0</SPECIAL_VALUE_INDEX>
+      </Special_Values>
+      <Special_Values>
+        <SPECIAL_VALUE_TEXT>SATURATED</SPECIAL_VALUE_TEXT>
+        <SPECIAL_VALUE_INDEX>65535</SPECIAL_VALUE_INDEX>
+      </Special_Values>"""
+
+#: The same two entries the other way round. ESA writes NODATA first today;
+#: nothing in the format promises it always will.
+S2_SPECIAL_VALUES_REORDERED = """
+      <Special_Values>
+        <SPECIAL_VALUE_TEXT>SATURATED</SPECIAL_VALUE_TEXT>
+        <SPECIAL_VALUE_INDEX>65535</SPECIAL_VALUE_INDEX>
+      </Special_Values>
+      <Special_Values>
+        <SPECIAL_VALUE_TEXT>NODATA</SPECIAL_VALUE_TEXT>
+        <SPECIAL_VALUE_INDEX>0</SPECIAL_VALUE_INDEX>
+      </Special_Values>"""
+
 S2_TILE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <n1:Level-2A_Tile_ID
     xmlns:n1="https://psd-15.sentinel2.eo.esa.int/PSD/S2_PDI_Level-2A_Tile_Metadata.xsd">
@@ -138,6 +163,7 @@ def manifest_xml(
     quantification="10000",
     offsets=S2_OFFSETS,
     spectral=S2_SPECTRAL,
+    special_values=S2_SPECIAL_VALUES,
     start_time="2024-08-30T10:05:59.024Z",
     uri=S2_PRODUCT,
     granule=S2_GRANULE,
@@ -172,7 +198,7 @@ def manifest_xml(
         </Granule_List>
       </Product_Organisation>
     </Product_Info>
-    <Product_Image_Characteristics>{quant}{offsets}{spectral}
+    <Product_Image_Characteristics>{special_values}{quant}{offsets}{spectral}
     </Product_Image_Characteristics>
   </n1:General_Info>
 </n1:Level-{level}_User_Product>
@@ -219,7 +245,11 @@ def write_jp2(path, *, resolution, size, band):
         "dtype": "uint16",
         "crs": S2_CRS,
         "transform": from_origin(S2_ULX, S2_ULY, resolution, resolution),
-        "nodata": 0,
+        # No nodata tag, because a real Sentinel-2 JP2 carries none: ESA states
+        # the value in the manifest's Special_Values instead. The fixture used
+        # to declare 0 here, which quietly made every load look correct while
+        # a real product came back with nodata=None (see 25.12). A fixture that
+        # is kinder than reality tests the fixture.
         "REVERSIBLE": "YES",
         "QUALITY": "100",
     }
@@ -227,7 +257,15 @@ def write_jp2(path, *, resolution, size, band):
         dst.write(data)
 
 
-def build_safe(root, *, level="2A", product_type="S2MSI2A", layout=None, omit_file=None):
+def build_safe(
+    root,
+    *,
+    level="2A",
+    product_type="S2MSI2A",
+    layout=None,
+    omit_file=None,
+    special_values=S2_SPECIAL_VALUES,
+):
     """Build a whole .SAFE product, real images included, and return its path.
 
     Parameters
@@ -243,6 +281,9 @@ def build_safe(root, *, level="2A", product_type="S2MSI2A", layout=None, omit_fi
     omit_file : tuple or None
         A ``(band, resolution)`` the manifest lists but the tree does not hold
         — the state a truncated download leaves behind.
+    special_values : str
+        The manifest's ``Special_Values`` block. Pass ``""`` for a product
+        that declares no nodata value at all.
     """
     layout = S2_LAYOUT if layout is None else layout
     safe = root / S2_PRODUCT
@@ -266,7 +307,12 @@ def build_safe(root, *, level="2A", product_type="S2MSI2A", layout=None, omit_fi
             )
 
     (safe / f"MTD_MSIL{level}.xml").write_text(
-        manifest_xml(level=level, product_type=product_type, image_files=entries)
+        manifest_xml(
+            level=level,
+            product_type=product_type,
+            image_files=entries,
+            special_values=special_values,
+        )
     )
     (safe / "GRANULE" / S2_GRANULE / "MTD_TL.xml").write_text(S2_TILE_XML)
     return safe
