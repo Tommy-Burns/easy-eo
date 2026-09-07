@@ -11,6 +11,36 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- `eeo.mask_clouds()`, a chainable operation setting cloudy pixels to nodata
+  across every band, from the scene's own quality layer. One operation serves
+  both missions: which decoder runs is settled by the quality band's name, so
+  `ds.mask_clouds().ndvi("red", nir="nir")` reads identically whether the scene
+  came from Sentinel-2 or Landsat, from a STAC catalog or a folder on disk. The
+  Landsat mission is read from the dataset's own `attrs` and required otherwise,
+  since the same bit is not the same flag on every mission. A quality band the
+  dataset does not carry, two quality bands, `classes=` on a Landsat band or
+  `flags=` on a Sentinel-2 one are each refused by name rather than guessed at.
+  A separately loaded mask is accepted with `mask=`, and must be on the same
+  pixel grid — resampling it is the caller's business, because doing it here
+  with an interpolating method would blend class numbers into classes nobody
+  measured.
+- Masked pixels take the raster's declared nodata, or NaN for a float raster
+  that declares none. An **integer** raster declaring no nodata is refused with
+  an actionable message rather than assigned a sentinel: an integer array cannot
+  hold NaN, and picking a value could delete real measurements. This is
+  currently the Sentinel-2 path — `load_sentinel2` does not yet propagate the
+  `NODATA = 0` that the product's own metadata declares — so masking an S2 scene
+  needs `nodata=0` until that is fixed.
+- An opt-in `realdata` test marker and `--run-realdata` flag, for checking
+  decoders against whole downloaded products rather than only against
+  hand-built arrays. Paths come from `EEO_TEST_SENTINEL2_SCENE` and
+  `EEO_TEST_LANDSAT_SCENE` and have no default, so the rule that the default
+  run reads nothing outside the repository still holds. The assertions are
+  invariants rather than pixel counts, so any L2A and any Collection 2 Level-2
+  product will do: on a real Landsat scene every single-bit flag is checked to
+  equal its own confidence field reading High, which pins all eight bit
+  positions and all four two-bit field offsets at once against data the agency
+  produced. Both quality decoders are covered.
 - `eeo.QAPixelFlag`, `eeo.QAConfidenceField` and `eeo.QAConfidence`, unpacking
   the Landsat Collection 2 `QA_PIXEL` band, with `eeo.qa_pixel_flag()`,
   `eeo.qa_pixel_confidence()` and `eeo.qa_pixel_mask()` reading it. Bit

@@ -223,6 +223,28 @@ pytest --run-network          # include the marked tests
 Note that GDAL's HTTP stack does not use Python sockets, so the fixture cannot
 catch a remote raster read; keep those out of the default suite by design.
 
+### Testing against a real downloaded scene
+
+The same rule keeps whole satellite products out of the default run: they live
+outside the repository and weigh a gigabyte each. Tests that read one are
+marked `realdata`, take their paths from environment variables with no default,
+and skip when those are unset:
+
+```bash
+EEO_TEST_SENTINEL2_SCENE=~/Downloads/S2A_....SAFE.zip \
+EEO_TEST_LANDSAT_SCENE=~/Downloads/LC09_....tar \
+  pytest tests/test_real_scenes.py --run-realdata
+```
+
+Any Sentinel-2 L2A and Landsat Collection 2 Level-2 product will do — the
+assertions are invariants that must hold for any scene ("each Landsat flag
+equals its own confidence field reading High"), never fixed pixel counts, so
+they survive a different download. Write new ones the same way.
+
+These catch what the synthetic tests cannot. A published table can be
+transcribed perfectly and still be read against the wrong band, the wrong
+dtype, or a grid the loader resampled on the way in.
+
 ### pre-commit — step by step
 
 `pre-commit` runs the whitespace, ruff, ruff-format, and mypy hooks so issues
