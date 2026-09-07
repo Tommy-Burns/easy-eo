@@ -11,6 +11,20 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- `eeo.clear_fraction()`, reporting the share of a raster that still holds a
+  measurement — the number for deciding whether a scene is worth keeping.
+  After `mask_clouds()` it is the clear fraction in the usual sense; on any
+  other raster it is simply how much of it is not nodata. A raster declaring
+  no nodata returns `1.0`, the same reading the rest of the library takes. By
+  default a pixel counts as clear only where every band holds a measurement,
+  since nodata is contagious; `band=` measures one band alone.
+- It counts every absent pixel, scene-edge fill included, which is worth
+  knowing before reading one as cloudiness: on a real Landsat 9 scene the
+  whole-scene figure falls from 63.1% to 60.4% under masking, so only 2.7 of
+  the 39.6 points lost are cloud and the rest is the north-up grid's own
+  corners. The same scene clipped to its centre reads 100% before masking and
+  96.8% after. Clip to the area you care about first if the question is "how
+  cloudy was it".
 - `eeo.mask_clouds()`, a chainable operation setting cloudy pixels to nodata
   across every band, from the scene's own quality layer. One operation serves
   both missions: which decoder runs is settled by the quality band's name, so
