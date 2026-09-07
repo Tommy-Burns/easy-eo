@@ -271,3 +271,68 @@ def test_the_op_is_bound_as_a_method():
 def test_masking_nothing_leaves_every_pixel(sentinel2_like):
     out = sentinel2_like.mask_clouds(classes=["snow_ice"], nodata=0).read()
     assert not (out[0][0] == 0).any()
+
+
+class TestClearFraction:
+    """How much of a raster still holds a measurement."""
+
+    def test_counts_the_pixels_that_are_not_nodata(self):
+        # Two of six pixels are nodata.
+        ds = _dataset([[0, 0, 1, 2, 3, 4]], ["red"], nodata=0)
+        assert ds.clear_fraction() == pytest.approx(4 / 6)
+
+    def test_a_fully_clear_raster_is_one(self):
+        ds = _dataset([[1, 2, 3, 4, 5, 6]], ["red"], nodata=0)
+        assert ds.clear_fraction() == 1.0
+
+    def test_a_fully_masked_raster_is_zero(self):
+        ds = _dataset([[0, 0, 0, 0, 0, 0]], ["red"], nodata=0)
+        assert ds.clear_fraction() == 0.0
+
+    def test_a_raster_declaring_no_nodata_is_one(self):
+        # Nothing is marked absent, so every pixel is a measurement — the
+        # same reading the rest of the library takes.
+        ds = _dataset([[0, 0, 1, 2, 3, 4]], ["red"])
+        assert ds.clear_fraction() == 1.0
+
+    def test_nan_nodata_is_recognised(self):
+        ds = _dataset([[np.nan, 1.0, 2.0, 3.0, 4.0, 5.0]], ["red"], nodata=np.nan, dtype="float32")
+        assert ds.clear_fraction() == pytest.approx(5 / 6)
+
+    def test_a_pixel_missing_from_any_band_is_not_clear(self):
+        # Nodata is contagious, so the default is the intersection of the
+        # bands rather than any one of them.
+        ds = _dataset([[0, 1, 1, 1, 1, 1], [1, 0, 1, 1, 1, 1]], ["red", "nir"], nodata=0)
+        assert ds.clear_fraction() == pytest.approx(4 / 6)
+
+    def test_one_band_can_be_measured_on_its_own(self):
+        ds = _dataset([[0, 1, 1, 1, 1, 1], [1, 0, 1, 1, 1, 1]], ["red", "nir"], nodata=0)
+        assert ds.clear_fraction(band="red") == pytest.approx(5 / 6)
+        assert ds.clear_fraction(band=2) == pytest.approx(5 / 6)
+
+    def test_an_unknown_band_name_is_refused(self):
+        ds = _dataset([[1, 1, 1, 1, 1, 1]], ["red"], nodata=0)
+        with pytest.raises(ValidationError, match="no band named"):
+            ds.clear_fraction(band="green")
+
+    def test_an_out_of_range_index_is_refused(self):
+        ds = _dataset([[1, 1, 1, 1, 1, 1]], ["red"], nodata=0)
+        with pytest.raises(IndexError):
+            ds.clear_fraction(band=7)
+
+    def test_it_reads_after_masking(self, sentinel2_like):
+        # The composition the helper exists for. SCL_MASKED marks four of the
+        # six fixture pixels for masking.
+        assert sentinel2_like.mask_clouds(nodata=0).clear_fraction() == pytest.approx(
+            SCL_MASKED.count(False) / len(SCL_MASKED)
+        )
+
+    def test_masking_never_raises_the_clear_fraction(self, landsat_like):
+        before = landsat_like.clear_fraction()
+        after = landsat_like.mask_clouds().clear_fraction()
+        assert after <= before
+
+    def test_the_result_is_a_plain_float(self, sentinel2_like):
+        value = sentinel2_like.mask_clouds(nodata=0).clear_fraction()
+        assert isinstance(value, float)
+        assert 0.0 <= value <= 1.0

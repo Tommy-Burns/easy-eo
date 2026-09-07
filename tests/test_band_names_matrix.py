@@ -434,6 +434,7 @@ def test_every_bound_op_is_covered_by_this_module():
         | set(STATS_OPS)
         | set(BAND_PLOTS)
         | {
+            "clear_fraction",  # returns a float, not a dataset
             "extract_value_at_coordinate",
             # Band-name preservation is tested in test_masking.py instead:
             # mask_clouds needs a named quality band to run at all, so it

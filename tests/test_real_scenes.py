@@ -284,3 +284,32 @@ class TestMaskCloudsOnRealScenes:
         upsampled = ds.read()[1]
         assert ds.attrs["resolution"] == 10, "expected the 10 m grid"
         assert set(np.unique(upsampled).tolist()) <= {m.value for m in SCLClass}
+
+
+class TestClearFractionOnRealScenes:
+    """The number 20.2's composite will select scenes on."""
+
+    def test_landsat_clear_fraction_falls_after_masking(self, landsat_scene):
+        ds = eeo.load_landsat(str(landsat_scene), bands=["red", "qa_pixel"])
+        before = ds.clear_fraction()
+        after = ds.mask_clouds().clear_fraction()
+        assert 0.0 < after < before < 1.0, "a real scene has both fill and cloud"
+
+    def test_landsat_clear_fraction_matches_the_mask_it_was_told_about(self, landsat_scene):
+        # The fraction must be the complement of what mask_clouds actually
+        # wrote, not an independently drifting number.
+        ds = eeo.load_landsat(str(landsat_scene), bands=["red", "qa_pixel"])
+        masked = ds.mask_clouds()
+        nodata_pixels = (masked.read() == 0).any(axis=0)
+        assert masked.clear_fraction() == pytest.approx(1.0 - nodata_pixels.mean())
+
+    def test_scene_edge_fill_dominates_the_whole_scene_figure(self, landsat_scene):
+        # Why the docstring warns against reading a whole-scene clear fraction
+        # as cloudiness: a north-up grid over a rotated WRS-2 footprint is
+        # heavily fill before any cloud is masked.
+        ds = eeo.load_landsat(str(landsat_scene), bands=["red"])
+        assert ds.clear_fraction() < 0.9
+
+    def test_sentinel2_clear_fraction_is_high_on_a_clear_tile(self, sentinel2_scene):
+        ds = eeo.load_sentinel2(str(sentinel2_scene), bands=["red", "scl"])
+        assert ds.mask_clouds().clear_fraction() > 0.9
