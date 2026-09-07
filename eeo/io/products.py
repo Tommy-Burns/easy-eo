@@ -229,6 +229,14 @@ def load_sentinel2(
         resampling=[normalize_resampling_method(m) for m in methods],
     )
 
+    # The JP2s carry no nodata tag, so `nodata` is None here and every fill
+    # pixel would count as a measurement. ESA states the value in the manifest
+    # instead, which is where it is read from. The file's own tag still wins
+    # if one ever appears, and a product declaring nothing keeps None rather
+    # than being assigned a sentinel it never named.
+    if nodata is None:
+        nodata = product.nodata
+
     # Undo the read order so the bands come back as the caller asked for them.
     restore = [order.index(i) for i in range(len(resolved))]
     dataset = load_array(

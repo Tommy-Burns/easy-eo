@@ -98,6 +98,11 @@ class Sentinel2Product:
         Per-band additive offset in digital numbers, keyed by the band's image
         file spelling (``"B04"``, ``"B8A"``). Empty for products predating
         baseline 04.00, which carry no offset element because they have none.
+    nodata : int or None
+        The value the product declares for pixels holding no measurement,
+        from the manifest's ``Special_Values``, or None if it declares none.
+        The JP2s themselves carry no nodata tag, so this is the only place a
+        reader can learn it.
     image_files : tuple of str
         Image paths the manifest lists, relative to :attr:`root` and without
         their file extension, in manifest order.
@@ -117,6 +122,7 @@ class Sentinel2Product:
     crs: str
     quantification_value: float | None
     band_offsets: dict[str, float]
+    nodata: int | None
     image_files: tuple[str, ...]
     granule: PurePosixPath | None
 
@@ -138,6 +144,50 @@ def _text(root: ET.Element, name: str) -> str | None:
     for element in _iter_named(root, name):
         if element.text is not None and element.text.strip():
             return element.text.strip()
+    return None
+
+
+def _special_value(root: ET.Element, wanted: str) -> int | None:
+    """Return one of the manifest's ``Special_Values``, by name.
+
+    Each entry pairs a ``SPECIAL_VALUE_TEXT`` with its
+    ``SPECIAL_VALUE_INDEX`` inside its own ``Special_Values`` element, so the
+    two are read together rather than by position: ``NODATA`` happens to be
+    written first today, and a reader that relied on that would return the
+    saturation value the day ESA reorders them.
+
+    Parameters
+    ----------
+    root : xml.etree.ElementTree.Element
+        The parsed product manifest.
+    wanted : str
+        The ``SPECIAL_VALUE_TEXT`` to look for, e.g. ``"NODATA"``.
+
+    Returns
+    -------
+    int or None
+        The declared value, or None if the product declares no such special
+        value. None rather than a guess: a value the product did not state is
+        not one this reader may invent.
+
+    Raises
+    ------
+    ValidationError
+        If the entry exists but its index is not a whole number.
+    """
+    for entry in _iter_named(root, "Special_Values"):
+        text = _text(entry, "SPECIAL_VALUE_TEXT")
+        if text is None or text.upper() != wanted.upper():
+            continue
+        index = _text(entry, "SPECIAL_VALUE_INDEX")
+        if index is None:
+            return None
+        try:
+            return int(index)
+        except ValueError as err:
+            raise ValidationError(
+                f"the {wanted} special value is not a whole number; got {index!r}"
+            ) from err
     return None
 
 
@@ -453,6 +503,7 @@ def read_product(path: StrPath | ProductSource, *, level: str | None = None) -> 
         crs=crs,
         quantification_value=quantification_value,
         band_offsets=_band_offsets(root),
+        nodata=_special_value(root, "NODATA"),
         image_files=image_files,
         granule=granule,
     )
