@@ -1,7 +1,7 @@
 """Preprocessing operations: clip, resample, reproject, normalize, and masking."""
 
 from .clip import clip_raster_with_bbox, clip_raster_with_vector
-from .masking import mask_clouds
+from .masking import clear_fraction, mask_clouds
 from .normalize import normalize_min_max, normalize_percentile, standardize
 from .quality import (
     QA_PIXEL_CLOUDY,
@@ -31,6 +31,7 @@ __all__ = [
     "clip_raster_with_bbox",
     "clip_raster_with_vector",
     "mask_clouds",
+    "clear_fraction",
     "standardize",
     "normalize_percentile",
     "normalize_min_max",
