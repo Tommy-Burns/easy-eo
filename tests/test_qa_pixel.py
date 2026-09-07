@@ -404,3 +404,61 @@ class TestFloatBitField:
             assert qa_pixel_confidence(qa_float, field, mission=9) == qa_pixel_confidence(
                 qa_int, field, mission=9
             )
+
+
+class TestEveryBitInIsolation:
+    """One bit set at a time, which the value table cannot show.
+
+    Table 6-3's values each set several bits at once, so a decoder that read
+    two flags from one bit, or shifted a confidence field by one, could still
+    satisfy every documented value if the errors happened to cancel. Setting
+    exactly one bit and asserting exactly one flag rules that out.
+    """
+
+    @pytest.mark.parametrize("flag", sorted(QAPixelFlag, key=lambda f: f.value))
+    def test_a_lone_flag_bit_sets_only_its_own_flag(self, flag):
+        qa = np.array([1 << flag.value], dtype="uint16")
+        for other in QAPixelFlag:
+            expected = other is flag
+            assert bool(qa_pixel_flag(qa, other, mission=9)[0]) is expected, (
+                f"bit {flag.value} should set only {flag.name}, but "
+                f"{other.name} read {not expected}"
+            )
+
+    @pytest.mark.parametrize("flag", sorted(QAPixelFlag, key=lambda f: f.value))
+    def test_a_lone_flag_bit_disturbs_no_confidence_field(self, flag):
+        # Bits 0-7 are the flags; none of them may leak into bits 8-15.
+        qa = np.array([1 << flag.value], dtype="uint16")
+        for field in QAConfidenceField:
+            assert int(qa_pixel_confidence(qa, field, mission=9)[0]) == 0
+
+    @pytest.mark.parametrize("field", sorted(QAConfidenceField, key=lambda f: f.value))
+    @pytest.mark.parametrize("level", [1, 2, 3])
+    def test_each_confidence_field_reads_its_own_two_bits(self, field, level):
+        qa = np.array([level << field.value], dtype="uint16")
+        assert int(qa_pixel_confidence(qa, field, mission=9)[0]) == level
+        for other in QAConfidenceField:
+            if other is not field:
+                assert int(qa_pixel_confidence(qa, other, mission=9)[0]) == 0
+
+    @pytest.mark.parametrize("field", sorted(QAConfidenceField, key=lambda f: f.value))
+    def test_a_confidence_field_never_leaks_into_the_flag_bits(self, field):
+        # The product sets a flag bit and its confidence field together, but
+        # they are independent bits: writing bits 8-15 alone must leave every
+        # flag in bits 0-7 clear. A shift in the wrong direction would show up
+        # here as a flag appearing from nowhere.
+        qa = np.array([3 << field.value], dtype="uint16")
+        for flag in QAPixelFlag:
+            assert not qa_pixel_flag(qa, flag, mission=9)[0], (
+                f"{field.name} confidence at High leaked into flag {flag.name}"
+            )
+
+    def test_the_sixteen_bits_account_for_every_value(self):
+        # Nothing in a uint16 QA_PIXEL falls outside the documented layout:
+        # eight flag bits plus four two-bit fields is exactly 16.
+        covered = 0
+        for flag in QAPixelFlag:
+            covered |= 1 << flag.value
+        for field in QAConfidenceField:
+            covered |= 3 << field.value
+        assert covered == 0xFFFF

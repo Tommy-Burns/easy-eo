@@ -11,6 +11,16 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- A cross-cutting test sweep for masking (`tests/test_masking_contract.py`)
+  covering the properties that span the decoders, the operation and the
+  loaders and so belonged to none of them: the same quality values mask
+  identically whether the scene came from a downloaded product, a catalog or a
+  bare array; the nodata contract holds across every integer and float dtype
+  rather than the uint16 both missions happen to use; and `clear_fraction`
+  reports a proportion that was constructed rather than counted off a
+  six-pixel row. Each `QA_PIXEL` bit is also now read in isolation — the USGS
+  value table sets several bits per value, so a decoder that read two flags
+  from one bit could satisfy every documented value if the errors cancelled.
 - `eeo.clear_fraction()`, reporting the share of a raster that still holds a
   measurement — the number for deciding whether a scene is worth keeping.
   After `mask_clouds()` it is the clear fraction in the usual sense; on any
