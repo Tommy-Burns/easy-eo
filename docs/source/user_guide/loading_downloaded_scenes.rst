@@ -404,3 +404,27 @@ records ``wrs_path``, ``wrs_row``, and the scaling coefficients above.
    edges. Those pixels carry the fill value, not a measurement, so they are
    nodata and must be excluded from statistics rather than read as zero
    reflectance. See :doc:`nodata_and_dtype`.
+
+Where the fill value comes from
+-------------------------------
+
+Both missions use ``0`` for a pixel holding no measurement, and a load records
+it as the dataset's ``nodata`` so every statistic and index excludes it. The
+two products state it in different places, which is worth knowing if you ever
+read the files directly:
+
+* **Landsat** writes the value into each GeoTIFF's own header, so any reader
+  sees it.
+* **Sentinel-2** does not. Its JP2s carry no nodata tag at all; ESA states the
+  value once in the product manifest, as ``Special_Values / NODATA``. Easy-EO
+  reads it from there, so ``load_sentinel2`` reports ``nodata=0`` even though
+  the images themselves declare nothing.
+
+That difference is invisible through Easy-EO and very visible outside it: open
+a ``.jp2`` in a tool that trusts the file header alone and its fill pixels read
+back as reflectance ``-0.1``.
+
+A product that declares no fill value keeps ``nodata=None``, which means every
+pixel counts as valid. That is a legitimate state, not an error — but
+:func:`~eeo.mask_clouds` cannot run on an integer raster in it, because there
+is no value a masked pixel could be set to. Pass ``nodata=`` explicitly there.

@@ -27,10 +27,7 @@ are called out under a **Breaking** heading.
 - Masked pixels take the raster's declared nodata, or NaN for a float raster
   that declares none. An **integer** raster declaring no nodata is refused with
   an actionable message rather than assigned a sentinel: an integer array cannot
-  hold NaN, and picking a value could delete real measurements. This is
-  currently the Sentinel-2 path — `load_sentinel2` does not yet propagate the
-  `NODATA = 0` that the product's own metadata declares — so masking an S2 scene
-  needs `nodata=0` until that is fixed.
+  hold NaN, and picking a value could delete real measurements.
 - An opt-in `realdata` test marker and `--run-realdata` flag, for checking
   decoders against whole downloaded products rather than only against
   hand-built arrays. Paths come from `EEO_TEST_SENTINEL2_SCENE` and
@@ -91,6 +88,32 @@ are called out under a **Breaking** heading.
   deliberately separate from the loaders: `SCL` means the same thing whether a
   scene arrived from a STAC catalog or from a folder on disk, so interpreting it
   must not be written once per load path.
+
+### Fixed
+
+- `load_sentinel2()` now reports the fill value the product declares, instead
+  of `nodata=None`. Sentinel-2's JP2 images carry no nodata tag — unlike
+  Landsat's GeoTIFFs, which is why only one mission was affected — and ESA
+  states the value once in the manifest, as `Special_Values / NODATA`, in a
+  file the loader already parses for the quantification value and band
+  offsets. Without it, by the nodata contract's rule 5, every fill pixel
+  counted as a measurement: means and percentiles included it as reflectance
+  −0.1, stretches began from a fabricated floor, and `mask_clouds()` refused
+  outright because no value was available for a masked pixel. The value is
+  parsed rather than assumed, and a product declaring none still reports
+  `nodata=None` rather than being given a sentinel it never named.
+
+  **This changes results.** Statistics, normalizations and indices over
+  Sentinel-2 scenes containing fill will differ from 0.4.0, because fill no
+  longer counts. Scenes without fill are unaffected.
+
+  The gap was a `.SAFE`-only one: Earth Search and Planetary Computer both
+  serve Level-2A COGs with `nodata=0` in the file header, so the same scene
+  loaded through `stac_search` already behaved correctly — the two routes
+  disagreed, which is exactly what the local loaders exist not to do. The
+  test fixture had been hiding it by writing a nodata tag into its JP2s that
+  real products do not have; it no longer does, and the loader tests now fail
+  without this fix.
 
 ## [0.4.0] - 2026-08-29
 
