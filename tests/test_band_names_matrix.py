@@ -435,6 +435,10 @@ def test_every_bound_op_is_covered_by_this_module():
         | set(BAND_PLOTS)
         | {
             "extract_value_at_coordinate",
+            # Band-name preservation is tested in test_masking.py instead:
+            # mask_clouds needs a named quality band to run at all, so it
+            # cannot be exercised against the unnamed rasters this matrix uses.
+            "mask_clouds",
             "normalized_difference",  # covered in test_band_names.py
             "plot_composite",
             "stack",
