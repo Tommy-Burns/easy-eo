@@ -15,6 +15,7 @@ from rasterio.transform import from_origin
 from rasterio.warp import transform_bounds
 
 import eeo
+from eeo.core.exceptions import ValidationError
 
 UTC = dt.timezone.utc
 
@@ -64,11 +65,21 @@ class FakeAsset:
 class FakeItem:
     """Minimal stand-in for a pystac Item."""
 
-    def __init__(self, assets, *, timestamp=TIMESTAMP):
-        self.id = "S2A_TEST"
+    def __init__(
+        self,
+        assets,
+        *,
+        timestamp=TIMESTAMP,
+        properties=None,
+        item_id="S2A_TEST",
+        collection="sentinel-2-l2a",
+    ):
+        self.id = item_id
         self.datetime = timestamp
-        self.collection_id = "sentinel-2-l2a"
+        self.collection_id = collection
         self.properties = {"eo:cloud_cover": 4.2}
+        if properties is not None:
+            self.properties.update(properties)
         self.assets = {name: FakeAsset(href) for name, href in assets.items()}
         self.bbox = list(utm_to_wgs84(*scene_bounds()))
 
@@ -379,3 +390,119 @@ def test_search_result_items_inherit_the_search_aoi(scene, aoi, monkeypatch):
     assert results[0].search_bbox == pytest.approx(aoi)
     # ...and loading from the search result crops to it without repeating it.
     assert results[0].load("B04").get_shape() < (SCENE_SIZE, SCENE_SIZE)
+
+
+# --------------------------------------------------------------------------
+# Sensor provenance: which satellite took the scene
+# --------------------------------------------------------------------------
+class TestSensorProvenance:
+    """A STAC load must say which mission it came from.
+
+    A quality layer cannot be decoded without it — Landsat's ``QA_PIXEL``
+    puts cirrus on bit 2 for Landsat 8 and 9 and leaves that bit Unused on
+    4, 5 and 7 — so before this the STAC route could load a `qa_pixel` band
+    it could not mask, while the same scene loaded from a downloaded product
+    masked fine.
+    """
+
+    @pytest.mark.parametrize(
+        ("platform", "expected"),
+        [
+            ("landsat-9", "Landsat 9"),
+            ("landsat-8", "Landsat 8"),
+            ("landsat-7", "Landsat 7"),
+            ("LANDSAT-5", "Landsat 5"),
+            ("sentinel-2a", "Sentinel-2"),
+            ("Sentinel-2B", "Sentinel-2"),
+            ("sentinel-2", "Sentinel-2"),
+        ],
+    )
+    def test_platform_becomes_a_mission_name(self, scene, platform, expected):
+        # Both spellings are real: Planetary Computer writes "Sentinel-2B"
+        # where Earth Search writes "sentinel-2b", so matching is
+        # case-insensitive.
+        item = eeo.io.STACItem(FakeItem(scene, properties={"platform": platform}))
+        assert item.load(["B04"]).attrs["mission"] == expected
+
+    def test_the_unit_letter_is_dropped_but_kept_in_platform(self, scene):
+        # 2A and 2B are one mission for band numbering and quality layers,
+        # which is what the name is used for; the unit stays available.
+        attrs = (
+            eeo.io.STACItem(FakeItem(scene, properties={"platform": "Sentinel-2B"}))
+            .load(["B04"])
+            .attrs
+        )
+        assert attrs["mission"] == "Sentinel-2"
+        assert attrs["platform"] == "Sentinel-2B"
+
+    def test_an_unrecognised_platform_records_no_mission(self, scene):
+        # Naming the wrong mission would decode the wrong bits and produce a
+        # plausible, wrong mask. Recording nothing leaves mask_clouds to ask.
+        attrs = (
+            eeo.io.STACItem(FakeItem(scene, properties={"platform": "terra"})).load(["B04"]).attrs
+        )
+        assert "mission" not in attrs
+        assert attrs["platform"] == "terra"
+
+    @pytest.mark.parametrize("value", [None, 42, "", "   ", ["landsat-9"]])
+    def test_a_missing_or_unusable_platform_is_simply_absent(self, scene, value):
+        item = eeo.io.STACItem(FakeItem(scene, properties={"platform": value}))
+        attrs = item.load(["B04"]).attrs
+        assert "mission" not in attrs
+        assert "platform" not in attrs
+
+    def test_instruments_are_recorded_when_given(self, scene):
+        item = eeo.io.STACItem(
+            FakeItem(scene, properties={"platform": "landsat-9", "instruments": ["oli", "tirs"]})
+        )
+        assert item.load(["B04"]).attrs["instruments"] == ["oli", "tirs"]
+
+    def test_instruments_are_omitted_when_absent(self, scene):
+        item = eeo.io.STACItem(FakeItem(scene, properties={"platform": "landsat-9"}))
+        assert "instruments" not in item.load(["B04"]).attrs
+
+    def test_the_existing_stac_provenance_still_rides_along(self, scene):
+        attrs = (
+            eeo.io.STACItem(FakeItem(scene, properties={"platform": "landsat-9"}))
+            .load(["B04"])
+            .attrs
+        )
+        assert attrs["stac_item"] == "S2A_TEST"
+        assert attrs["stac_collection"] == "sentinel-2-l2a"
+        assert attrs["stac_assets"] == ["B04"]
+
+    def test_the_mission_string_matches_what_load_landsat_writes(self):
+        # The parity assertion. load_landsat records f"Landsat {mission}";
+        # anything else here and mask_clouds would parse one route and not
+        # the other.
+        from eeo.io.stac import _mission
+
+        assert _mission({"platform": "landsat-9"}) == f"Landsat {9}"
+
+    def test_a_landsat_scene_masks_without_being_told_the_mission(self, tmp_path):
+        # The end this exists for. 22280 is USGS's own "High conf Cloud".
+        assets = {
+            "red": write_asset(tmp_path / "red.tif", fill=1000),
+            "qa_pixel": write_asset(tmp_path / "qa.tif", fill=22280),
+        }
+        item = eeo.io.STACItem(
+            FakeItem(
+                assets,
+                properties={"platform": "landsat-9", "instruments": ["oli", "tirs"]},
+                item_id="LC09_TEST",
+                collection="landsat-c2-l2",
+            )
+        )
+        ds = item.load(["red", "qa_pixel"])
+        assert ds.attrs["mission"] == "Landsat 9"
+        out = ds.mask_clouds()
+        assert (out.read()[0] == 0).all(), "a high-confidence cloud scene should mask entirely"
+
+    def test_a_scene_without_a_platform_still_says_what_to_do(self, tmp_path):
+        assets = {
+            "red": write_asset(tmp_path / "red2.tif", fill=1000),
+            "qa_pixel": write_asset(tmp_path / "qa2.tif", fill=22280),
+        }
+        item = eeo.io.STACItem(FakeItem(assets, item_id="LC09_TEST", collection="landsat-c2-l2"))
+        with pytest.raises(ValidationError, match="which Landsat took the scene"):
+            item.load(["red", "qa_pixel"]).mask_clouds()
