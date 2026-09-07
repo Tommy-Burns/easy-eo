@@ -428,3 +428,30 @@ A product that declares no fill value keeps ``nodata=None``, which means every
 pixel counts as valid. That is a legitimate state, not an error — but
 :func:`~eeo.mask_clouds` cannot run on an integer raster in it, because there
 is no value a masked pixel could be set to. Pass ``nodata=`` explicitly there.
+
+How much of the scene is left
+-----------------------------
+
+:func:`~eeo.clear_fraction` reports the share of a raster that still holds a
+measurement — after masking, the proportion that is neither cloud nor fill:
+
+.. code-block:: python
+
+   scene = eeo.load_landsat(path, ["red", "nir08", "qa_pixel"])
+   scene.mask_clouds().clear_fraction()      # 0.6036
+
+.. warning::
+
+   That number is not cloudiness. It counts **every** absent pixel, and a
+   satellite scene on a north-up grid is largely fill in its corners before
+   any cloud is masked at all. The scene above is only 63.1% data to begin
+   with, so of the 39.6 points it "loses", just 2.7 are cloud.
+
+   Clip to the area you actually care about first, and the number answers the
+   question you meant:
+
+   .. code-block:: python
+
+      inside = scene.clip_raster_with_bbox(aoi)
+      inside.clear_fraction()                   # 1.0000 -- no fill here
+      inside.mask_clouds().clear_fraction()     # 0.9677 -- cloud only
