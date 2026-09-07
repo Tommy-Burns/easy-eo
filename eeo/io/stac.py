@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any, overload
 
@@ -142,6 +143,83 @@ def _normalize_intersects(value: IntersectsSpec) -> dict[str, Any]:
             "reproject the geometry with .to_crs(4326) first."
         )
     return dict(shapely.geometry.mapping(geometry))
+
+
+#: A catalog's ``platform`` for a Landsat scene, e.g. ``"landsat-9"``. Matched
+#: case-insensitively because the catalogs disagree on case: Planetary Computer
+#: writes ``"Sentinel-2B"`` where Earth Search writes ``"sentinel-2b"``, and a
+#: future one may capitalise Landsat.
+_LANDSAT_PLATFORM = re.compile(r"^landsat[-_ ]?(\d+)$", re.IGNORECASE)
+
+#: The same for Sentinel-2. The trailing unit letter is matched but dropped:
+#: 2A and 2B are one mission as far as band numbering and quality layers go,
+#: which is what a mission name is used for. ``platform`` is recorded verbatim
+#: alongside for anyone who needs the unit.
+_SENTINEL2_PLATFORM = re.compile(r"^sentinel[-_ ]?2[ab]?$", re.IGNORECASE)
+
+
+def _mission(properties: Mapping[str, Any]) -> str | None:
+    """Name the mission behind an item, as the local loaders name it.
+
+    A quality layer cannot be decoded without knowing which satellite wrote
+    it — Landsat's ``QA_PIXEL`` puts cirrus on bit 2 for Landsat 8 and 9 and
+    leaves that bit Unused on 4, 5 and 7 — so a scene that does not say which
+    mission it came from cannot be masked. ``load_landsat`` records this from
+    the product's own metadata; this is the STAC route to the same string.
+
+    Parameters
+    ----------
+    properties : Mapping
+        The STAC item's properties.
+
+    Returns
+    -------
+    str or None
+        ``"Landsat 9"`` or ``"Sentinel-2"``, matching what the local loaders
+        write, or None when the item names no platform this recognises.
+        None rather than a guess: naming the wrong mission would decode the
+        wrong bits and produce a plausible, wrong mask.
+
+    Examples
+    --------
+    >>> _mission({"platform": "landsat-9"})
+    'Landsat 9'
+    >>> _mission({"platform": "Sentinel-2B"})
+    'Sentinel-2'
+    >>> _mission({"platform": "terra"}) is None
+    True
+    """
+    platform = properties.get("platform")
+    if not isinstance(platform, str):
+        return None
+    name = platform.strip()
+    landsat = _LANDSAT_PLATFORM.match(name)
+    if landsat is not None:
+        return f"Landsat {int(landsat.group(1))}"
+    if _SENTINEL2_PLATFORM.match(name) is not None:
+        return "Sentinel-2"
+    return None
+
+
+def _sensor_attrs(properties: Mapping[str, Any]) -> dict[str, Any]:
+    """Provenance describing the sensor, for the attrs of a loaded scene.
+
+    Absent fields are omitted rather than recorded as None, so ``attrs`` says
+    only what the catalog actually stated.
+    """
+    attrs: dict[str, Any] = {}
+    mission = _mission(properties)
+    if mission is not None:
+        attrs["mission"] = mission
+    platform = properties.get("platform")
+    if isinstance(platform, str) and platform.strip():
+        # Kept verbatim beside the normalised mission: it is the evidence the
+        # mission was derived from, and it distinguishes 2A from 2B.
+        attrs["platform"] = platform.strip()
+    instruments = properties.get("instruments")
+    if isinstance(instruments, (list, tuple)) and instruments:
+        attrs["instruments"] = list(instruments)
+    return attrs
 
 
 def _parse_timestamp(value: Any) -> dt.datetime | None:
@@ -497,6 +575,7 @@ class STACItem:
                 "stac_item": self.id,
                 "stac_collection": self.collection,
                 "stac_assets": list(keys),
+                **_sensor_attrs(self.properties),
             },
             band_names=band_names,
         )

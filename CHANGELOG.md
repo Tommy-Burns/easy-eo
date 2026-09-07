@@ -91,6 +91,20 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- A STAC-loaded scene now records `mission` (plus `platform` and `instruments`)
+  in `attrs`, the way `load_sentinel2()` and `load_landsat()` already did.
+  Without it a Landsat scene from a catalog carried a `qa_pixel` band that
+  `mask_clouds()` could not decode — the same bit is not the same flag on every
+  Landsat, so it refused rather than guess — while the identical scene opened
+  from a downloaded `.tar` masked fine. The mission is derived from the item's
+  own `platform` property, matched case-insensitively because the catalogs
+  disagree on case: Planetary Computer writes `Sentinel-2B` where Earth Search
+  writes `sentinel-2b`. `platform` is kept verbatim beside it, since `mission`
+  deliberately drops the unit letter — 2A and 2B are one mission as far as band
+  numbering and quality layers go. An item naming no platform, or one this does
+  not recognise, records no mission rather than a guess: naming the wrong
+  mission would decode the wrong bits and produce a plausible, wrong mask.
+
 - `load_sentinel2()` now reports the fill value the product declares, instead
   of `nodata=None`. Sentinel-2's JP2 images carry no nodata tag — unlike
   Landsat's GeoTIFFs, which is why only one mission was affected — and ESA

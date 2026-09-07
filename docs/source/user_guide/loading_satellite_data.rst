@@ -321,6 +321,15 @@ named after the asset it came from, ready to address by name:
    scene.band_names            # ['B04', 'B08', 'B11']
    scene.timestamp             # the scene's acquisition time
    scene.attrs["stac_item"]    # which catalog scene it came from
+   scene.attrs["mission"]      # 'Sentinel-2', or 'Landsat 9'
+   scene.attrs["platform"]     # 'Sentinel-2A' -- the unit, as the catalog spelled it
+
+``mission`` is the same string :func:`~eeo.load_sentinel2` and
+:func:`~eeo.load_landsat` record, so code that reads it does not care which
+route the scene took. It is what lets :func:`~eeo.mask_clouds` decode a Landsat
+``qa_pixel`` band without being told the satellite — the same bit is not the
+same flag on every Landsat. A catalog that names no platform simply records no
+mission, and masking then asks for ``mission=`` rather than guessing.
 
 Sentinel-2 bands do not share a resolution — B11 is 20 m where B04 and B08 are
 10 m — so assets that do not match the **first** asset's grid are resampled onto
