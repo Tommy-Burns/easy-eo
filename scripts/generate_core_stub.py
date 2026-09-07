@@ -76,6 +76,7 @@ from eeo.analysis.indices import BandSpec
 from eeo.analysis.stats import Coordinate
 from eeo.core.adapters import BaseRasterAdapter
 from eeo.core.types import ResamplingMethod, StrPath
+from eeo.preprocessing.quality import QAConfidence, QAPixelFlag, SCLClass
 """
 
 
