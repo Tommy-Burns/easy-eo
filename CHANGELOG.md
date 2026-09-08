@@ -11,6 +11,24 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- A "Masking Clouds" user guide, written to be followed by someone who is not
+  a remote-sensing specialist. It opens with why it matters rather than how it
+  works — on a real Landsat 9 scene, average NDVI over the cloudy pixels is
+  0.126 against 0.302 over the clear ones, so leaving them in makes the
+  vegetation look less than half as healthy as it is, and nothing errors. It
+  then gives the full Sentinel-2 class table and both Landsat bit tables with
+  plain-language meanings, marks what is masked by default and explains why,
+  shows how to disagree, and covers `clear_fraction` with the warning that a
+  whole-scene figure is not cloudiness.
+- The guide is honest about quality: it quotes ESA that snow "is most of the
+  time identified as opaque clouds" and that the cirrus mask is only computed
+  below 3,000 m, and the USGS CFMask known-issue list — trouble over bright
+  targets such as building tops, beaches, snow and salt flats, and thin cloud
+  liable to be omitted. It points to `s2cloudless` and Cloud Score+ for work
+  that needs better, with the catch on each: s2cloudless needs band `B10`,
+  which Level-2A products do not contain (checked against a real product), so
+  it means downloading Level-1C; Cloud Score+ applies to Level-2A but lives in
+  Google Earth Engine.
 - A cross-cutting test sweep for masking (`tests/test_masking_contract.py`)
   covering the properties that span the decoders, the operation and the
   loaders and so belonged to none of them: the same quality values mask
@@ -114,6 +132,17 @@ are called out under a **Breaking** heading.
   must not be written once per load path.
 
 ### Fixed
+
+- The documentation build no longer fails under `-W`. The enumerations added
+  for cloud masking documented each member twice — once from the class
+  docstring's `Attributes` section and once from autodoc's `:undoc-members:` —
+  producing 28 duplicate-description warnings, which CI treats as errors.
+  `napoleon_use_ivar` renders those sections as field lists instead, which
+  removes the collision and keeps every description. The default class and
+  flag sets (`SCL_CLOUDY` and friends) are also now in the API reference at
+  all: autodoc could not see their `#:` comments through the package
+  re-export, so they were silently absent despite the guide telling people to
+  use them.
 
 - A STAC-loaded scene now records `mission` (plus `platform` and `instruments`)
   in `attrs`, the way `load_sentinel2()` and `load_landsat()` already did.

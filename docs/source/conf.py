@@ -45,6 +45,7 @@ napoleon_numpy_docstring = True
 napoleon_google_docstring = False
 napoleon_use_rtype = True
 napoleon_preprocess_types = True
+napoleon_use_ivar = True
 
 # -- Intersphinx -------------------------------------------------------------
 # Resolve type references in docstrings (numpy.ndarray, affine.Affine,
