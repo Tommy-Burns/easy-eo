@@ -9,6 +9,187 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- Coverage for the error paths Codecov flagged on the masking work: the
+  confidence-field resolver's refusals, reading a bit field out of a plain
+  Python list, three ways `mask_clouds` can be left unable to decide, and the
+  precedence rule that a raster's own nodata tag wins over the product
+  manifest — documented since the nodata fix but never exercised, because no
+  real Sentinel-2 product writes one. `eeo/preprocessing/quality.py`,
+  `eeo/preprocessing/masking.py` and `eeo/io/products.py` are now fully
+  covered, branches included.
+- A "Masking Clouds" user guide, written to be followed by someone who is not
+  a remote-sensing specialist. It opens with why it matters rather than how it
+  works — on a real Landsat 9 scene, average NDVI over the cloudy pixels is
+  0.126 against 0.302 over the clear ones, so leaving them in makes the
+  vegetation look less than half as healthy as it is, and nothing errors. It
+  then gives the full Sentinel-2 class table and both Landsat bit tables with
+  plain-language meanings, marks what is masked by default and explains why,
+  shows how to disagree, and covers `clear_fraction` with the warning that a
+  whole-scene figure is not cloudiness.
+- The guide is honest about quality: it quotes ESA that snow "is most of the
+  time identified as opaque clouds" and that the cirrus mask is only computed
+  below 3,000 m, and the USGS CFMask known-issue list — trouble over bright
+  targets such as building tops, beaches, snow and salt flats, and thin cloud
+  liable to be omitted. It points to `s2cloudless` and Cloud Score+ for work
+  that needs better, with the catch on each: s2cloudless needs band `B10`,
+  which Level-2A products do not contain (checked against a real product), so
+  it means downloading Level-1C; Cloud Score+ applies to Level-2A but lives in
+  Google Earth Engine.
+- A cross-cutting test sweep for masking (`tests/test_masking_contract.py`)
+  covering the properties that span the decoders, the operation and the
+  loaders and so belonged to none of them: the same quality values mask
+  identically whether the scene came from a downloaded product, a catalog or a
+  bare array; the nodata contract holds across every integer and float dtype
+  rather than the uint16 both missions happen to use; and `clear_fraction`
+  reports a proportion that was constructed rather than counted off a
+  six-pixel row. Each `QA_PIXEL` bit is also now read in isolation — the USGS
+  value table sets several bits per value, so a decoder that read two flags
+  from one bit could satisfy every documented value if the errors cancelled.
+- `eeo.clear_fraction()`, reporting the share of a raster that still holds a
+  measurement — the number for deciding whether a scene is worth keeping.
+  After `mask_clouds()` it is the clear fraction in the usual sense; on any
+  other raster it is simply how much of it is not nodata. A raster declaring
+  no nodata returns `1.0`, the same reading the rest of the library takes. By
+  default a pixel counts as clear only where every band holds a measurement,
+  since nodata is contagious; `band=` measures one band alone.
+- It counts every absent pixel, scene-edge fill included, which is worth
+  knowing before reading one as cloudiness: on a real Landsat 9 scene the
+  whole-scene figure falls from 63.1% to 60.4% under masking, so only 2.7 of
+  the 39.6 points lost are cloud and the rest is the north-up grid's own
+  corners. The same scene clipped to its centre reads 100% before masking and
+  96.8% after. Clip to the area you care about first if the question is "how
+  cloudy was it".
+- `eeo.mask_clouds()`, a chainable operation setting cloudy pixels to nodata
+  across every band, from the scene's own quality layer. One operation serves
+  both missions: which decoder runs is settled by the quality band's name, so
+  `ds.mask_clouds().ndvi("red", nir="nir")` reads identically whether the scene
+  came from Sentinel-2 or Landsat, from a STAC catalog or a folder on disk. The
+  Landsat mission is read from the dataset's own `attrs` and required otherwise,
+  since the same bit is not the same flag on every mission. A quality band the
+  dataset does not carry, two quality bands, `classes=` on a Landsat band or
+  `flags=` on a Sentinel-2 one are each refused by name rather than guessed at.
+  A separately loaded mask is accepted with `mask=`, and must be on the same
+  pixel grid — resampling it is the caller's business, because doing it here
+  with an interpolating method would blend class numbers into classes nobody
+  measured.
+- Masked pixels take the raster's declared nodata, or NaN for a float raster
+  that declares none. An **integer** raster declaring no nodata is refused with
+  an actionable message rather than assigned a sentinel: an integer array cannot
+  hold NaN, and picking a value could delete real measurements.
+- An opt-in `realdata` test marker and `--run-realdata` flag, for checking
+  decoders against whole downloaded products rather than only against
+  hand-built arrays. Paths come from `EEO_TEST_SENTINEL2_SCENE` and
+  `EEO_TEST_LANDSAT_SCENE` and have no default, so the rule that the default
+  run reads nothing outside the repository still holds. The assertions are
+  invariants rather than pixel counts, so any L2A and any Collection 2 Level-2
+  product will do: on a real Landsat scene every single-bit flag is checked to
+  equal its own confidence field reading High, which pins all eight bit
+  positions and all four two-bit field offsets at once against data the agency
+  produced. Both quality decoders are covered.
+- `eeo.QAPixelFlag`, `eeo.QAConfidenceField` and `eeo.QAConfidence`, unpacking
+  the Landsat Collection 2 `QA_PIXEL` band, with `eeo.qa_pixel_flag()`,
+  `eeo.qa_pixel_confidence()` and `eeo.qa_pixel_mask()` reading it. Bit
+  assignments are transcribed from the USGS product guides (LSDS-1619 Table 6-2
+  for Landsat 8-9, LSDS-1618 Table 5-5 for Landsat 4-7) and the tests decode
+  every pixel value in those guides' own value-interpretation tables, so the
+  bit positions, the two-bit field offsets and the per-sensor differences are
+  all checked against the mission's documentation rather than against our
+  reading of it. A mission number is **required**, because the same bit is not
+  the same flag on every Landsat: bit 2 is cirrus on Landsat 8-9 and Unused on
+  4, 5 and 7, whose sensors have no cirrus band, as are bits 14-15. Asking for
+  cirrus on a Landsat 7 scene raises rather than quietly reporting a constant
+  `False` as though it were a measurement; the default mask drops it instead,
+  so that one default works on every mission.
+- `qa_pixel_mask()` masks from cloud *confidence* (bits 8-9) at Medium and
+  above by default, not only from the single-bit cloud flag. The flag is set
+  where confidence is High and nowhere else, so a flags-only mask passes
+  medium-confidence cloud through untouched — USGS's own table lists pixel
+  value 22080 as "Mid conf cloud" with no flag set at all. This is also what
+  USGS means in advising that the confidence fields, rather than the
+  clear/cloud bits, are the truer measure of cloud extent, and it makes a
+  Landsat scene mask no more leniently than a Sentinel-2 one, where
+  `SCL_CLOUDY` already includes medium-probability cloud. Pass
+  `min_cloud_confidence=None` for the flags alone, or `QAConfidence.HIGH` to
+  reproduce the flag's own threshold. Only cloud confidence is thresholded:
+  for cloud shadow, snow/ice and cirrus the value 2 is Reserved rather than
+  Medium, so `>= High` is the only threshold above Low that exists there, and
+  their flag bits already report it.
+- `eeo.SCLClass`, the twelve classes of the Sentinel-2 Level-2A scene
+  classification as a named enumeration, with `eeo.scl_mask()` reporting which
+  pixels of an `SCL` band fall in a given set of them. Reading the band is the
+  only honest way to know which pixels of a scene are a view of the ground, and
+  until now a user had to carry ESA's class table around in their head and
+  compare raw numbers. What counts as cloud is a judgement rather than a fact,
+  so the defaults are exported as named constants — `eeo.SCL_CLOUDY` is cloud
+  shadow, both cloud probabilities and thin cirrus (3, 8, 9, 10), and
+  `eeo.SCL_NODATA` is the two classes that hold no measurement at all (0, 1) —
+  which lets a user disagree in their own code and a published analysis state
+  exactly what it masked. Medium-probability cloud is masked by default because
+  excluding it leaves a ring of half-cloud around every cloud edge, and cirrus
+  because a contaminated measurement is still a wrong one; the set errs towards
+  discarding some clear ground rather than admitting cloud. Classes may be named
+  as enum members, as their numbers, or by name (`"cloud_shadows"`). Member
+  names follow the Scene Classification table Copernicus publishes, so class 2
+  is `CAST_SHADOWS` and class 5 is `NOT_VEGETATED` rather than the older
+  `DARK_FEATURES` and the informal "bare soil"; both older spellings still
+  resolve, because that is what existing scripts and tutorials say. Decoding is
+  deliberately separate from the loaders: `SCL` means the same thing whether a
+  scene arrived from a STAC catalog or from a folder on disk, so interpreting it
+  must not be written once per load path.
+
+### Fixed
+
+- The documentation build no longer fails under `-W`. The enumerations added
+  for cloud masking documented each member twice — once from the class
+  docstring's `Attributes` section and once from autodoc's `:undoc-members:` —
+  producing 28 duplicate-description warnings, which CI treats as errors.
+  `napoleon_use_ivar` renders those sections as field lists instead, which
+  removes the collision and keeps every description. The default class and
+  flag sets (`SCL_CLOUDY` and friends) are also now in the API reference at
+  all: autodoc could not see their `#:` comments through the package
+  re-export, so they were silently absent despite the guide telling people to
+  use them.
+
+- A STAC-loaded scene now records `mission` (plus `platform` and `instruments`)
+  in `attrs`, the way `load_sentinel2()` and `load_landsat()` already did.
+  Without it a Landsat scene from a catalog carried a `qa_pixel` band that
+  `mask_clouds()` could not decode — the same bit is not the same flag on every
+  Landsat, so it refused rather than guess — while the identical scene opened
+  from a downloaded `.tar` masked fine. The mission is derived from the item's
+  own `platform` property, matched case-insensitively because the catalogs
+  disagree on case: Planetary Computer writes `Sentinel-2B` where Earth Search
+  writes `sentinel-2b`. `platform` is kept verbatim beside it, since `mission`
+  deliberately drops the unit letter — 2A and 2B are one mission as far as band
+  numbering and quality layers go. An item naming no platform, or one this does
+  not recognise, records no mission rather than a guess: naming the wrong
+  mission would decode the wrong bits and produce a plausible, wrong mask.
+
+- `load_sentinel2()` now reports the fill value the product declares, instead
+  of `nodata=None`. Sentinel-2's JP2 images carry no nodata tag — unlike
+  Landsat's GeoTIFFs, which is why only one mission was affected — and ESA
+  states the value once in the manifest, as `Special_Values / NODATA`, in a
+  file the loader already parses for the quantification value and band
+  offsets. Without it, by the nodata contract's rule 5, every fill pixel
+  counted as a measurement: means and percentiles included it as reflectance
+  −0.1, stretches began from a fabricated floor, and `mask_clouds()` refused
+  outright because no value was available for a masked pixel. The value is
+  parsed rather than assumed, and a product declaring none still reports
+  `nodata=None` rather than being given a sentinel it never named.
+
+  **This changes results.** Statistics, normalizations and indices over
+  Sentinel-2 scenes containing fill will differ from 0.4.0, because fill no
+  longer counts. Scenes without fill are unaffected.
+
+  The gap was a `.SAFE`-only one: Earth Search and Planetary Computer both
+  serve Level-2A COGs with `nodata=0` in the file header, so the same scene
+  loaded through `stac_search` already behaved correctly — the two routes
+  disagreed, which is exactly what the local loaders exist not to do. The
+  test fixture had been hiding it by writing a nodata tag into its JP2s that
+  real products do not have; it no longer does, and the loader tests now fail
+  without this fix.
+
 ## [0.4.0] - 2026-08-29
 
 ### Added

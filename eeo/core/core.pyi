@@ -21,6 +21,7 @@ from eeo.analysis.indices import BandSpec
 from eeo.analysis.stats import Coordinate
 from eeo.core.adapters import BaseRasterAdapter
 from eeo.core.types import ResamplingMethod, StrPath
+from eeo.preprocessing.quality import QAConfidence, QAPixelFlag, SCLClass
 
 class EEORasterDataset:
     _adapter: BaseRasterAdapter
@@ -96,6 +97,7 @@ class EEORasterDataset:
     def add(
         self, other: EEORasterDataset | float | int, *, auto_align: bool = ..., method: str = ...
     ) -> EEORasterDataset: ...
+    def clear_fraction(self, *, band: int | str | None = ...) -> float: ...
     def clip_raster_with_bbox(
         self, bbox: tuple | list, plot_kwargs=..., show_preview: bool = ...
     ) -> EEORasterDataset: ...
@@ -149,6 +151,17 @@ class EEORasterDataset:
         return_position_as_pixel_coordinate: bool = ...,
     ) -> dict: ...
     def log(self, base: int | float = ...) -> EEORasterDataset: ...
+    def mask_clouds(
+        self,
+        *,
+        mask_band: int | str | None = ...,
+        mask: EEORasterDataset | None = ...,
+        classes: Iterable[SCLClass | int | str] | None = ...,
+        flags: Iterable[QAPixelFlag | int | str] | None = ...,
+        min_cloud_confidence: QAConfidence | int | None = ...,
+        mission: int | None = ...,
+        nodata: int | float | None = ...,
+    ) -> EEORasterDataset: ...
     def mosaic(
         self,
         others: EEORasterDataset | Iterable[EEORasterDataset],

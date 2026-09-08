@@ -13,6 +13,8 @@ CRS-mismatch partner raster uses EPSG:4326. Pixel values are deterministic
 gradients (``0..n-1``) so tests can assert against hand-computed results.
 """
 
+import os
+import pathlib
 import socket
 import warnings
 
@@ -39,24 +41,68 @@ RES = 10.0
 NODATA = -9999.0
 
 
+#: Environment variables naming a downloaded product to test against. The
+#: paths are not hardcoded and have no default: a scene lives outside the
+#: repository, so the default run must not go looking for one.
+SENTINEL2_SCENE_ENV = "EEO_TEST_SENTINEL2_SCENE"
+LANDSAT_SCENE_ENV = "EEO_TEST_LANDSAT_SCENE"
+
+
 def pytest_addoption(parser):
-    """Register ``--run-network`` to opt in to the live-download tests."""
+    """Register the opt-in flags for tests the default run must not do."""
     parser.addoption(
         "--run-network",
         action="store_true",
         default=False,
         help="run tests marked @pytest.mark.network (real downloads)",
     )
+    parser.addoption(
+        "--run-realdata",
+        action="store_true",
+        default=False,
+        help=(
+            "run tests marked @pytest.mark.realdata against downloaded products "
+            f"named by ${SENTINEL2_SCENE_ENV} and ${LANDSAT_SCENE_ENV}"
+        ),
+    )
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip ``network``-marked tests unless ``--run-network`` is given."""
-    if config.getoption("--run-network"):
-        return
-    skip = pytest.mark.skip(reason="needs --run-network (real download)")
-    for item in items:
-        if "network" in item.keywords:
-            item.add_marker(skip)
+    """Skip opt-in tests unless their flag is given."""
+    optional = {
+        "network": ("--run-network", "needs --run-network (real download)"),
+        "realdata": ("--run-realdata", "needs --run-realdata (downloaded product)"),
+    }
+    for marker, (flag, reason) in optional.items():
+        if config.getoption(flag):
+            continue
+        skip = pytest.mark.skip(reason=reason)
+        for item in items:
+            if marker in item.keywords:
+                item.add_marker(skip)
+
+
+def _scene_path(variable):
+    """Return the product path named by an environment variable, or skip."""
+    value = os.environ.get(variable)
+    if not value:
+        pytest.skip(f"set ${variable} to a downloaded product to run this test")
+    path = pathlib.Path(value).expanduser()
+    if not path.exists():
+        pytest.skip(f"${variable} points at {path}, which does not exist")
+    return path
+
+
+@pytest.fixture(scope="session")
+def sentinel2_scene():
+    """Path to a real Sentinel-2 L2A product (``.SAFE`` directory or zip)."""
+    return _scene_path(SENTINEL2_SCENE_ENV)
+
+
+@pytest.fixture(scope="session")
+def landsat_scene():
+    """Path to a real Landsat Collection 2 Level-2 product (directory or tar)."""
+    return _scene_path(LANDSAT_SCENE_ENV)
 
 
 @pytest.fixture(autouse=True)
