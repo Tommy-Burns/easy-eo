@@ -304,6 +304,21 @@ class TestNodata:
         safe = build_safe(tmp_path, special_values="")
         assert eeo.load_sentinel2(safe, bands=["red"]).get_metadata()["nodata"] is None
 
+    def test_a_nodata_tag_on_the_image_wins_over_the_manifest(self, tmp_path):
+        # Precedence: the raster's own header is the more specific statement,
+        # so if ESA ever starts writing one the manifest must not override it.
+        # No real product does this today, which is why it has to be built.
+        safe = build_safe(tmp_path, image_nodata=65535)
+        ds = eeo.load_sentinel2(safe, bands=["red"])
+        assert ds.get_metadata()["nodata"] == 65535
+
+    def test_the_manifest_is_consulted_only_when_the_image_is_silent(self, tmp_path):
+        # The same product, differing only in whether the images carry a tag.
+        tagged = eeo.load_sentinel2(build_safe(tmp_path / "a", image_nodata=1), bands=["red"])
+        untagged = eeo.load_sentinel2(build_safe(tmp_path / "b"), bands=["red"])
+        assert tagged.get_metadata()["nodata"] == 1
+        assert untagged.get_metadata()["nodata"] == 0
+
     def test_the_scene_can_be_masked_without_being_told_the_fill_value(self, safe):
         # The end the fix exists for: mask_clouds refused outright before,
         # because an integer raster with no declared nodata has no value a

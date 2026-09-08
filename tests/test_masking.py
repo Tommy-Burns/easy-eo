@@ -336,3 +336,45 @@ class TestClearFraction:
         value = sentinel2_like.mask_clouds(nodata=0).clear_fraction()
         assert isinstance(value, float)
         assert 0.0 <= value <= 1.0
+
+
+class TestRefusalsThatNeedNoQualityBand:
+    """The remaining ways a caller can leave the operation unable to decide."""
+
+    def test_a_mission_string_without_a_number_is_not_a_mission(self, landsat_like):
+        # A loader that recorded "Landsat" or the wrong mission's prose leaves
+        # nothing to parse, and the bit layout is mission-specific, so this
+        # has to ask rather than pick one.
+        landsat_like.attrs = {"mission": "Landsat"}
+        with pytest.raises(ValidationError, match="which Landsat took the scene"):
+            landsat_like.mask_clouds()
+
+    def test_a_non_landsat_mission_string_is_refused_by_the_bit_index(self, landsat_like):
+        # "Sentinel-2" does end in a digit, so the mission parses as 2 rather
+        # than failing to parse. It is still refused, one step later and by
+        # name: there is no Landsat 2 QA_PIXEL layout. The message stays
+        # actionable because it lists the missions that do exist.
+        landsat_like.attrs = {"mission": "Sentinel-2"}
+        with pytest.raises(ValidationError, match="no QA_PIXEL bit index for Landsat 2") as e:
+            landsat_like.mask_clouds()
+        assert "4, 5, 7, 8, 9" in str(e.value)
+
+    def test_an_unknown_mask_band_name_is_refused(self, sentinel2_like):
+        # Neither a band of this dataset nor a quality band's own name, so
+        # there is nothing to fall back to.
+        with pytest.raises(ValidationError, match="no band named"):
+            sentinel2_like.mask_clouds(mask_band="green", nodata=0)
+
+    def test_a_quality_name_that_matches_no_band_of_a_multiband_mask_is_refused(self):
+        # 'scl' names a band's contents only when the mask dataset has exactly
+        # one band; with several there is no way to know which.
+        data = _dataset([np.full(6, 1000)], ["red"])
+        mask = _dataset([list(SCL_ROW), list(SCL_ROW)], [None, None])
+        with pytest.raises(ValidationError, match="no band named 'scl'"):
+            data.mask_clouds(mask=mask, mask_band="scl", nodata=0)
+
+    def test_a_multiband_mask_without_a_named_band_is_refused(self):
+        data = _dataset([np.full(6, 1000)], ["red"])
+        mask = _dataset([list(SCL_ROW), np.full(6, 1)], ["scl", "other"])
+        with pytest.raises(ValidationError, match="more than one band"):
+            data.mask_clouds(mask=mask, nodata=0)

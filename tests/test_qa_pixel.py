@@ -27,6 +27,7 @@ from eeo.preprocessing.quality import (
     QAConfidence,
     QAConfidenceField,
     QAPixelFlag,
+    _resolve_qa_confidence_field,
     confidence_has_medium,
     qa_pixel_confidence,
     qa_pixel_confidence_fields,
@@ -462,3 +463,63 @@ class TestEveryBitInIsolation:
         for field in QAConfidenceField:
             covered |= 3 << field.value
         assert covered == 0xFFFF
+
+
+class TestResolveConfidenceField:
+    """Naming a confidence field, and every way of naming one badly.
+
+    The flag resolver's error paths are covered above; this is its twin, and
+    the messages are what a caller who mixed up bits and fields actually
+    sees.
+    """
+
+    def test_accepts_members_low_bits_and_names_alike(self):
+        assert (
+            _resolve_qa_confidence_field(QAConfidenceField.CLOUD_SHADOW)
+            == _resolve_qa_confidence_field(10)
+            == _resolve_qa_confidence_field("cloud_shadow")
+            == _resolve_qa_confidence_field(" Cloud_Shadow ")
+        )
+
+    def test_rejects_an_unknown_name_and_lists_the_real_ones(self):
+        with pytest.raises(ValidationError, match="no QA_PIXEL confidence field named") as e:
+            _resolve_qa_confidence_field("cloudiness")
+        assert "snow_ice" in str(e.value)
+
+    @pytest.mark.parametrize("bit", [0, 3, 9, 11, 15, 16])
+    def test_rejects_a_bit_that_does_not_start_a_field(self, bit):
+        # 9, 11 and 15 are the *high* bits of real fields: reading from there
+        # would take one bit of one field and one of the next.
+        with pytest.raises(ValidationError, match="does not start a QA_PIXEL confidence field"):
+            _resolve_qa_confidence_field(bit)
+
+    @pytest.mark.parametrize("value", [None, 8.0, True, ["cloud"], object()])
+    def test_rejects_a_value_that_is_not_a_field_at_all(self, value):
+        with pytest.raises(ValidationError, match="must be a QAConfidenceField"):
+            _resolve_qa_confidence_field(value)
+
+    def test_a_numpy_integer_low_bit_is_accepted(self):
+        assert _resolve_qa_confidence_field(np.uint8(12)) is QAConfidenceField.SNOW_ICE
+
+    def test_the_error_reaches_the_public_reader(self):
+        qa = np.array([0], dtype="uint16")
+        with pytest.raises(ValidationError, match="does not start a QA_PIXEL confidence field"):
+            qa_pixel_confidence(qa, 9, mission=9)
+
+
+class TestBitFieldConversion:
+    """Reading bits out of whatever the caller happens to hold."""
+
+    def test_a_plain_python_list_is_read_as_a_bit_field(self):
+        # No dtype and no .astype, so neither of the fast paths applies.
+        assert qa_pixel_flag([1, 1 << 3, 0], "fill", mission=9).tolist() == [True, False, False]
+
+    def test_a_list_decodes_a_confidence_field_too(self):
+        assert qa_pixel_confidence([3 << 8, 0], "cloud", mission=9).tolist() == [3, 0]
+
+    def test_a_list_and_an_array_agree(self):
+        values = sorted(L89_VALUES)
+        assert np.array_equal(
+            qa_pixel_mask(values, mission=9),
+            qa_pixel_mask(np.array(values, dtype="uint16"), mission=9),
+        )

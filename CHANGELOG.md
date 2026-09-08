@@ -11,6 +11,14 @@ are called out under a **Breaking** heading.
 
 ### Added
 
+- Coverage for the error paths Codecov flagged on the masking work: the
+  confidence-field resolver's refusals, reading a bit field out of a plain
+  Python list, three ways `mask_clouds` can be left unable to decide, and the
+  precedence rule that a raster's own nodata tag wins over the product
+  manifest — documented since the nodata fix but never exercised, because no
+  real Sentinel-2 product writes one. `eeo/preprocessing/quality.py`,
+  `eeo/preprocessing/masking.py` and `eeo/io/products.py` are now fully
+  covered, branches included.
 - A "Masking Clouds" user guide, written to be followed by someone who is not
   a remote-sensing specialist. It opens with why it matters rather than how it
   works — on a real Landsat 9 scene, average NDVI over the cloudy pixels is
