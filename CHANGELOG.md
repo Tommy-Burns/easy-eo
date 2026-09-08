@@ -9,6 +9,8 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-08
+
 ### Added
 
 - Coverage for the error paths Codecov flagged on the masking work: the
@@ -676,7 +678,8 @@ Initial public beta release.
 - Visualization: `plot_raster`, `plot_composite`,
   `plot_raster_with_histogram`, `plot_band_array`.
 
-[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.2.0...v0.3.0
