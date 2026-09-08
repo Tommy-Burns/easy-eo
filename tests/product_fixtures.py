@@ -219,13 +219,8 @@ def write_safe(root, *, manifest_name="MTD_MSIL2A.xml", tile_xml=S2_TILE_XML, **
     return safe
 
 
-def write_jp2(path, *, resolution, size, band, nodata=None):
-    """Write one georeferenced JPEG 2000 image, losslessly.
-
-    ``nodata`` is None by default because a real Sentinel-2 JP2 carries no
-    nodata tag; pass a value only to test that a file's own tag takes
-    precedence over the manifest.
-    """
+def write_jp2(path, *, resolution, size, band):
+    """Write one georeferenced JPEG 2000 image, losslessly."""
     if band == "SCL":
         # Distinct class numbers in blocks, so any blending is detectable.
         data = np.zeros((size, size), dtype="uint16")
@@ -250,7 +245,7 @@ def write_jp2(path, *, resolution, size, band, nodata=None):
         "dtype": "uint16",
         "crs": S2_CRS,
         "transform": from_origin(S2_ULX, S2_ULY, resolution, resolution),
-        # No nodata tag by default, because a real Sentinel-2 JP2 carries none:
+        # No nodata tag, because a real Sentinel-2 JP2 carries none:
         # ESA states the value in the manifest's Special_Values instead. The
         # fixture used to declare 0 here, which quietly made every load look
         # correct while a real product came back with nodata=None (see 25.12).
@@ -258,8 +253,6 @@ def write_jp2(path, *, resolution, size, band, nodata=None):
         "REVERSIBLE": "YES",
         "QUALITY": "100",
     }
-    if nodata is not None:
-        profile["nodata"] = nodata
     with rio.open(path, "w", **profile) as dst:
         dst.write(data)
 
@@ -272,7 +265,6 @@ def build_safe(
     layout=None,
     omit_file=None,
     special_values=S2_SPECIAL_VALUES,
-    image_nodata=None,
 ):
     """Build a whole .SAFE product, real images included, and return its path.
 
@@ -292,9 +284,6 @@ def build_safe(
     special_values : str
         The manifest's ``Special_Values`` block. Pass ``""`` for a product
         that declares no nodata value at all.
-    image_nodata : int or None
-        A nodata tag to write into the images themselves. Real products carry
-        none; pass one to check that a file's own tag wins over the manifest.
     """
     layout = S2_LAYOUT if layout is None else layout
     safe = root / S2_PRODUCT
@@ -315,7 +304,6 @@ def build_safe(
                 resolution=resolution,
                 size=S2_SIZE_10M * 10 // resolution,
                 band=band,
-                nodata=image_nodata,
             )
 
     (safe / f"MTD_MSIL{level}.xml").write_text(

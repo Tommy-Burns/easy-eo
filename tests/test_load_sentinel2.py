@@ -304,20 +304,26 @@ class TestNodata:
         safe = build_safe(tmp_path, special_values="")
         assert eeo.load_sentinel2(safe, bands=["red"]).get_metadata()["nodata"] is None
 
-    def test_a_nodata_tag_on_the_image_wins_over_the_manifest(self, tmp_path):
-        # Precedence: the raster's own header is the more specific statement,
-        # so if ESA ever starts writing one the manifest must not override it.
-        # No real product does this today, which is why it has to be built.
-        safe = build_safe(tmp_path, image_nodata=65535)
-        ds = eeo.load_sentinel2(safe, bands=["red"])
-        assert ds.get_metadata()["nodata"] == 65535
+    def test_a_nodata_the_images_declare_wins_over_the_manifest(self, safe, monkeypatch):
+        """The raster's own header is the more specific statement.
 
-    def test_the_manifest_is_consulted_only_when_the_image_is_silent(self, tmp_path):
-        # The same product, differing only in whether the images carry a tag.
-        tagged = eeo.load_sentinel2(build_safe(tmp_path / "a", image_nodata=1), bands=["red"])
-        untagged = eeo.load_sentinel2(build_safe(tmp_path / "b"), bands=["red"])
-        assert tagged.get_metadata()["nodata"] == 1
-        assert untagged.get_metadata()["nodata"] == 0
+        Tested at the seam rather than by writing a nodata tag into the
+        fixture's JP2s, because JPEG 2000 has no nodata of its own: GDAL keeps
+        it in a ``.aux.xml`` sidecar, and whether that survives a write-read
+        round trip varies by GDAL build. Asserting it would test the driver.
+        What belongs to this loader is only what it does with the value the
+        reader hands back, so that is what is substituted here.
+        """
+        from eeo.io import products
+
+        real = products.read_onto_common_grid
+
+        def declares_nodata(*args, **kwargs):
+            stacked, grid, _, names = real(*args, **kwargs)
+            return stacked, grid, 65535, names
+
+        monkeypatch.setattr(products, "read_onto_common_grid", declares_nodata)
+        assert eeo.load_sentinel2(safe, bands=["red"]).get_metadata()["nodata"] == 65535
 
     def test_the_scene_can_be_masked_without_being_told_the_fill_value(self, safe):
         # The end the fix exists for: mask_clouds refused outright before,
