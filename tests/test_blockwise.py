@@ -277,11 +277,9 @@ class TestOutputContract:
         assert np.isnan(blocked.read()[0, :2, :2]).all()
         assert not np.isnan(blocked.read()[0, 2:, :]).any()
 
-    def test_an_unwritable_input_driver_is_not_reused_for_the_output(
-        self, single_band_float32, tmp_path
-    ):
-        # A scene read through a read-only driver (JP2, for one) must still be
-        # writable block by block, so the output driver is chosen, not copied.
+    def test_the_output_driver_is_chosen_not_inherited(self, single_band_float32):
+        # The source's driver records how it was read, and a GDAL driver need
+        # not support creating a dataset, so the output picks its own.
         blocked = apply_blockwise(
             single_band_float32,
             lambda block: block,

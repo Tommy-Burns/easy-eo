@@ -13,8 +13,8 @@ way in.
 blocks changes nothing about the answer. Synthetic tests make that claim over
 six-pixel rasters with tidy nodata; a real scene tests it over millions of
 pixels whose off-swath fill runs diagonally across every block seam, read
-through the drivers and internal tiling the agencies actually ship — a
-read-only JP2 for Sentinel-2, a 256-pixel-tiled GeoTIFF for Landsat.
+through the formats and internal tiling the agencies actually ship — JP2 in
+1024-pixel tiles for Sentinel-2, a 256-pixel-tiled GeoTIFF for Landsat.
 
 The checks are invariants rather than fixed numbers, because they must hold
 for *any* scene the maintainer happens to have, not just for one. The
@@ -453,9 +453,9 @@ class TestRealSceneBlockwise:
         assert blocked.get_transform() == ds.get_transform()
 
     @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
-    def test_an_unwritable_source_driver_does_not_reach_the_output(self, scene, ndvi, request):
-        # Sentinel-2 imagery is JP2, which GDAL reads and cannot write. Reusing
-        # the source profile would fail on the very first block.
+    def test_the_output_driver_is_chosen_not_inherited(self, scene, ndvi, request):
+        # The source driver records how the scene was read; the output is a
+        # GTiff whichever format it came from.
         assert request.getfixturevalue(ndvi).get_metadata()["driver"] == "GTiff"
 
     @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
@@ -495,6 +495,65 @@ class TestRealSceneBlockwise:
             assert np.array_equal(streamed.read(), sentinel2_ndvi.read(), equal_nan=True)
         finally:
             streamed.close()
+
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_the_ndvi_op_matches_the_engine_called_by_hand(self, scene, ndvi, request):
+        # Task 16.2 routed the spectral indices through the engine, so the
+        # chainable op and a hand-built apply_blockwise over the same bands are
+        # now the same computation and must agree on a real scene.
+        ds = request.getfixturevalue(scene)
+        nir_name = ds.band_names[1]
+        op_result = ds.ndvi("red", nir=nir_name)
+        try:
+            assert np.array_equal(
+                op_result.read(), request.getfixturevalue(ndvi).read(), equal_nan=True
+            )
+        finally:
+            op_result.close()
+
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_the_ndvi_op_matches_the_eager_reference(self, scene, ndvi, request):
+        # And against arithmetic written out longhand, which shares no code
+        # with the engine at all.
+        ds = request.getfixturevalue(scene)
+        op_result = ds.ndvi("red", nir=ds.band_names[1])
+        try:
+            assert np.array_equal(op_result.read()[0], _eager_ndvi(ds), equal_nan=True)
+            assert op_result.read().dtype == np.float32
+            assert np.isnan(op_result.get_metadata()["nodata"])
+        finally:
+            op_result.close()
+
+    def test_algebra_on_a_real_scene_keeps_its_fill(self, landsat_red_nir):
+        # The plain algebra path, on a scene where a third of the grid is fill.
+        # Stated as "fill stays fill" rather than "the fill mask is unchanged",
+        # because the two are not the same claim on a uint16 scene: doubling
+        # wraps, so a valid pixel of exactly 32768 lands on 0 — the fill value
+        # — of its own accord. This scene contains two of them. That is the
+        # documented integer behaviour, not a masking failure.
+        ds = landsat_red_nir
+        fill = ds.get_metadata()["nodata"]
+        source = ds.read()
+        was_fill = source == fill
+        doubled = ds.multiply(2)
+        try:
+            assert doubled.read().dtype == source.dtype
+            assert (doubled.read()[was_fill] == fill).all()
+            assert np.array_equal(doubled.read()[~was_fill], (source * 2)[~was_fill])
+        finally:
+            doubled.close()
+
+    def test_a_fractional_op_on_a_real_scene_cannot_wrap(self, landsat_red_nir):
+        # The float32 route past that wrap: divide is a fractional-result op,
+        # so the fill mask of the result is exactly the input's fill.
+        ds = landsat_red_nir
+        was_fill = ds.read() == ds.get_metadata()["nodata"]
+        halved = ds.divide(2)
+        try:
+            assert halved.read().dtype == np.float32
+            assert np.array_equal(np.isnan(halved.read()), was_fill)
+        finally:
+            halved.close()
 
     @pytest.mark.parametrize("block_shape", [(1, 1830), (997, 503), (371, 371)])
     def test_the_block_shape_does_not_change_the_answer(
