@@ -289,8 +289,9 @@ def apply_blockwise(
         reads from the file.
     driver : str, default "GTiff"
         GDAL driver for the output. The input's own driver is deliberately not
-        reused: a scene read through a driver that cannot write (JP2, for one)
-        would otherwise fail at the first block.
+        reused: it records how the source was *read*, and a GDAL driver need
+        not be able to create a dataset at all — many are read-only, and the
+        failure would surface at the first block rather than up front.
 
     Returns
     -------
