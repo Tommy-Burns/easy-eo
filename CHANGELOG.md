@@ -11,6 +11,33 @@ are called out under a **Breaking** heading.
 
 ### Changed
 
+- `standardize`, `normalize_percentile`, and the pixel statistics
+  (`get_maximum_pixel`, `get_minimum_pixel`, `get_mean_pixel`,
+  `get_percentile_pixel`) now stream. Each needs a statistic over every pixel
+  before it can rescale or locate anything, so each makes two bounded passes —
+  one streaming reduction to measure, one streaming pass to apply or to find
+  the pixel — instead of holding the band. The new reductions live in
+  `eeo.core.streaming`.
+- `get_percentile_pixel` and `normalize_percentile` measure integer rasters
+  exactly, from a streaming histogram with one counter per distinct value — no
+  binning, so the thresholds equal `numpy.percentile` rather than
+  approximating it. That covers every raw Sentinel-2 and Landsat band, and so
+  every raster large enough for the memory to matter. **Floating-point rasters
+  still read the band**, and say so: an exact percentile of float data is not a
+  running accumulation like a minimum or a mean, and has no finite set of
+  values to count, so it cannot be had in bounded memory. Returning an
+  approximation without saying so would have been worse.
+- `extract_value_at_coordinate` reads a 1x1 window instead of the whole band.
+  Sampling one point in a 10 m Sentinel-2 band no longer costs 241 MB.
+- Ties in the pixel statistics are broken by position rather than by block, so
+  the pixel reported is the first in row-major order — what `numpy.nanargmin`
+  would return — no matter how the raster was cut into blocks.
+- The normalizers now do their intermediate arithmetic in float64 whether or
+  not the raster declares nodata. Previously `mask_nodata` promoted to float64
+  only when substituting NaN for a declared sentinel, so a float32 raster was
+  rescaled in float32 or float64 depending on nothing but that. Output is
+  float32 either way.
+
 - Raster algebra (`add`, `subtract`, `multiply`, `divide`, `power`, `sqrt`,
   `log`, `absolute`), every spectral index (`normalized_difference`, `ndvi`,
   `ndwi`, `ndmi`, `ndbi`, `evi`, `savi`), and `normalize_min_max` now stream
@@ -32,6 +59,19 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- `get_maximum_pixel` returned the **minimum** pixel of any unsigned band
+  containing a zero. The maximum was found by negating the band and taking a
+  minimum, and negating an unsigned integer wraps rather than changing sign —
+  `0` wraps to `0`, the smallest possible score, so a zero always won. Found
+  while giving the streamed version differential tests over several dtypes;
+  the existing fixtures all started at 1000, so nothing had caught it. Scoring
+  now happens in float64.
+- `normalize_percentile` documented a `ValueError` for
+  `lower_percentile >= upper_percentile` that NumPy never raised: an inverted
+  range silently produced an inverted stretch, and an empty one divided by
+  zero. Both are now refused with a `ValidationError`, as are percentiles
+  outside `[0, 100]` — which NumPy did catch, and which the histogram path
+  would otherwise have stopped catching.
 - A documentation error introduced with the engine: the output driver was
   justified by "JP2 cannot be written", which is false — GDAL's `JP2OpenJPEG`
   supports creation in the build we test against, and the test suite writes JP2
