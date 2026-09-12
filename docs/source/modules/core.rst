@@ -95,3 +95,16 @@ statistic first and only then stream the result.
 .. automodule:: eeo.core.blockwise
     :members:
     :show-inheritance:
+
+Streaming reductions
+--------------------
+
+Where :mod:`eeo.core.blockwise` streams a *transformation* — one block in, one
+block out — this module streams a *reduction*: the raster is read a window at a
+time and collapsed to a few numbers, so a statistic can be taken over a scene
+that does not fit in memory.
+
+.. automodule:: eeo.core.streaming
+    :members:
+    :show-inheritance:
+
