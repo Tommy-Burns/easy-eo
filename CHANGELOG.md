@@ -9,6 +9,35 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- A block-wise execution engine (`eeo.core.blockwise`) that runs a pixel-wise
+  function over a raster one window at a time and writes each result straight
+  into the output, so peak memory follows the block size rather than the
+  scene. `apply_blockwise` takes the operands as `BlockSource`s — a whole
+  raster, a single band, or a scalar — and applies the nodata & dtype contract
+  per block. Nothing routes through it yet; operations are moved onto it next.
+- The contract's output dtype and nodata value are resolved once for the whole
+  output rather than per block. That is what makes blocking invisible: a block
+  containing no nodata pixels would otherwise leave its own slice of the
+  output declaring no nodata, and a Sentinel-2 tile that declares fill but is
+  fully imaged would end up recording none at all — after which a mosaic
+  against a partly-filled neighbour would blend fill in as if it were data.
+- `save_path=` streams the result to a file instead of an in-memory raster,
+  the only route whose memory stays bounded when the output is also larger
+  than memory.
+- Verified against both real products the maintainer keeps: block-wise NDVI is
+  bit-for-bit identical to the eager computation on a Landsat 9 scene
+  (8081 x 7991, read from its tar) and on a Sentinel-2 tile (10980 x 10980,
+  read as JP2), at every block shape tried, including shapes that divide the
+  scene unevenly. On the Landsat scene the NaN pixels of the result are
+  exactly the union of the two bands' off-swath fill, which runs diagonally
+  across every block seam. Peak RSS for that NDVI fell from 1945 MiB eager to
+  923 MiB block-wise, and to 685 MiB streaming to disk — the remainder there
+  being GDAL's own block cache, which defaults to 5% of RAM. Wall time on the
+  Sentinel-2 tile went from 23.1 s to 25.4 s, so the memory comes at about a
+  10% cost.
+
 ## [0.4.1] - 2026-09-08
 
 ### Added
