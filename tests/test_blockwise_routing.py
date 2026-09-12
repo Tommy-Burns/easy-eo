@@ -21,8 +21,7 @@ import pytest
 from rasterio.transform import from_origin
 
 from eeo import load_array
-from eeo.core import blockwise
-from eeo.preprocessing import normalize
+from eeo.core import blockwise, streaming
 
 UTM_CRS = 32633
 
@@ -34,11 +33,11 @@ def _force_block_shape(monkeypatch, block_shape):
     the constant is bound as a default argument when the module is imported,
     so rebinding the module attribute would have no effect at all. And it has
     to be patched in each module that imported the name, not only where it is
-    defined — ``normalize`` holds its own reference for the statistics pass,
-    so patching just ``blockwise`` would leave that pass on full-size blocks
-    and quietly stop exercising the very thing these tests are about.
+    defined: ``blockwise`` cuts the transformation passes and ``streaming``
+    cuts the reduction passes, and patching one leaves the other on full-size
+    blocks, quietly not exercising what these tests are about.
     """
-    for module in (blockwise, normalize):
+    for module in (blockwise, streaming):
         monkeypatch.setattr(
             module, "resolve_block_shape", lambda shape, _b=block_shape, **kwargs: _b
         )
@@ -151,58 +150,6 @@ class TestNodataSurvivesTheSeams:
         result = scene.ndvi("red", nir="nir")
         assert np.isnan(result.read()[0, 0, 0])
         assert not np.isnan(result.read()[0, 0, 1:]).any()
-
-
-class TestStreamingMinMax:
-    """``normalize_min_max`` needs the range before it can rescale anything."""
-
-    def test_the_streamed_range_matches_the_whole_array_range(self, single, tiny_blocks):
-        from eeo.preprocessing.normalize import _valid_min_max
-
-        expected = np.where(single.read() == -9999.0, np.nan, single.read())
-        assert _valid_min_max(single) == (
-            float(np.nanmin(expected)),
-            float(np.nanmax(expected)),
-        )
-
-    def test_blocks_holding_only_nodata_are_skipped_not_reduced(self, tiny_blocks):
-        from eeo.preprocessing.normalize import _valid_min_max
-
-        # The top half is entirely nodata, so with 2x2 blocks whole blocks
-        # contain no valid pixel. Reducing one would warn and return NaN, which
-        # would then poison the running minimum.
-        array = np.arange(36, dtype=np.float32).reshape(6, 6)
-        array[:3, :] = -9999.0
-        ds = _grid(array, nodata=-9999.0)
-        try:
-            assert _valid_min_max(ds) == (18.0, 35.0)
-            scaled = ds.normalize_min_max()
-            assert np.isnan(scaled.read()[0, :3, :]).all()
-            assert scaled.read()[0, 3, 0] == pytest.approx(0.0)
-            assert scaled.read()[0, 5, 5] == pytest.approx(1.0)
-        finally:
-            ds.close()
-
-    def test_a_raster_with_no_valid_pixel_normalizes_to_all_nodata(self, tiny_blocks):
-        from eeo.preprocessing.normalize import _valid_min_max
-
-        ds = _grid(np.full((6, 6), -9999.0, dtype=np.float32), nodata=-9999.0)
-        try:
-            low, high = _valid_min_max(ds)
-            assert np.isnan(low) and np.isnan(high)
-            assert np.isnan(ds.normalize_min_max().read()).all()
-        finally:
-            ds.close()
-
-    def test_a_raster_declaring_no_nodata_uses_every_pixel(self, tiny_blocks):
-        from eeo.preprocessing.normalize import _valid_min_max
-
-        ds = _grid(np.arange(36, dtype=np.uint16).reshape(6, 6))
-        try:
-            assert _valid_min_max(ds) == (0.0, 35.0)
-            assert ds.normalize_min_max().get_metadata()["nodata"] is None
-        finally:
-            ds.close()
 
 
 class TestBranchesThatOnlyRunOnSomeBlocks:

@@ -566,3 +566,97 @@ class TestRealSceneBlockwise:
             assert np.array_equal(other.read(), sentinel2_ndvi.read(), equal_nan=True)
         finally:
             other.close()
+
+
+class TestRealSceneStreamingStatistics:
+    """Global statistics over a real scene, against the whole-array answer.
+
+    These are the two-pass ops from 16.3. On the Landsat scene the reference
+    arrays are a few hundred megabytes, which is the point: the streamed form
+    never holds one, and the comparison only exists to prove it did not need to.
+    """
+
+    def test_the_streamed_range_is_exact(self, landsat_red_nir):
+        from eeo.core.streaming import valid_min_max
+
+        band = landsat_red_nir.read(1).astype(np.float64)
+        band[band == landsat_red_nir.get_metadata()["nodata"]] = np.nan
+        assert valid_min_max(landsat_red_nir, 1) == (
+            float(np.nanmin(band)),
+            float(np.nanmax(band)),
+        )
+
+    def test_the_streamed_mean_and_deviation_match(self, landsat_red_nir):
+        from eeo.core.streaming import valid_mean_std
+
+        band = landsat_red_nir.read(1).astype(np.float64)
+        band[band == landsat_red_nir.get_metadata()["nodata"]] = np.nan
+        mean, std = valid_mean_std(landsat_red_nir, 1)
+        # 40 million valid pixels of four-digit reflectance: the sum of squares
+        # would be past float64's significant digits, which is what Chan's
+        # parallel update avoids.
+        assert mean == pytest.approx(float(np.nanmean(band)), rel=1e-12)
+        assert std == pytest.approx(float(np.nanstd(band)), rel=1e-12)
+
+    @pytest.mark.parametrize("fixture", ["sentinel2_red_nir", "landsat_red_nir"])
+    def test_the_streamed_percentiles_are_exact_on_an_integer_scene(self, fixture, request):
+        from eeo.core.streaming import valid_percentiles
+
+        # Both missions ship integer imagery, so both take the histogram path
+        # and the answer must be exact, not close.
+        ds = request.getfixturevalue(fixture)
+        assert np.issubdtype(np.dtype(ds.get_metadata()["dtype"]), np.integer)
+        band = ds.read(1).astype(np.float64)
+        band[band == ds.get_metadata()["nodata"]] = np.nan
+
+        wanted = [2, 50, 98]
+        assert valid_percentiles(ds, wanted, 1) == pytest.approx(
+            list(np.nanpercentile(band, wanted)), rel=0, abs=0
+        )
+
+    def test_the_brightest_pixel_is_the_one_numpy_finds(self, landsat_red_nir):
+        band = landsat_red_nir.read(1).astype(np.float64)
+        band[band == landsat_red_nir.get_metadata()["nodata"]] = np.nan
+        peak = landsat_red_nir.get_maximum_pixel(return_position_as_pixel_coordinate=True)
+        row, col = np.unravel_index(int(np.nanargmax(band)), band.shape)
+        assert peak["value"] == float(np.nanmax(band))
+        assert peak["position"] == (int(row), int(col))
+
+    def test_the_darkest_pixel_is_found_despite_fill_sharing_its_value(self, landsat_red_nir):
+        # Landsat fill is 0, the smallest a uint16 can be, so the minimum
+        # search has to exclude fill rather than merely order values.
+        floor = landsat_red_nir.get_minimum_pixel()
+        assert floor["value"] > 0
+
+    def test_percentile_normalization_streams_and_stays_in_range(self, landsat_red_nir):
+        stretched = landsat_red_nir.normalize_percentile()
+        try:
+            values = stretched.read()
+            assert stretched.read().dtype == np.float32
+            assert np.nanmin(values) == pytest.approx(0.0)
+            assert np.nanmax(values) == pytest.approx(1.0)
+            # Fill is excluded from the thresholds and stays nodata after.
+            assert np.array_equal(
+                np.isnan(values), landsat_red_nir.read() == landsat_red_nir.get_metadata()["nodata"]
+            )
+        finally:
+            stretched.close()
+
+    def test_sampling_a_point_does_not_read_the_scene(self, landsat_red_nir, monkeypatch):
+        # The op used to read the whole band to index one pixel out of it —
+        # 129 MB on this scene, for one number.
+        reads = []
+        # The class is not exported at package level; users reach a dataset
+        # through the loaders.
+        dataset_class = eeo.core.core.EEORasterDataset
+        original = dataset_class.read
+
+        def spy(self, *args, **kwargs):
+            array = original(self, *args, **kwargs)
+            reads.append(np.shape(array))
+            return array
+
+        monkeypatch.setattr(dataset_class, "read", spy)
+        left, _bottom, _right, top = landsat_red_nir.get_bounds()
+        landsat_red_nir.extract_value_at_coordinate((left + 1000.0, top - 1000.0))
+        assert reads == [(1, 1)], f"expected one 1x1 read, got {reads}"
