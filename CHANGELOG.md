@@ -9,6 +9,37 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Changed
+
+- Raster algebra (`add`, `subtract`, `multiply`, `divide`, `power`, `sqrt`,
+  `log`, `absolute`), every spectral index (`normalized_difference`, `ndvi`,
+  `ndwi`, `ndmi`, `ndbi`, `evi`, `savi`), and `normalize_min_max` now stream
+  block-wise instead of reading whole rasters into memory. Nothing to enable
+  and no API change: a raster under the block budget is simply one block, so
+  small rasters behave exactly as before. `standardize` and
+  `normalize_percentile` still read the full array — they need a statistic no
+  single pass can supply, which is the next piece of work.
+- `normalize_min_max` now reads every pixel twice: one streaming pass finds the
+  data range, a second rescales against it. Memory stays bounded by the block
+  in both, where before the whole raster was resident for both.
+- The engine is the single place the nodata & dtype contract is applied for
+  these ops, replacing three near-identical copies of "compute, mask, write to
+  a MemoryFile" in `eeo/ops/algebra.py`, `eeo/analysis/indices.py` and
+  `eeo/preprocessing/normalize.py`.
+- Op docstrings no longer carry the "reads the full array into memory" note,
+  which is no longer true of them; the guarantee is stated once in the
+  operations guide instead.
+
+### Fixed
+
+- A documentation error introduced with the engine: the output driver was
+  justified by "JP2 cannot be written", which is false — GDAL's `JP2OpenJPEG`
+  supports creation in the build we test against, and the test suite writes JP2
+  fixtures with it. Choosing the output driver rather than inheriting the
+  source's is still correct, because a driver records how a raster was *read*
+  and need not support creating one; the reasoning is now stated that way.
+
+
 ### Added
 
 - A block-wise execution engine (`eeo.core.blockwise`) that runs a pixel-wise
@@ -16,7 +47,8 @@ are called out under a **Breaking** heading.
   into the output, so peak memory follows the block size rather than the
   scene. `apply_blockwise` takes the operands as `BlockSource`s — a whole
   raster, a single band, or a scalar — and applies the nodata & dtype contract
-  per block. Nothing routes through it yet; operations are moved onto it next.
+  per block. It is also public: call it directly to run your own pixel-wise
+  function the same way, including straight to a file with `save_path=`.
 - The contract's output dtype and nodata value are resolved once for the whole
   output rather than per block. That is what makes blocking invisible: a block
   containing no nodata pixels would otherwise leave its own slice of the
