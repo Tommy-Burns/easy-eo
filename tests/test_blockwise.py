@@ -328,6 +328,31 @@ class TestRejections:
         with pytest.raises(ValidationError, match="at least one source"):
             apply_blockwise(single_band_float32, lambda: None, sources=[])
 
+    def test_a_result_narrower_than_its_operands_is_rejected_clearly(self):
+        # Reducing four bands to one while still masking against all four
+        # broadcasts the mask back up to four. Rasterio would reject the write
+        # from inside itself; the engine should explain why first. Needs a
+        # declared nodata, since with none there is no mask to broadcast.
+        bands = np.stack(
+            [i * 1000 + np.arange(36, dtype=np.uint16).reshape(6, 6) for i in range(4)]
+        )
+        ds = load_array(
+            bands.astype(np.uint16),
+            transform=from_origin(500_000.0, 4_200_000.0, 10.0, 10.0),
+            crs=UTM_CRS,
+            nodata=0,
+        ).to_rasterio()
+        try:
+            with pytest.raises(ValidationError, match="masking widened the result"):
+                apply_blockwise(
+                    ds,
+                    lambda block: block[:1],
+                    sources=[BlockSource.from_dataset(ds)],
+                    block_shape=(4, 4),
+                )
+        finally:
+            ds.close()
+
     def test_a_failing_computation_propagates(self, single_band_float32):
         def explode(block):
             raise ZeroDivisionError("boom")
