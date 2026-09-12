@@ -52,9 +52,10 @@ class BlockSource:
     Wraps either a raster (read one window at a time) or a scalar (returned
     unchanged for every window), so :func:`apply_blockwise` can treat a mixed
     operand list uniformly. Build one with :meth:`from_dataset` or
-    :meth:`from_scalar` rather than calling the constructor.
+    :meth:`from_scalar` rather than calling the constructor; each field is
+    readable as an attribute of the same name.
 
-    Attributes
+    Parameters
     ----------
     dataset : EEORasterDataset or None
         The raster operand, already promoted to the rasterio backend, or None
@@ -124,7 +125,13 @@ class BlockSource:
 
     @property
     def is_raster(self) -> bool:
-        """Return True if this source reads pixels rather than yielding a scalar."""
+        """Whether this source reads pixels rather than yielding a scalar.
+
+        Returns
+        -------
+        bool
+            True for a raster operand, False for a scalar one.
+        """
         return self.dataset is not None
 
     def read(self, window: Window) -> Any:
@@ -367,8 +374,20 @@ def apply_blockwise(
                 if source.is_raster
             ]
             masked = apply_nodata_mask(result, operands, out_dtype=out_dtype, out_nodata=out_nodata)
+            # A whole-raster operand masking a result with fewer bands would
+            # broadcast the mask up and silently widen the block, which the
+            # write would then reject from inside rasterio. Say what happened.
+            if masked.shape[0] != meta["count"]:
+                raise ValidationError(
+                    f"masking widened the result from {meta['count']} band(s) to "
+                    f"{masked.shape[0]}: an operand covering more bands than "
+                    "compute returns cannot mask it. Read that operand as a "
+                    "single band, or return one result band per operand band."
+                )
             dst.write(masked, window=window)
     except Exception:
+        # Cleanup only — a half-written output would otherwise be left open,
+        # and with save_path, left on disk. The error is always re-raised.
         if dst is not None:
             dst.close()
         if memfile is not None:
