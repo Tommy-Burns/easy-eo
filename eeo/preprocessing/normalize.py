@@ -1,56 +1,43 @@
-"""Normalization operations: min-max, percentile, and standardize."""
+"""Normalization operations: min-max, percentile, and standardize.
+
+All three need a statistic over every pixel before they can rescale any of
+them, so all three make two passes: one streaming reduction to measure the
+raster (:mod:`eeo.core.streaming`), then one streaming pass through the
+block-wise engine to apply it. Memory stays bounded by the block in both,
+except where :func:`~eeo.core.streaming.valid_percentiles` documents that it
+cannot be.
+"""
 
 import numpy as np
-import rasterio as rio
 
-from eeo.common import get_nodata, mask_nodata
-from eeo.core.blockwise import BlockSource, apply_blockwise, block_windows, resolve_block_shape
+from eeo.common import mask_nodata
+from eeo.core.blockwise import BlockSource, apply_blockwise
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
+from eeo.core.exceptions import ValidationError
+from eeo.core.streaming import valid_mean_std, valid_min_max, valid_percentiles
 
 
-def _write_normalized(ds: EEORasterDataset, out: np.ndarray, out_nodata) -> EEORasterDataset:
-    """Write a float32 normalization result sharing ``ds``'s georeferencing."""
-    meta = ds.get_metadata()
-    meta.update(dtype="float32", nodata=out_nodata)
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(out)
-    return EEORasterDataset.from_rasterio(out_ds)
+def _rescale_blockwise(ds: EEORasterDataset, rescale) -> EEORasterDataset:
+    """Stream ``rescale`` over ``ds``, masking nodata before it is applied.
 
+    The arithmetic runs on the nodata-masked block, so a sentinel never enters
+    it; the engine then writes NaN back over those pixels and records
+    ``nodata=nan``, or no nodata at all when the input declared none.
 
-def _valid_min_max(ds: EEORasterDataset) -> tuple[float, float]:
-    """Return the minimum and maximum over ``ds``'s valid pixels, block by block.
-
-    The whole-array equivalent is ``nanmin``/``nanmax`` over the nodata-masked
-    raster, but taken a window at a time so a scene never has to be resident to
-    be measured. Blocks holding no valid pixel are skipped rather than reduced,
-    which is not merely an optimisation: ``nanmin`` over an all-nodata block
-    warns and returns NaN, and on a partly-filled scene most edge blocks are
-    exactly that. A raster with no valid pixel anywhere yields ``(nan, nan)``,
-    which carries through the rescaling to an all-NaN result — the same answer
-    the whole-array form gives, without the warning.
+    The block is cast to float64 first, deliberately. ``mask_nodata`` promotes
+    to float64 only when a nodata value is declared — it substitutes NaN, which
+    is a Python float — so without the cast the same operation would rescale a
+    float32 raster in float32 or in float64 depending on nothing more than
+    whether it happened to declare nodata. The output is float32 either way;
+    this only decides how much precision the intermediate arithmetic keeps.
     """
-    shape = ds.get_shape()
-    low, high = np.inf, -np.inf
-    seen = False
-    for window in block_windows(shape, resolve_block_shape(shape)):
-        # mask_nodata returns float64 whenever a nodata value is declared, so
-        # the integer branch below is only reached when none is — and there
-        # every pixel is valid by definition.
-        masked = mask_nodata(ds, ds.read(window=window))
-        if np.issubdtype(masked.dtype, np.floating):
-            if not (~np.isnan(masked)).any():
-                continue
-            block_low, block_high = float(np.nanmin(masked)), float(np.nanmax(masked))
-        else:
-            block_low, block_high = float(masked.min()), float(masked.max())
-        seen = True
-        low, high = min(low, block_low), max(high, block_high)
-
-    if not seen:
-        return float("nan"), float("nan")
-    return low, high
+    return apply_blockwise(
+        ds,
+        lambda block: rescale(mask_nodata(ds, block).astype(np.float64)),
+        sources=[BlockSource.from_dataset(ds)],
+        fractional=True,
+    )
 
 
 @eeo_raster_op
@@ -74,23 +61,24 @@ def standardize(ds: EEORasterDataset) -> EEORasterDataset:
 
     Notes
     -----
-    Reads the full array into memory and makes one statistics pass before
-    writing, rather than streaming block-wise.
+    Streams block-wise, reading every pixel twice: the mean and deviation are
+    not knowable until the whole raster has been seen, so one pass measures
+    them and a second standardizes against them. Memory stays bounded by the
+    block in both. Blocks are combined with Chan's parallel update, so the
+    variance does not lose precision on a scene of a hundred million pixels.
 
     Examples
     --------
     >>> z = ds.standardize()
     """
-    ds_nodata = get_nodata(ds)
-    masked = mask_nodata(ds, ds.read())
+    ds = ds.to_rasterio()
+    mean_value, std_value = valid_mean_std(ds)
 
-    mean_value = np.nanmean(masked)
-    std_value = np.nanstd(masked)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        standardized = (masked - mean_value) / std_value
+    def rescale(masked):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return (masked - mean_value) / std_value
 
-    out_nodata = float("nan") if ds_nodata is not None else None
-    return _write_normalized(ds, standardized.astype(np.float32), out_nodata)
+    return _rescale_blockwise(ds, rescale)
 
 
 @eeo_raster_op
@@ -131,20 +119,14 @@ def normalize_min_max(
     >>> centred = ds.normalize_min_max(new_min=-1, new_max=1)
     """
     ds = ds.to_rasterio()
-    old_min, old_max = _valid_min_max(ds)
+    old_min, old_max = valid_min_max(ds)
 
-    def rescale(block):
-        masked = mask_nodata(ds, block)
+    def rescale(masked):
         with np.errstate(divide="ignore", invalid="ignore"):
             normalized = (masked - old_min) / (old_max - old_min)
         return normalized * (new_max - new_min) + new_min
 
-    return apply_blockwise(
-        ds,
-        rescale,
-        sources=[BlockSource.from_dataset(ds)],
-        fractional=True,
-    )
+    return _rescale_blockwise(ds, rescale)
 
 
 @eeo_raster_op
@@ -178,26 +160,46 @@ def normalize_percentile(
 
     Raises
     ------
-    ValueError
-        If ``lower_percentile >= upper_percentile``, propagated from NumPy.
+    ValidationError
+        If either percentile falls outside ``[0, 100]``, or if
+        ``lower_percentile >= upper_percentile``.
 
     Notes
     -----
-    Reads the full array into memory and makes one statistics pass before
-    writing, rather than streaming block-wise. Percentiles are computed with
-    ``numpy.nanpercentile`` over the nodata-masked array.
+    Streams block-wise, reading every pixel twice: the thresholds are not
+    knowable until the whole raster has been seen, so one pass measures them
+    and a second rescales against them.
+
+    The measuring pass is itself streamed for integer rasters — every raw
+    Sentinel-2 and Landsat band, and so every raster large enough for this to
+    matter — from an exact histogram, one counter per distinct value. Floating
+    -point rasters read the band instead, because an exact percentile of
+    floating-point data cannot be computed in bounded memory; see
+    :func:`eeo.core.streaming.valid_percentiles`. Either way the thresholds
+    equal what ``numpy.percentile`` gives over the valid pixels.
 
     Examples
     --------
     >>> ds = load_array(np.random.rand(64, 64), crs=4326)
     >>> out = ds.normalize_percentile(lower_percentile=5, upper_percentile=95)
     """
-    ds_nodata = get_nodata(ds)
-    masked = mask_nodata(ds, ds.read())
+    for name, value in (
+        ("lower_percentile", lower_percentile),
+        ("upper_percentile", upper_percentile),
+    ):
+        if not 0 <= value <= 100:
+            raise ValidationError(f"{name} must be in the range [0, 100]; got {value}")
+    if lower_percentile >= upper_percentile:
+        raise ValidationError(
+            "lower_percentile must be below upper_percentile; got "
+            f"{lower_percentile} and {upper_percentile}"
+        )
 
-    array_min, array_max = np.nanpercentile(masked, (lower_percentile, upper_percentile))
-    with np.errstate(divide="ignore", invalid="ignore"):
-        normalized = np.clip((masked - array_min) / (array_max - array_min), 0, 1)
+    ds = ds.to_rasterio()
+    array_min, array_max = valid_percentiles(ds, (lower_percentile, upper_percentile))
 
-    out_nodata = float("nan") if ds_nodata is not None else None
-    return _write_normalized(ds, normalized.astype(np.float32), out_nodata)
+    def rescale(masked):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.clip((masked - array_min) / (array_max - array_min), 0, 1)
+
+    return _rescale_blockwise(ds, rescale)
