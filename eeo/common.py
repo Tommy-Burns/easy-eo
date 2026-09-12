@@ -19,12 +19,11 @@ def is_rasterio_backed(ds: EEORasterDataset) -> bool:
     """Return True if ``ds`` is backed by the rasterio adapter.
 
     Detection is based on the adapter type, not the class of the backend
-    object. A rasterio-backed dataset's ``backend`` may be a
-    ``rasterio.io.DatasetReader`` (opened from a file) or a
-    ``rasterio.io.DatasetWriter`` (produced in memory by an operation, e.g.
-    the result of any algebra op or ``to_rasterio()``); both are valid
-    rasterio backends. Checking ``isinstance(backend, DatasetReader)`` misses
-    the writer case and wrongly rejects genuinely rasterio-backed datasets.
+    object. A rasterio-backed dataset's ``backend`` is usually a
+    ``rasterio.io.DatasetReader`` — from a file, or an in-memory result, which
+    the library reopens read-only — but a ``rasterio.io.DatasetWriter`` wrapped
+    with ``EEORasterDataset.from_rasterio`` is equally valid. Checking
+    ``isinstance(backend, DatasetReader)`` would wrongly reject that case.
 
     Parameters
     ----------

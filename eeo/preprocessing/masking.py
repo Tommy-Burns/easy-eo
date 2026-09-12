@@ -18,9 +18,9 @@ import re
 from collections.abc import Iterable
 
 import numpy as np
-import rasterio as rio
 
 from eeo.common import _declared_nodata_mask, get_nodata, resolve_band_index
+from eeo.core.adapters import RasterioAdapter
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import AlignmentError, ValidationError
@@ -307,10 +307,9 @@ def mask_clouds(
 
     meta = ds.get_metadata()
     meta.update(dtype=dtype, nodata=fill)
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(out)
-    return EEORasterDataset.from_rasterio(out_ds)
+    return EEORasterDataset(
+        adapter=RasterioAdapter.write_in_memory(meta, lambda dst: dst.write(out))
+    )
 
 
 @eeo_raster_op

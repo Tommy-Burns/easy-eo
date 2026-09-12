@@ -9,6 +9,7 @@ from rasterio.windows import from_bounds
 
 from eeo.common import is_rasterio_backed
 from eeo.core import EEORasterDataset
+from eeo.core.adapters import RasterioAdapter
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import BackendError, ValidationError
 from eeo.core.types import StrPath
@@ -130,16 +131,15 @@ def clip_raster_with_vector(
     if nodata is not None:
         meta["nodata"] = nodata
 
-    # Write to MemoryFile
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(clipped)
+    result = EEORasterDataset(
+        adapter=RasterioAdapter.write_in_memory(meta, lambda dst: dst.write(clipped))
+    )
 
     # Optional preview
     if show_preview:
-        EEORasterDataset.from_rasterio(out_ds).plot_raster(**(plot_kwargs or {}))
+        result.plot_raster(**(plot_kwargs or {}))
 
-    return EEORasterDataset.from_rasterio(out_ds)
+    return result
 
 
 @eeo_raster_op
@@ -227,12 +227,11 @@ def clip_raster_with_bbox(
         transform=transform,
     )
 
-    # Write to MemoryFile
-    memfile = rio.io.MemoryFile()
-    dataset = memfile.open(**meta)
-    dataset.write(clipped)
+    result = EEORasterDataset(
+        adapter=RasterioAdapter.write_in_memory(meta, lambda dst: dst.write(clipped))
+    )
 
     if show_preview:
-        EEORasterDataset.from_rasterio(dataset).plot_raster(**(plot_kwargs or {}))
+        result.plot_raster(**(plot_kwargs or {}))
 
-    return EEORasterDataset.from_rasterio(dataset)
+    return result

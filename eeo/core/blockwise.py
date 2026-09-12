@@ -397,7 +397,12 @@ def apply_blockwise(
 
     assert dst is not None  # every raster has at least one block
 
-    if save_path is None:
-        return EEORasterDataset(adapter=RasterioAdapter(dst, memory_file=memfile))
+    # Close before handing the result over, in memory as on disk: an open
+    # writer leaves its blocks dirty in GDAL's cache, and a chain of results
+    # left that way slows to a crawl once they outgrow it. See
+    # RasterioAdapter.write_in_memory.
     dst.close()
+    if save_path is None:
+        assert memfile is not None
+        return EEORasterDataset(adapter=RasterioAdapter.from_memory_file(memfile))
     return EEORasterDataset.from_path(save_path)
