@@ -15,6 +15,7 @@ from rasterio.crs import CRS
 from rasterio.transform import from_origin
 
 from eeo import load_array
+from eeo.common import apply_nodata_mask
 
 UTM = CRS.from_epsg(32633)
 GRID = from_origin(500_000.0, 4_200_000.0, 10.0, 10.0)
@@ -189,3 +190,23 @@ def test_absolute_masks_nodata_instead_of_taking_magnitude(raster_with_nodata):
     assert np.isnan(out[:2, :2]).all()
     assert not (out[:2, :2] == 9999.0).any()
     assert out[3, 3] == pytest.approx(21.0)
+
+
+# ---------------------------------------------------------------------
+# Masking helper
+# ---------------------------------------------------------------------
+
+
+def test_mask_helper_masks_nothing_when_no_operand_declares_nodata():
+    """A supplied marker changes no pixel if no operand says which are nodata.
+
+    The engine never reaches this: it derives the marker from the same
+    operands, so a marker implies a declaring operand. A direct caller can.
+    """
+    result = np.array([[[0.0, 1.5], [2.5, 3.0]]])
+    operands = [(np.zeros((1, 2, 2)), None)]
+    masked = apply_nodata_mask(
+        result, operands, out_dtype=np.dtype(np.float32), out_nodata=float("nan")
+    )
+    assert masked.dtype == np.float32
+    np.testing.assert_array_equal(masked, result.astype(np.float32))
