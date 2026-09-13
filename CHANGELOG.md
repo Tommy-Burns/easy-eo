@@ -9,6 +9,8 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-13
+
 ### Added
 
 - A block-wise execution engine (`eeo.core.blockwise`) that runs a pixel-wise
@@ -67,15 +69,12 @@ are called out under a **Breaking** heading.
   only when substituting NaN for a declared sentinel, so a float32 raster was
   rescaled in float32 or float64 depending on nothing but that. Output is
   float32 either way.
-
 - Raster algebra (`add`, `subtract`, `multiply`, `divide`, `power`, `sqrt`,
   `log`, `absolute`), every spectral index (`normalized_difference`, `ndvi`,
   `ndwi`, `ndmi`, `ndbi`, `evi`, `savi`), and `normalize_min_max` now stream
   block-wise instead of reading whole rasters into memory. Nothing to enable
   and no API change: a raster under the block budget is simply one block, so
-  small rasters behave exactly as before. `standardize` and
-  `normalize_percentile` still read the full array — they need a statistic no
-  single pass can supply, which is the next piece of work.
+  small rasters behave exactly as before.
 - `normalize_min_max` now reads every pixel twice: one streaming pass finds the
   data range, a second rescales against it. Memory stays bounded by the block
   in both, where before the whole raster was resident for both.
@@ -802,7 +801,8 @@ Initial public beta release.
 - Visualization: `plot_raster`, `plot_composite`,
   `plot_raster_with_histogram`, `plot_band_array`.
 
-[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.0...v0.3.1
