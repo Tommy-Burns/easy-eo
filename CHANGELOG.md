@@ -83,6 +83,9 @@ are called out under a **Breaking** heading.
   these ops, replacing three near-identical copies of "compute, mask, write to
   a MemoryFile" in `eeo/ops/algebra.py`, `eeo/analysis/indices.py` and
   `eeo/preprocessing/normalize.py`.
+  The whole-array helper they shared, `eeo.common.apply_nodata_contract`, had
+  no callers left and is removed; the engine uses `resolve_output_nodata` and
+  `apply_nodata_mask` directly.
 - Op docstrings no longer carry the "reads the full array into memory" note,
   which is no longer true of them; the guarantee is stated once in the
   operations guide instead.
