@@ -19,12 +19,11 @@ def is_rasterio_backed(ds: EEORasterDataset) -> bool:
     """Return True if ``ds`` is backed by the rasterio adapter.
 
     Detection is based on the adapter type, not the class of the backend
-    object. A rasterio-backed dataset's ``backend`` may be a
-    ``rasterio.io.DatasetReader`` (opened from a file) or a
-    ``rasterio.io.DatasetWriter`` (produced in memory by an operation, e.g.
-    the result of any algebra op or ``to_rasterio()``); both are valid
-    rasterio backends. Checking ``isinstance(backend, DatasetReader)`` misses
-    the writer case and wrongly rejects genuinely rasterio-backed datasets.
+    object. A rasterio-backed dataset's ``backend`` is usually a
+    ``rasterio.io.DatasetReader`` — from a file, or an in-memory result, which
+    the library reopens read-only — but a ``rasterio.io.DatasetWriter`` wrapped
+    with ``EEORasterDataset.from_rasterio`` is equally valid. Checking
+    ``isinstance(backend, DatasetReader)`` would wrongly reject that case.
 
     Parameters
     ----------
@@ -164,7 +163,7 @@ def _declared_nodata_mask(array, nodata):
     return array == nodata
 
 
-def _output_dtype(result, *, fractional: bool):
+def resolve_output_dtype(result, *, fractional: bool):
     """Return the output dtype for a pixel-wise result per the dtype policy.
 
     Fractional-result ops are always float32. Exact arithmetic keeps the
@@ -178,12 +177,98 @@ def _output_dtype(result, *, fractional: bool):
     return dtype
 
 
+def _combined_nodata_mask(operands):
+    """Boolean mask of pixels that are nodata in any operand, or None if none are.
+
+    Nodata is contagious: the masks of every operand that declares one are
+    OR-ed together. Returns None when no operand declares a nodata value,
+    which is the same condition as the contract producing no output nodata.
+    """
+    combined = None
+    for array, nodata in operands:
+        mask = _declared_nodata_mask(array, nodata)
+        if mask is None:
+            continue
+        combined = mask if combined is None else (combined | mask)
+    return combined
+
+
+def resolve_output_nodata(operand_nodatas, *, out_dtype, ds_nodata):
+    """Return the nodata value a pixel-wise result should record, or None.
+
+    Decided from declared nodata values and the output dtype alone — no pixel
+    data — so a block-wise operation can fix one nodata value for the whole
+    output before reading the first block.
+
+    Parameters
+    ----------
+    operand_nodatas : iterable
+        Declared nodata value (or None) of each raster operand.
+    out_dtype : numpy.dtype
+        Dtype the output will be written in.
+    ds_nodata : int, float, or None
+        The primary operand's declared nodata, used as the sentinel for
+        integer outputs.
+
+    Returns
+    -------
+    float or int or None
+        ``float('nan')`` for floating outputs, the integer sentinel for
+        integer outputs, or None when no operand declares nodata.
+    """
+    declared = [nodata for nodata in operand_nodatas if nodata is not None]
+    if not declared:
+        # No operand declared nodata: every pixel is valid, nothing to record.
+        return None
+    if np.issubdtype(out_dtype, np.floating):
+        return float("nan")
+    sentinel = ds_nodata if ds_nodata is not None else declared[0]
+    return np.array(sentinel, dtype=out_dtype).item()
+
+
+def apply_nodata_mask(result, operands, *, out_dtype, out_nodata):
+    """Cast a pixel-wise result to ``out_dtype`` and mark its nodata pixels.
+
+    The dtype and nodata value are supplied rather than derived, so every
+    block of a block-wise run lands in the same dtype and uses the same
+    marker even when a block happens to contain no nodata pixels at all.
+
+    Parameters
+    ----------
+    result : array-like
+        Values computed over every pixel of the block.
+    operands : list of tuple
+        ``(array, nodata)`` for each raster operand, over the same pixels as
+        ``result``; scalar operands are omitted since they carry no nodata.
+    out_dtype : numpy.dtype
+        Dtype to cast the result to.
+    out_nodata : float, int, or None
+        Marker written into nodata pixels, from :func:`resolve_output_nodata`.
+        None means no operand declares nodata and nothing is masked.
+
+    Returns
+    -------
+    array-like
+        The masked result in ``out_dtype``.
+    """
+    result = result.astype(out_dtype)
+    if out_nodata is None:
+        return result
+    combined = _combined_nodata_mask(operands)
+    if combined is None:
+        return result
+    marker = np.array(out_nodata, dtype=out_dtype)
+    return np.where(combined, marker, result).astype(out_dtype)
+
+
 def apply_nodata_contract(result, operands, *, fractional: bool, ds_nodata):
     """Apply the library nodata & dtype contract to a pixel-wise result.
 
     Masks the pixels that are nodata in any operand (nodata is contagious),
     casts to the contract's output dtype, and reports the nodata value to
-    record in the output metadata.
+    record in the output metadata. This is the whole-array form; the
+    block-wise engine calls :func:`resolve_output_nodata` once and
+    :func:`apply_nodata_mask` per block instead.
 
     Parameters
     ----------
@@ -209,32 +294,9 @@ def apply_nodata_contract(result, operands, *, fractional: bool, ds_nodata):
         floating outputs, the integer sentinel for integer outputs, or None
         when no operand declares nodata).
     """
-    out_dtype = _output_dtype(result, fractional=fractional)
-    is_float_out = np.issubdtype(out_dtype, np.floating)
-
-    combined = None
-    declared = []
-    for array, nodata in operands:
-        if nodata is not None:
-            declared.append(nodata)
-        mask = _declared_nodata_mask(array, nodata)
-        if mask is None:
-            continue
-        combined = mask if combined is None else (combined | mask)
-
-    result = result.astype(out_dtype)
-
-    if combined is None:
-        # No operand declared nodata: nothing to mask, no output nodata.
-        return result, None
-
-    if is_float_out:
-        marker = np.array(np.nan, dtype=out_dtype)
-        out_nodata: float = float("nan")
-    else:
-        sentinel = ds_nodata if ds_nodata is not None else declared[0]
-        marker = np.array(sentinel, dtype=out_dtype)
-        out_nodata = marker.item()
-
-    final = np.where(combined, marker, result).astype(out_dtype)
+    out_dtype = resolve_output_dtype(result, fractional=fractional)
+    out_nodata = resolve_output_nodata(
+        [nodata for _, nodata in operands], out_dtype=out_dtype, ds_nodata=ds_nodata
+    )
+    final = apply_nodata_mask(result, operands, out_dtype=out_dtype, out_nodata=out_nodata)
     return final, out_nodata

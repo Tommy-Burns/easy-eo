@@ -108,6 +108,32 @@ All arithmetic operations:
     - Work per pixel
     - Preserve raster metadata
     - Optionally auto-align rasters before computation
+    - Stream block-wise, so scene size does not set memory use
+
+.. note::
+
+   Arithmetic, the spectral indices, and ``normalize_min_max`` read the raster
+   a window at a time and write each result block straight into the output, so
+   peak memory follows the block size rather than the scene. Nothing has to be
+   enabled, and small rasters are simply one block. ``normalize_min_max``
+   passes over the data twice — once to find the range, once to rescale — since
+   the minimum and maximum are not knowable until the whole raster has been
+   seen. ``standardize``, ``normalize_percentile``, and the pixel statistics
+   (``get_maximum_pixel``, ``get_minimum_pixel``, ``get_mean_pixel``,
+   ``get_percentile_pixel``) are two-pass for the same reason: one pass
+   measures, one applies or locates. ``extract_value_at_coordinate`` reads a
+   single pixel.
+
+   One case genuinely cannot be bounded. A percentile of **floating-point**
+   data is not a running total like a minimum or a mean, and has no finite set
+   of values to count, so ``normalize_percentile`` and ``get_percentile_pixel``
+   read the band for float rasters. Integer rasters — every raw Sentinel-2 and
+   Landsat band, and so every raster large enough for this to matter — are
+   measured exactly from a streaming histogram instead.
+
+   The engine underneath is :func:`eeo.core.blockwise.apply_blockwise`, which
+   you can call directly to run your own pixel-wise function the same way,
+   including straight to a file with ``save_path=``.
 
 Addition
 ^^^^^^^^

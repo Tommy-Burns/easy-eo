@@ -3,10 +3,10 @@
 from collections.abc import Iterable
 
 import numpy as np
-import rasterio as rio
 from rasterio.merge import merge
 
 from eeo.common import is_rasterio_backed, normalize_resampling_method
+from eeo.core.adapters import RasterioAdapter
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import (
@@ -130,12 +130,9 @@ def mosaic(
         dtype=mosaic_data.dtype,
     )
 
-    # write to memory file
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(mosaic_data)
-
-    result = EEORasterDataset.from_rasterio(out_ds)
+    result = EEORasterDataset(
+        adapter=RasterioAdapter.write_in_memory(meta, lambda dst: dst.write(mosaic_data))
+    )
     # Band identity is unchanged by mosaicking - only the extent grows - so the
     # primary's names carry over unless the caller overrides them.
     result.band_names = ds.band_names if names is None else names
@@ -241,12 +238,9 @@ def stack(
     meta = ds.get_metadata().copy()
     meta.update(count=stacked.shape[0], dtype=stacked.dtype)
 
-    # save to memory file
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(stacked)
-
-    result = EEORasterDataset.from_rasterio(out_ds)
+    result = EEORasterDataset(
+        adapter=RasterioAdapter.write_in_memory(meta, lambda dst: dst.write(stacked))
+    )
     if names is None:
         # Each output band is exactly one input band, so names concatenate in
         # the same order the bands do.

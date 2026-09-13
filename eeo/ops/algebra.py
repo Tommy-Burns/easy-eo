@@ -1,9 +1,18 @@
-"""Pixel-wise raster algebra operations."""
+"""Pixel-wise raster algebra operations.
+
+Every operation here streams block-wise through
+:func:`eeo.core.blockwise.apply_blockwise`: the raster is read a window at a
+time and each result block is written straight into the output, so peak memory
+follows the block size rather than the scene. A raster small enough to fit the
+block budget is simply one block, so nothing is paid for it.
+"""
+
+import operator
 
 import numpy as np
-import rasterio as rio
 
-from eeo.common import align_raster_to_target, apply_nodata_contract, get_nodata
+from eeo.common import align_raster_to_target
+from eeo.core.blockwise import BlockSource, apply_blockwise
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import AlignmentError
@@ -15,25 +24,12 @@ _ALIGN_MISMATCH = (
 )
 
 
-def _write_result(ds: EEORasterDataset, data, nodata) -> EEORasterDataset:
-    """Write ``data`` into a new in-memory raster sharing ``ds``'s georeferencing.
+def _resolve_operand(ds, other, *, auto_align, method) -> BlockSource:
+    """Return a :class:`BlockSource` for a raster or scalar operand.
 
-    The output dtype and nodata value are taken from ``data`` and ``nodata``
-    so the result records the dtype and nodata the operation actually produced.
-    """
-    meta = ds.get_metadata()
-    meta.update(dtype=data.dtype, nodata=nodata)
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
-    return EEORasterDataset.from_rasterio(out_ds)
-
-
-def _resolve_operand(ds, other, *, auto_align, method):
-    """Return ``(other_array, other_nodata)`` for a raster or scalar operand.
-
-    Aligns a raster operand onto ``ds``'s grid when needed; a scalar operand
-    is returned unchanged with a None nodata (scalars carry no nodata).
+    Aligns a raster operand onto ``ds``'s grid when needed, so the engine can
+    read the two in step window by window; a scalar becomes a scalar source,
+    which yields the same value for every window and carries no nodata.
     """
     if isinstance(other, EEORasterDataset):
         if ds.get_shape() != other.get_shape() or ds.get_transform() != other.get_transform():
@@ -43,8 +39,8 @@ def _resolve_operand(ds, other, *, auto_align, method):
                 raise AlignmentError(
                     _ALIGN_MISMATCH.format(other=other.get_shape(), ds=ds.get_shape())
                 )
-        return other.read(), get_nodata(other)
-    return other, None
+        return BlockSource.from_dataset(other)
+    return BlockSource.from_scalar(other)
 
 
 # ARITHMETIC AND ALGEBRA
@@ -92,28 +88,17 @@ def add(
         If ``other`` is a dataset on a different grid and ``auto_align`` is
         False.
 
-    Notes
-    -----
-    Reads the full array(s) into memory rather than streaming block-wise.
-
     Examples
     --------
     >>> ds = load_array(np.random.rand(64, 64), crs=4326)
     >>> brighter = ds.add(0.1)
     """
-    ds_nodata = get_nodata(ds)
-    other_data, other_nodata = _resolve_operand(ds, other, auto_align=auto_align, method=method)
-    src = ds.read()
-    result = src + other_data
-
-    operands = [(src, ds_nodata)]
-    if isinstance(other, EEORasterDataset):
-        operands.append((other_data, other_nodata))
-
-    data, out_nodata = apply_nodata_contract(
-        result, operands, fractional=False, ds_nodata=ds_nodata
+    operand = _resolve_operand(ds, other, auto_align=auto_align, method=method)
+    return apply_blockwise(
+        ds,
+        operator.add,
+        sources=[BlockSource.from_dataset(ds), operand],
     )
-    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -160,27 +145,16 @@ def subtract(
         If ``other`` is a dataset on a different grid and ``auto_align`` is
         False.
 
-    Notes
-    -----
-    Reads the full array(s) into memory rather than streaming block-wise.
-
     Examples
     --------
     >>> change = ds_after.subtract(ds_before)
     """
-    ds_nodata = get_nodata(ds)
-    other_data, other_nodata = _resolve_operand(ds, other, auto_align=auto_align, method=method)
-    src = ds.read()
-    result = src - other_data
-
-    operands = [(src, ds_nodata)]
-    if isinstance(other, EEORasterDataset):
-        operands.append((other_data, other_nodata))
-
-    data, out_nodata = apply_nodata_contract(
-        result, operands, fractional=False, ds_nodata=ds_nodata
+    operand = _resolve_operand(ds, other, auto_align=auto_align, method=method)
+    return apply_blockwise(
+        ds,
+        operator.sub,
+        sources=[BlockSource.from_dataset(ds), operand],
     )
-    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -227,27 +201,16 @@ def multiply(
         If ``other`` is a dataset on a different grid and ``auto_align`` is
         False.
 
-    Notes
-    -----
-    Reads the full array(s) into memory rather than streaming block-wise.
-
     Examples
     --------
     >>> scaled = ds.multiply(100)
     """
-    ds_nodata = get_nodata(ds)
-    other_data, other_nodata = _resolve_operand(ds, other, auto_align=auto_align, method=method)
-    src = ds.read()
-    result = src * other_data
-
-    operands = [(src, ds_nodata)]
-    if isinstance(other, EEORasterDataset):
-        operands.append((other_data, other_nodata))
-
-    data, out_nodata = apply_nodata_contract(
-        result, operands, fractional=False, ds_nodata=ds_nodata
+    operand = _resolve_operand(ds, other, auto_align=auto_align, method=method)
+    return apply_blockwise(
+        ds,
+        operator.mul,
+        sources=[BlockSource.from_dataset(ds), operand],
     )
-    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -296,38 +259,33 @@ def divide(
         If ``other`` is a dataset on a different grid and ``auto_align`` is
         False.
 
-    Notes
-    -----
-    Reads the full array(s) into memory rather than streaming block-wise.
-
     Examples
     --------
     >>> ratio = ds_nir.divide(ds_red)
     >>> halved = ds.divide(2)
     """
-    ds_nodata = get_nodata(ds)
-    src = ds.read()
-    other_data, other_nodata = _resolve_operand(ds, other, auto_align=auto_align, method=method)
+    operand = _resolve_operand(ds, other, auto_align=auto_align, method=method)
 
-    # ---- SAFE DIVIDE ----
-    if safe:
-        if np.isscalar(other_data):
-            result = np.zeros_like(src, dtype=np.float32) if other_data == 0 else src / other_data
-        else:
-            # np.where instead of the in-place out=/where= ufunc form so the
-            # expression stays dispatchable to lazy array backends.
-            with np.errstate(divide="ignore", invalid="ignore"):
-                quotient = np.divide(src, other_data)
-            result = np.where(other_data != 0, quotient, np.float32(0))
-    else:
-        result = src / other_data
+    def quotient(numerator, denominator):
+        # ---- SAFE DIVIDE ----
+        if not safe:
+            return numerator / denominator
+        if np.isscalar(denominator):
+            if denominator == 0:
+                return np.zeros_like(numerator, dtype=np.float32)
+            return numerator / denominator
+        # np.where instead of the in-place out=/where= ufunc form so the
+        # expression stays dispatchable to lazy array backends.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            divided = np.divide(numerator, denominator)
+        return np.where(denominator != 0, divided, np.float32(0))
 
-    operands = [(src, ds_nodata)]
-    if isinstance(other, EEORasterDataset):
-        operands.append((other_data, other_nodata))
-
-    data, out_nodata = apply_nodata_contract(result, operands, fractional=True, ds_nodata=ds_nodata)
-    return _write_result(ds, data, out_nodata)
+    return apply_blockwise(
+        ds,
+        quotient,
+        sources=[BlockSource.from_dataset(ds), operand],
+        fractional=True,
+    )
 
 
 @eeo_raster_op
@@ -354,21 +312,17 @@ def power(ds: EEORasterDataset, exponent: int | float) -> EEORasterDataset:
     -----
     Follows NumPy's ``**`` semantics; a negative pixel raised to a
     non-integer exponent yields ``nan`` where it is not masked as nodata.
-    Reads the full array into memory rather than streaming block-wise.
 
     Examples
     --------
     >>> squared = ds.power(2)
     """
-    ds_nodata = get_nodata(ds)
-    src = ds.read()
-    with np.errstate(invalid="ignore", divide="ignore"):
-        result = src**exponent
 
-    data, out_nodata = apply_nodata_contract(
-        result, [(src, ds_nodata)], fractional=False, ds_nodata=ds_nodata
-    )
-    return _write_result(ds, data, out_nodata)
+    def raised(block):
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return block**exponent
+
+    return apply_blockwise(ds, raised, sources=[BlockSource.from_dataset(ds)])
 
 
 # TRANSFORMATIONS
@@ -391,22 +345,16 @@ def sqrt(ds: EEORasterDataset) -> EEORasterDataset:
         truncated to an integer dtype). Nodata pixels are nodata (NaN) in the
         output.
 
-    Notes
-    -----
-    Reads the full array into memory rather than streaming block-wise.
-
     Examples
     --------
     >>> rooted = ds.sqrt()
     """
-    ds_nodata = get_nodata(ds)
-    src = ds.read()
-    result = np.sqrt(np.maximum(src, 0))
-
-    data, out_nodata = apply_nodata_contract(
-        result, [(src, ds_nodata)], fractional=True, ds_nodata=ds_nodata
+    return apply_blockwise(
+        ds,
+        lambda block: np.sqrt(np.maximum(block, 0)),
+        sources=[BlockSource.from_dataset(ds)],
+        fractional=True,
     )
-    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -430,23 +378,17 @@ def log(ds: EEORasterDataset, base: int | float = np.e) -> EEORasterDataset:
         truncated to an integer dtype). Nodata pixels are nodata (NaN) in the
         output.
 
-    Notes
-    -----
-    Reads the full array into memory rather than streaming block-wise.
-
     Examples
     --------
     >>> natural = ds.log()
     >>> base10 = ds.log(base=10)
     """
-    ds_nodata = get_nodata(ds)
-    src = ds.read()
-    result = np.log(np.maximum(src, 1e-10)) / np.log(base)
-
-    data, out_nodata = apply_nodata_contract(
-        result, [(src, ds_nodata)], fractional=True, ds_nodata=ds_nodata
+    return apply_blockwise(
+        ds,
+        lambda block: np.log(np.maximum(block, 1e-10)) / np.log(base),
+        sources=[BlockSource.from_dataset(ds)],
+        fractional=True,
     )
-    return _write_result(ds, data, out_nodata)
 
 
 @eeo_raster_op
@@ -467,19 +409,11 @@ def absolute(ds: EEORasterDataset) -> EEORasterDataset:
 
     Notes
     -----
-    Reads the full array into memory rather than streaming block-wise. Because
-    nodata pixels are masked, a negative nodata sentinel is not turned into its
-    magnitude in the output.
+    Because nodata pixels are masked, a negative nodata sentinel is not
+    turned into its magnitude in the output.
 
     Examples
     --------
     >>> magnitude = ds.absolute()
     """
-    ds_nodata = get_nodata(ds)
-    src = ds.read()
-    result = np.abs(src)
-
-    data, out_nodata = apply_nodata_contract(
-        result, [(src, ds_nodata)], fractional=False, ds_nodata=ds_nodata
-    )
-    return _write_result(ds, data, out_nodata)
+    return apply_blockwise(ds, np.abs, sources=[BlockSource.from_dataset(ds)])

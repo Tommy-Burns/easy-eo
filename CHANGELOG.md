@@ -9,6 +9,127 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- A block-wise execution engine (`eeo.core.blockwise`) that runs a pixel-wise
+  function over a raster one window at a time and writes each result straight
+  into the output, so peak memory follows the block size rather than the
+  scene. `apply_blockwise` takes the operands as `BlockSource`s — a whole
+  raster, a single band, or a scalar — and applies the nodata & dtype contract
+  per block. It is also public: call it directly to run your own pixel-wise
+  function the same way, including straight to a file with `save_path=`.
+- The contract's output dtype and nodata value are resolved once for the whole
+  output rather than per block. That is what makes blocking invisible: a block
+  containing no nodata pixels would otherwise leave its own slice of the
+  output declaring no nodata, and a Sentinel-2 tile that declares fill but is
+  fully imaged would end up recording none at all — after which a mosaic
+  against a partly-filled neighbour would blend fill in as if it were data.
+- `save_path=` streams the result to a file instead of an in-memory raster,
+  the only route whose memory stays bounded when the output is also larger
+  than memory.
+- Verified against both real products the maintainer keeps: block-wise NDVI is
+  bit-for-bit identical to the eager computation on a Landsat 9 scene
+  (8081 x 7991, read from its tar) and on a Sentinel-2 tile (10980 x 10980,
+  read as JP2), at every block shape tried, including shapes that divide the
+  scene unevenly. On the Landsat scene the NaN pixels of the result are
+  exactly the union of the two bands' off-swath fill, which runs diagonally
+  across every block seam. Peak RSS for that NDVI fell from 1945 MiB eager to
+  923 MiB block-wise, and to 685 MiB streaming to disk — the remainder there
+  being GDAL's own block cache, which defaults to 5% of RAM. Wall time on the
+  Sentinel-2 tile went from 23.1 s to 25.4 s, so the memory comes at about a
+  10% cost.
+
+### Changed
+
+- `standardize`, `normalize_percentile`, and the pixel statistics
+  (`get_maximum_pixel`, `get_minimum_pixel`, `get_mean_pixel`,
+  `get_percentile_pixel`) now stream. Each needs a statistic over every pixel
+  before it can rescale or locate anything, so each makes two bounded passes —
+  one streaming reduction to measure, one streaming pass to apply or to find
+  the pixel — instead of holding the band. The new reductions live in
+  `eeo.core.streaming`.
+- `get_percentile_pixel` and `normalize_percentile` measure integer rasters
+  exactly, from a streaming histogram with one counter per distinct value — no
+  binning, so the thresholds equal `numpy.percentile` rather than
+  approximating it. That covers every raw Sentinel-2 and Landsat band, and so
+  every raster large enough for the memory to matter. **Floating-point rasters
+  still read the band**, and say so: an exact percentile of float data is not a
+  running accumulation like a minimum or a mean, and has no finite set of
+  values to count, so it cannot be had in bounded memory. Returning an
+  approximation without saying so would have been worse.
+- `extract_value_at_coordinate` reads a 1x1 window instead of the whole band.
+  Sampling one point in a 10 m Sentinel-2 band no longer costs 241 MB.
+- Ties in the pixel statistics are broken by position rather than by block, so
+  the pixel reported is the first in row-major order — what `numpy.nanargmin`
+  would return — no matter how the raster was cut into blocks.
+- The normalizers now do their intermediate arithmetic in float64 whether or
+  not the raster declares nodata. Previously `mask_nodata` promoted to float64
+  only when substituting NaN for a declared sentinel, so a float32 raster was
+  rescaled in float32 or float64 depending on nothing but that. Output is
+  float32 either way.
+
+- Raster algebra (`add`, `subtract`, `multiply`, `divide`, `power`, `sqrt`,
+  `log`, `absolute`), every spectral index (`normalized_difference`, `ndvi`,
+  `ndwi`, `ndmi`, `ndbi`, `evi`, `savi`), and `normalize_min_max` now stream
+  block-wise instead of reading whole rasters into memory. Nothing to enable
+  and no API change: a raster under the block budget is simply one block, so
+  small rasters behave exactly as before. `standardize` and
+  `normalize_percentile` still read the full array — they need a statistic no
+  single pass can supply, which is the next piece of work.
+- `normalize_min_max` now reads every pixel twice: one streaming pass finds the
+  data range, a second rescales against it. Memory stays bounded by the block
+  in both, where before the whole raster was resident for both.
+- The engine is the single place the nodata & dtype contract is applied for
+  these ops, replacing three near-identical copies of "compute, mask, write to
+  a MemoryFile" in `eeo/ops/algebra.py`, `eeo/analysis/indices.py` and
+  `eeo/preprocessing/normalize.py`.
+- Op docstrings no longer carry the "reads the full array into memory" note,
+  which is no longer true of them; the guarantee is stated once in the
+  operations guide instead.
+
+### Fixed
+
+- **Chained operations on a full scene slowed from about a second per step to
+  minutes.** Every in-memory raster the library produced — each op result,
+  and every scene loader's output — was returned as an open writer, which
+  leaves its freshly written blocks *dirty* in GDAL's block cache. Each op in a
+  chain added another raster's worth, and once that outgrew the cache (5% of
+  RAM by default, so about 400 MB on an 8 GB laptop) GDAL had to flush dirty
+  blocks one band at a time, which for a pixel-interleaved GeoTIFF is
+  catastrophically slow. On a real 6-band, 5490x5490 Sentinel-2 stack with
+  default settings, `ds.add(5).add(5).multiply(2)` took 1.0 s, 147 s and
+  465 s per step on 0.4.1. It now takes about 1.3 s each: every in-memory
+  raster goes through `RasterioAdapter.write_in_memory` or
+  `RasterioAdapter.from_memory_file`, which close the writer and reopen the
+  result read-only. That costs one flush per op — about 0.6 s on that stack
+  for the first step of a chain. The opt-in real-scene test suite, which
+  chains ops over both downloaded products, went from 372 s and a 6.85 GB peak
+  to 181 s and 4.44 GB.
+- This predates the block-wise work: it was measured on `main` as released in
+  0.4.1, and was found only because a real-scene sweep of every method ran a
+  chain on a scene large enough to outgrow the cache. The same change moves
+  eight operations off `rasterio.io.MemoryFile` and onto the adapter, where
+  backend-specific code is meant to live.
+- `get_maximum_pixel` returned the **minimum** pixel of any unsigned band
+  containing a zero. The maximum was found by negating the band and taking a
+  minimum, and negating an unsigned integer wraps rather than changing sign —
+  `0` wraps to `0`, the smallest possible score, so a zero always won. Found
+  while giving the streamed version differential tests over several dtypes;
+  the existing fixtures all started at 1000, so nothing had caught it. Scoring
+  now happens in float64.
+- `normalize_percentile` documented a `ValueError` for
+  `lower_percentile >= upper_percentile` that NumPy never raised: an inverted
+  range silently produced an inverted stretch, and an empty one divided by
+  zero. Both are now refused with a `ValidationError`, as are percentiles
+  outside `[0, 100]` — which NumPy did catch, and which the histogram path
+  would otherwise have stopped catching.
+- A documentation error introduced with the engine: the output driver was
+  justified by "JP2 cannot be written", which is false — GDAL's `JP2OpenJPEG`
+  supports creation in the build we test against, and the test suite writes JP2
+  fixtures with it. Choosing the output driver rather than inheriting the
+  source's is still correct, because a driver records how a raster was *read*
+  and need not support creating one; the reasoning is now stated that way.
+
 ## [0.4.1] - 2026-09-08
 
 ### Added

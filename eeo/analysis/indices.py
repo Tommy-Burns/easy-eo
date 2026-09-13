@@ -27,12 +27,8 @@ here: any normalized-difference index can be expressed with it directly.
 import numpy as np
 import rasterio as rio
 
-from eeo.common import (
-    align_raster_to_target,
-    apply_nodata_contract,
-    get_nodata,
-    resolve_band_index,
-)
+from eeo.common import align_raster_to_target, resolve_band_index
+from eeo.core.blockwise import BlockSource, apply_blockwise
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import AlignmentError, ValidationError
@@ -57,15 +53,15 @@ def _safe_ratio(numerator, denominator):
     return np.where(denominator != 0, quotient, np.float32(0)).astype(rio.float32)
 
 
-def _resolve_band(ds, spec, *, auto_align, method):
-    """Resolve a band spec to ``(band_float32, band_raw, nodata)``.
+def _resolve_band(ds, spec, *, auto_align, method) -> BlockSource:
+    """Resolve a band spec to the :class:`BlockSource` that reads it.
 
     ``spec`` is a 1-based ``int`` band index into ``ds``, the ``str`` name of
     one of ``ds``'s bands, or a separate ``EEORasterDataset`` (its first band
     is used, aligned onto ``ds``'s grid when ``auto_align`` is True). Index and
     name specs both go through the shared resolver, so a string is always a
-    name and never an index. ``band_raw`` keeps its source dtype so the nodata
-    mask compares against the declared sentinel exactly.
+    name and never an index. The source reads the band in its own dtype, so
+    the nodata mask compares against the declared sentinel exactly.
     """
     if isinstance(spec, EEORasterDataset):
         other = spec
@@ -76,56 +72,35 @@ def _resolve_band(ds, spec, *, auto_align, method):
                 raise AlignmentError(
                     _ALIGN_MISMATCH.format(other=other.get_shape(), ds=ds.get_shape())
                 )
-        raw = other.get_band(1)
-        nodata = get_nodata(other)
-    elif isinstance(spec, (int, str)) and not isinstance(spec, bool):
-        raw = ds.get_band(resolve_band_index(ds, spec))
-        nodata = get_nodata(ds)
-    else:
-        raise ValidationError(
-            "band must be an EEORasterDataset, a 1-based int band index, or a "
-            f"band name; got {type(spec).__name__}"
-        )
-    return raw.astype(rio.float32), raw, nodata
+        return BlockSource.from_dataset(other, band=1)
+    if isinstance(spec, (int, str)) and not isinstance(spec, bool):
+        return BlockSource.from_dataset(ds, band=resolve_band_index(ds, spec))
+    raise ValidationError(
+        "band must be an EEORasterDataset, a 1-based int band index, or a "
+        f"band name; got {type(spec).__name__}"
+    )
 
 
 def _compute_index(ds, band_specs, formula, *, auto_align, method, name=None):
-    """Resolve band specs, apply ``formula``, and package the float32 result.
+    """Resolve band specs, apply ``formula`` block-wise, and package the result.
 
     ``band_specs`` is the ordered list of band specs; the first is the primary
-    band. ``formula`` maps the list of float32 band arrays to a 2D result. The
-    result is masked per the nodata contract (contagious across every band) and
-    returned as a single-band float32 ``EEORasterDataset`` whose band carries
-    ``name`` (unnamed when ``name`` is None).
+    band. ``formula`` maps the list of float32 band arrays to a 2D result, and
+    is called once per window rather than once over the whole scene, so an
+    index never holds more than a block of each band in memory. The result is
+    masked per the nodata contract (contagious across every band) and returned
+    as a single-band float32 ``EEORasterDataset`` whose band carries ``name``
+    (unnamed when ``name`` is None).
     """
     ds = ds.to_rasterio()
-    resolved = [
-        _resolve_band(ds, spec, auto_align=auto_align, method=method) for spec in band_specs
-    ]
-    floats = [band for band, _raw, _nodata in resolved]
-    operands = [(raw, nodata) for _band, raw, nodata in resolved]
-    primary_nodata = resolved[0][2]
+    sources = [_resolve_band(ds, spec, auto_align=auto_align, method=method) for spec in band_specs]
 
-    result = formula(floats)
+    def compute(*blocks):
+        # The formulas are written against float32 bands; the engine masks
+        # against these raw blocks, which keep their source dtype.
+        return formula([block.astype(rio.float32) for block in blocks])
 
-    index, out_nodata = apply_nodata_contract(
-        result, operands, fractional=True, ds_nodata=primary_nodata
-    )
-
-    data = index[np.newaxis, ...] if index.ndim == 2 else index
-    meta = ds.get_metadata().copy()
-    meta.update(
-        driver="GTiff",
-        dtype="float32",
-        nodata=out_nodata,
-        height=data.shape[-2],
-        width=data.shape[-1],
-        count=data.shape[0],
-    )
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(data)
-    result = EEORasterDataset.from_rasterio(out_ds)
+    result = apply_blockwise(ds, compute, sources=sources, fractional=True)
     if name is not None:
         result.set_band_name(1, name)
     return result
@@ -189,7 +164,6 @@ def normalized_difference(
 
     Notes
     -----
-    Reads both rasters fully into memory rather than streaming block-wise.
     Nodata pixels are masked before the ratio; separately, a zero denominator
     (``ds + other == 0``) is guarded by setting those pixels to 0.
 
@@ -205,38 +179,19 @@ def normalized_difference(
         else:
             raise AlignmentError(_ALIGN_MISMATCH.format(other=other.get_shape(), ds=ds.get_shape()))
 
-    ds_nodata = get_nodata(ds)
-    other_nodata = get_nodata(other)
-    a_raw = ds.read()
-    b_raw = other.read()
-    a = a_raw.astype(rio.float32)
-    b = b_raw.astype(rio.float32)
+    def difference(a_block, b_block):
+        # Masking is the engine's job and happens after this returns, so a
+        # masked pixel is NaN regardless of the ratio computed for it here.
+        a = a_block.astype(rio.float32)
+        b = b_block.astype(rio.float32)
+        return _safe_ratio(a - b, a + b)
 
-    nd = _safe_ratio(a - b, a + b)
-
-    # Mask nodata last so a masked pixel is NaN regardless of its ratio.
-    nd, out_nodata = apply_nodata_contract(
-        nd,
-        [(a_raw, ds_nodata), (b_raw, other_nodata)],
+    result = apply_blockwise(
+        ds,
+        difference,
+        sources=[BlockSource.from_dataset(ds), BlockSource.from_dataset(other)],
         fractional=True,
-        ds_nodata=ds_nodata,
     )
-
-    meta = ds.get_metadata().copy()
-    meta.update(
-        driver="GTiff",
-        dtype="float32",
-        nodata=out_nodata,
-        height=nd.shape[-2],
-        width=nd.shape[-1],
-        count=nd.shape[0],
-    )
-
-    memfile = rio.io.MemoryFile()
-    out_ds = memfile.open(**meta)
-    out_ds.write(nd)
-
-    result = EEORasterDataset.from_rasterio(out_ds)
     if name is not None:
         if result.get_count() != 1:
             raise ValidationError(
@@ -308,11 +263,6 @@ def ndvi(
     ValidationError
         If a band argument is not an ``EEORasterDataset``, an int index, or a
         band name, or if a band name is unknown or matches more than one band.
-
-    Notes
-    -----
-    Reads the required bands fully into memory rather than streaming
-    block-wise.
 
     Examples
     --------
@@ -393,9 +343,7 @@ def ndwi(
 
     Notes
     -----
-    Reads the required bands fully into memory rather than streaming
-    block-wise. This is McFeeters' water NDWI; the moisture variant is
-    :meth:`ndmi`.
+    This is McFeeters' water NDWI; the moisture variant is :meth:`ndmi`.
 
     Examples
     --------
@@ -475,8 +423,7 @@ def ndmi(
 
     Notes
     -----
-    Reads the required bands fully into memory rather than streaming
-    block-wise. Sentinel-2's SWIR1 (B11) is 20 m; pass ``auto_align=True``
+    Sentinel-2's SWIR1 (B11) is 20 m; pass ``auto_align=True``
     (the default) to resample it onto a 10 m NIR grid.
 
     Examples
@@ -558,8 +505,7 @@ def ndbi(
 
     Notes
     -----
-    Reads the required bands fully into memory rather than streaming
-    block-wise. Sentinel-2's SWIR1 (B11) is 20 m; pass ``auto_align=True``
+    Sentinel-2's SWIR1 (B11) is 20 m; pass ``auto_align=True``
     (the default) to resample it onto a 10 m NIR grid.
 
     Examples
@@ -648,11 +594,6 @@ def evi(
         If a band argument is not an ``EEORasterDataset``, an int index, or a
         band name, or if a band name is unknown or matches more than one band.
 
-    Notes
-    -----
-    Reads the required bands fully into memory rather than streaming
-    block-wise.
-
     Examples
     --------
     >>> evi = nir_ds.evi(red_ds, blue_ds)             # separate band rasters
@@ -739,11 +680,6 @@ def savi(
     ValidationError
         If a band argument is not an ``EEORasterDataset``, an int index, or a
         band name, or if a band name is unknown or matches more than one band.
-
-    Notes
-    -----
-    Reads the required bands fully into memory rather than streaming
-    block-wise.
 
     Examples
     --------

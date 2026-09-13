@@ -410,9 +410,9 @@ class EEORasterDataset:
         --------
         >>> rio_ds = ds.to_rasterio()
         """
-        # Detect by adapter type, not backend class: an op result's backend is
-        # a rasterio DatasetWriter, which a DatasetReader isinstance check
-        # would wrongly re-promote (full read + copy).
+        # Detect by adapter type, not backend class: a rasterio-backed dataset
+        # may wrap a DatasetWriter (via from_rasterio), which a DatasetReader
+        # isinstance check would wrongly re-promote (full read + copy).
         if isinstance(self._adapter, RasterioAdapter):
             return self
 

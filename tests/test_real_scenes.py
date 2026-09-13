@@ -1,17 +1,29 @@
-"""Quality-layer decoding checked against real downloaded products.
+"""Easy-EO checked against real downloaded products.
 
-The synthetic tests in ``test_quality_masks.py`` and ``test_qa_pixel.py`` pin
-the tables to what ESA and USGS publish. These check the same code against
-what the agencies actually ship, which is a different question: a table can be
-transcribed correctly and still be read against the wrong band, the wrong
-dtype, or a grid the loader resampled on the way in.
+Two things are verified here, both of which synthetic rasters cannot reach.
+
+**Quality-layer decoding.** The synthetic tests in ``test_quality_masks.py``
+and ``test_qa_pixel.py`` pin the tables to what ESA and USGS publish. These
+check the same code against what the agencies actually ship, which is a
+different question: a table can be transcribed correctly and still be read
+against the wrong band, the wrong dtype, or a grid the loader resampled on the
+way in.
+
+**Block-wise execution.** The engine's claim is that splitting a raster into
+blocks changes nothing about the answer. Synthetic tests make that claim over
+six-pixel rasters with tidy nodata; a real scene tests it over millions of
+pixels whose off-swath fill runs diagonally across every block seam, read
+through the formats and internal tiling the agencies actually ship — JP2 in
+1024-pixel tiles for Sentinel-2, a 256-pixel-tiled GeoTIFF for Landsat.
 
 The checks are invariants rather than fixed numbers, because they must hold
 for *any* scene the maintainer happens to have, not just for one. The
-strongest is that each single-bit Landsat flag must equal its own confidence
-field reading High: that one statement exercises all eight bit positions and
-all four two-bit field offsets against data neither we nor the test author
-wrote.
+strongest of the quality ones is that each single-bit Landsat flag must equal
+its own confidence field reading High: that one statement exercises all eight
+bit positions and all four two-bit field offsets against data neither we nor
+the test author wrote. The strongest of the block-wise ones needs no expected
+values at all — it recomputes the same NDVI eagerly and demands the two agree
+bit for bit.
 
 Opt in with ``--run-realdata``, pointing the environment variables at
 downloaded products::
@@ -27,6 +39,12 @@ import numpy as np
 import pytest
 
 import eeo
+from eeo.core.blockwise import (
+    BlockSource,
+    apply_blockwise,
+    block_windows,
+    resolve_block_shape,
+)
 from eeo.core.exceptions import ValidationError
 from eeo.preprocessing.quality import (
     QAConfidence,
@@ -313,3 +331,332 @@ class TestClearFractionOnRealScenes:
     def test_sentinel2_clear_fraction_is_high_on_a_clear_tile(self, sentinel2_scene):
         ds = eeo.load_sentinel2(str(sentinel2_scene), bands=["red", "scl"])
         assert ds.mask_clouds().clear_fraction() > 0.9
+
+
+# ---------------------------------------------------------------------------
+# Block-wise execution
+# ---------------------------------------------------------------------------
+
+
+def _ndvi(nir, red):
+    """NDVI over a pair of blocks, as a pixel-wise function of them alone.
+
+    Written once and handed to both the eager and the block-wise run, so the
+    only thing that differs between the two is whether it saw the scene whole
+    or a strip at a time.
+    """
+    nir = nir.astype(np.float32)
+    red = red.astype(np.float32)
+    total = nir + red
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(total != 0, (nir - red) / total, np.float32(0))
+
+
+def _eager_ndvi(ds):
+    """NDVI over the whole scene at once, with the nodata contract applied."""
+    red, nir = ds.read(1), ds.read(2)
+    result = _ndvi(nir, red).astype(np.float32)
+    nodata = ds.get_metadata()["nodata"]
+    if nodata is None:
+        return result
+    invalid = (red == nodata) | (nir == nodata)
+    return np.where(invalid, np.float32(np.nan), result)
+
+
+def _blockwise_ndvi(ds, **kwargs):
+    """NDVI over the same scene a block at a time, through the engine.
+
+    The caller owns the result and must close it: on a full Landsat scene it
+    is a quarter of a gigabyte of in-memory raster, and this module's tests
+    would otherwise accumulate one per test.
+    """
+    return apply_blockwise(
+        ds,
+        _ndvi,
+        sources=[BlockSource.from_dataset(ds, band=2), BlockSource.from_dataset(ds, band=1)],
+        fractional=True,
+        **kwargs,
+    )
+
+
+@pytest.fixture(scope="module")
+def sentinel2_red_nir(sentinel2_scene):
+    """Real Sentinel-2 red and NIR at 60 m, the cheapest genuine full tile.
+
+    60 m is the coarsest resolution the product carries, which keeps the tile
+    to 1830x1830 while still decoding real JP2 imagery over the real footprint.
+    """
+    return eeo.load_sentinel2(str(sentinel2_scene), bands=["red", "nir"], resolution=60)
+
+
+@pytest.fixture(scope="module")
+def landsat_red_nir(landsat_scene):
+    """Real Landsat red and NIR over the whole scene.
+
+    Loaded whole rather than through a ``bbox``, because the point is the
+    off-swath fill: a Landsat scene is rotated inside its bounding box, so
+    roughly a third of the grid is nodata arranged as four diagonal corners
+    that no block seam can avoid crossing.
+    """
+    return eeo.load_landsat(str(landsat_scene), bands=["red", "nir08"])
+
+
+@pytest.fixture(scope="module")
+def sentinel2_ndvi(sentinel2_red_nir):
+    """Block-wise NDVI over the Sentinel-2 tile, computed once for the module."""
+    result = _blockwise_ndvi(sentinel2_red_nir)
+    yield result
+    result.close()
+
+
+@pytest.fixture(scope="module")
+def landsat_ndvi(landsat_red_nir):
+    """Block-wise NDVI over the Landsat scene, computed once for the module."""
+    result = _blockwise_ndvi(landsat_red_nir)
+    yield result
+    result.close()
+
+
+#: ``(scene fixture, block-wise NDVI fixture)`` for each real product, so the
+#: checks that hold for both missions are stated once.
+BOTH_SCENES = [
+    pytest.param("sentinel2_red_nir", "sentinel2_ndvi", id="sentinel2"),
+    pytest.param("landsat_red_nir", "landsat_ndvi", id="landsat"),
+]
+
+
+class TestRealSceneBlockwise:
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_the_scene_needs_more_than_one_block(self, scene, ndvi, request):
+        # Without this the comparisons below could pass on a scene that fits
+        # in a single block, which would test nothing about seams.
+        ds = request.getfixturevalue(scene)
+        shape = ds.get_shape()
+        assert len(list(block_windows(shape, resolve_block_shape(shape)))) > 1
+
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_blocking_changes_nothing(self, scene, ndvi, request):
+        # The central invariant, and it needs no expected values: the same
+        # arithmetic over the same pixels must not care how they were grouped.
+        ds = request.getfixturevalue(scene)
+        blocked = request.getfixturevalue(ndvi)
+        assert np.array_equal(blocked.read()[0], _eager_ndvi(ds), equal_nan=True)
+
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_the_result_is_float32_on_the_scene_s_own_grid(self, scene, ndvi, request):
+        ds = request.getfixturevalue(scene)
+        blocked = request.getfixturevalue(ndvi)
+        assert blocked.read().dtype == np.float32
+        assert blocked.get_count() == 1
+        assert blocked.get_shape() == ds.get_shape()
+        assert blocked.get_crs() == ds.get_crs()
+        assert blocked.get_transform() == ds.get_transform()
+
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_the_output_driver_is_chosen_not_inherited(self, scene, ndvi, request):
+        # The source driver records how the scene was read; the output is a
+        # GTiff whichever format it came from.
+        assert request.getfixturevalue(ndvi).get_metadata()["driver"] == "GTiff"
+
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_the_nodata_mask_is_exactly_the_bands_fill(self, scene, ndvi, request):
+        # Nodata is contagious, so the invalid pixels of the result must be
+        # precisely the union of the two bands' fill — no seam may round the
+        # boundary, and no interior pixel may be dropped. This compares two
+        # masks of tens of millions of real pixels against each other, and it
+        # holds whatever the scene's fill happens to look like.
+        ds = request.getfixturevalue(scene)
+        blocked = request.getfixturevalue(ndvi)
+        fill = ds.get_metadata()["nodata"]
+        assert fill is not None
+
+        expected = (ds.read(1) == fill) | (ds.read(2) == fill)
+        assert np.isnan(blocked.get_metadata()["nodata"])
+        assert np.array_equal(np.isnan(blocked.read()[0]), expected)
+
+    def test_the_landsat_scene_really_does_straddle_its_swath_edge(self, landsat_red_nir):
+        # Keeps the check above from passing vacuously on the mission whose
+        # fill is the interesting case: a Landsat scene is rotated inside its
+        # bounding box, so a large minority of the grid is off-swath fill
+        # arranged as four diagonal corners no block seam can avoid crossing.
+        ds = landsat_red_nir
+        fill = (ds.read(1) == ds.get_metadata()["nodata"]).mean()
+        assert 0.05 < float(fill) < 0.95
+
+    def test_streaming_to_disk_gives_the_same_raster(
+        self, sentinel2_red_nir, sentinel2_ndvi, tmp_path
+    ):
+        # The route that keeps peak memory bounded by the block rather than by
+        # the output, which is the only one a larger-than-memory result can use.
+        path = tmp_path / "ndvi.tif"
+        streamed = _blockwise_ndvi(sentinel2_red_nir, save_path=path)
+        try:
+            assert path.exists()
+            assert np.array_equal(streamed.read(), sentinel2_ndvi.read(), equal_nan=True)
+        finally:
+            streamed.close()
+
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_the_ndvi_op_matches_the_engine_called_by_hand(self, scene, ndvi, request):
+        # Task 16.2 routed the spectral indices through the engine, so the
+        # chainable op and a hand-built apply_blockwise over the same bands are
+        # now the same computation and must agree on a real scene.
+        ds = request.getfixturevalue(scene)
+        nir_name = ds.band_names[1]
+        op_result = ds.ndvi("red", nir=nir_name)
+        try:
+            assert np.array_equal(
+                op_result.read(), request.getfixturevalue(ndvi).read(), equal_nan=True
+            )
+        finally:
+            op_result.close()
+
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_the_ndvi_op_matches_the_eager_reference(self, scene, ndvi, request):
+        # And against arithmetic written out longhand, which shares no code
+        # with the engine at all.
+        ds = request.getfixturevalue(scene)
+        op_result = ds.ndvi("red", nir=ds.band_names[1])
+        try:
+            assert np.array_equal(op_result.read()[0], _eager_ndvi(ds), equal_nan=True)
+            assert op_result.read().dtype == np.float32
+            assert np.isnan(op_result.get_metadata()["nodata"])
+        finally:
+            op_result.close()
+
+    def test_algebra_on_a_real_scene_keeps_its_fill(self, landsat_red_nir):
+        # The plain algebra path, on a scene where a third of the grid is fill.
+        # Stated as "fill stays fill" rather than "the fill mask is unchanged",
+        # because the two are not the same claim on a uint16 scene: doubling
+        # wraps, so a valid pixel of exactly 32768 lands on 0 — the fill value
+        # — of its own accord. This scene contains two of them. That is the
+        # documented integer behaviour, not a masking failure.
+        ds = landsat_red_nir
+        fill = ds.get_metadata()["nodata"]
+        source = ds.read()
+        was_fill = source == fill
+        doubled = ds.multiply(2)
+        try:
+            assert doubled.read().dtype == source.dtype
+            assert (doubled.read()[was_fill] == fill).all()
+            assert np.array_equal(doubled.read()[~was_fill], (source * 2)[~was_fill])
+        finally:
+            doubled.close()
+
+    def test_a_fractional_op_on_a_real_scene_cannot_wrap(self, landsat_red_nir):
+        # The float32 route past that wrap: divide is a fractional-result op,
+        # so the fill mask of the result is exactly the input's fill.
+        ds = landsat_red_nir
+        was_fill = ds.read() == ds.get_metadata()["nodata"]
+        halved = ds.divide(2)
+        try:
+            assert halved.read().dtype == np.float32
+            assert np.array_equal(np.isnan(halved.read()), was_fill)
+        finally:
+            halved.close()
+
+    @pytest.mark.parametrize("block_shape", [(1, 1830), (997, 503), (371, 371)])
+    def test_the_block_shape_does_not_change_the_answer(
+        self, sentinel2_red_nir, sentinel2_ndvi, block_shape
+    ):
+        # Shapes that divide the 1830-pixel tile unevenly, so the final row and
+        # column of blocks are truncated, plus one strip of a single row.
+        other = _blockwise_ndvi(sentinel2_red_nir, block_shape=block_shape)
+        try:
+            assert np.array_equal(other.read(), sentinel2_ndvi.read(), equal_nan=True)
+        finally:
+            other.close()
+
+
+class TestRealSceneStreamingStatistics:
+    """Global statistics over a real scene, against the whole-array answer.
+
+    These are the two-pass ops from 16.3. On the Landsat scene the reference
+    arrays are a few hundred megabytes, which is the point: the streamed form
+    never holds one, and the comparison only exists to prove it did not need to.
+    """
+
+    def test_the_streamed_range_is_exact(self, landsat_red_nir):
+        from eeo.core.streaming import valid_min_max
+
+        band = landsat_red_nir.read(1).astype(np.float64)
+        band[band == landsat_red_nir.get_metadata()["nodata"]] = np.nan
+        assert valid_min_max(landsat_red_nir, 1) == (
+            float(np.nanmin(band)),
+            float(np.nanmax(band)),
+        )
+
+    def test_the_streamed_mean_and_deviation_match(self, landsat_red_nir):
+        from eeo.core.streaming import valid_mean_std
+
+        band = landsat_red_nir.read(1).astype(np.float64)
+        band[band == landsat_red_nir.get_metadata()["nodata"]] = np.nan
+        mean, std = valid_mean_std(landsat_red_nir, 1)
+        # 40 million valid pixels of four-digit reflectance: the sum of squares
+        # would be past float64's significant digits, which is what Chan's
+        # parallel update avoids.
+        assert mean == pytest.approx(float(np.nanmean(band)), rel=1e-12)
+        assert std == pytest.approx(float(np.nanstd(band)), rel=1e-12)
+
+    @pytest.mark.parametrize("fixture", ["sentinel2_red_nir", "landsat_red_nir"])
+    def test_the_streamed_percentiles_are_exact_on_an_integer_scene(self, fixture, request):
+        from eeo.core.streaming import valid_percentiles
+
+        # Both missions ship integer imagery, so both take the histogram path
+        # and the answer must be exact, not close.
+        ds = request.getfixturevalue(fixture)
+        assert np.issubdtype(np.dtype(ds.get_metadata()["dtype"]), np.integer)
+        band = ds.read(1).astype(np.float64)
+        band[band == ds.get_metadata()["nodata"]] = np.nan
+
+        wanted = [2, 50, 98]
+        assert valid_percentiles(ds, wanted, 1) == pytest.approx(
+            list(np.nanpercentile(band, wanted)), rel=0, abs=0
+        )
+
+    def test_the_brightest_pixel_is_the_one_numpy_finds(self, landsat_red_nir):
+        band = landsat_red_nir.read(1).astype(np.float64)
+        band[band == landsat_red_nir.get_metadata()["nodata"]] = np.nan
+        peak = landsat_red_nir.get_maximum_pixel(return_position_as_pixel_coordinate=True)
+        row, col = np.unravel_index(int(np.nanargmax(band)), band.shape)
+        assert peak["value"] == float(np.nanmax(band))
+        assert peak["position"] == (int(row), int(col))
+
+    def test_the_darkest_pixel_is_found_despite_fill_sharing_its_value(self, landsat_red_nir):
+        # Landsat fill is 0, the smallest a uint16 can be, so the minimum
+        # search has to exclude fill rather than merely order values.
+        floor = landsat_red_nir.get_minimum_pixel()
+        assert floor["value"] > 0
+
+    def test_percentile_normalization_streams_and_stays_in_range(self, landsat_red_nir):
+        stretched = landsat_red_nir.normalize_percentile()
+        try:
+            values = stretched.read()
+            assert stretched.read().dtype == np.float32
+            assert np.nanmin(values) == pytest.approx(0.0)
+            assert np.nanmax(values) == pytest.approx(1.0)
+            # Fill is excluded from the thresholds and stays nodata after.
+            assert np.array_equal(
+                np.isnan(values), landsat_red_nir.read() == landsat_red_nir.get_metadata()["nodata"]
+            )
+        finally:
+            stretched.close()
+
+    def test_sampling_a_point_does_not_read_the_scene(self, landsat_red_nir, monkeypatch):
+        # The op used to read the whole band to index one pixel out of it —
+        # 129 MB on this scene, for one number.
+        reads = []
+        # The class is not exported at package level; users reach a dataset
+        # through the loaders.
+        dataset_class = eeo.core.core.EEORasterDataset
+        original = dataset_class.read
+
+        def spy(self, *args, **kwargs):
+            array = original(self, *args, **kwargs)
+            reads.append(np.shape(array))
+            return array
+
+        monkeypatch.setattr(dataset_class, "read", spy)
+        left, _bottom, _right, top = landsat_red_nir.get_bounds()
+        landsat_red_nir.extract_value_at_coordinate((left + 1000.0, top - 1000.0))
+        assert reads == [(1, 1)], f"expected one 1x1 read, got {reads}"

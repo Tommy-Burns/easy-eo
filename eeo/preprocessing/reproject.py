@@ -5,6 +5,7 @@ import rasterio as rio
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 from eeo.common import get_nodata, is_rasterio_backed, normalize_resampling_method
+from eeo.core.adapters import RasterioAdapter
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import BackendError, ValidationError
@@ -96,23 +97,22 @@ def reproject_raster(
     meta = ds.get_metadata()
     meta.update({"crs": crs, "transform": transform, "width": width, "height": height})
 
-    # return in-memory dataset
-    memfile = rio.io.MemoryFile()
-    dataset = memfile.open(**meta)
-
     # Pass the nodata value both ways so source nodata is not warped into
     # valid data and border pixels exposed by the warp are filled with it.
     nodata = get_nodata(ds)
-    for i in range(1, ds.get_count() + 1):
-        reproject(
-            source=rio.band(ds.ds, i),
-            destination=rio.band(dataset, i),
-            src_transform=ds.get_transform(),
-            src_crs=ds.get_crs(),
-            dst_transform=transform,
-            dst_crs=crs,
-            src_nodata=nodata,
-            dst_nodata=nodata,
-            resampling=resampling_method,
-        )
-    return EEORasterDataset.from_rasterio(dataset)
+
+    def warp_bands(dataset):
+        for i in range(1, ds.get_count() + 1):
+            reproject(
+                source=rio.band(ds.ds, i),
+                destination=rio.band(dataset, i),
+                src_transform=ds.get_transform(),
+                src_crs=ds.get_crs(),
+                dst_transform=transform,
+                dst_crs=crs,
+                src_nodata=nodata,
+                dst_nodata=nodata,
+                resampling=resampling_method,
+            )
+
+    return EEORasterDataset(adapter=RasterioAdapter.write_in_memory(meta, warp_bands))

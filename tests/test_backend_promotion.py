@@ -9,13 +9,11 @@ def test_numpy_backend_initial(numpy_backed_dataset):
     assert isinstance(backend, np.ndarray)
 
 
-# op results are DatasetWriter-backed; to_rasterio() must
-# recognise them as already-rasterio and return self instead of re-reading
-# the full array into a new MemoryFile.
+# to_rasterio() must recognise an op result as already rasterio-backed and
+# return self instead of re-reading the full array into a new MemoryFile.
 def test_to_rasterio_is_noop_on_op_result(single_band_float32):
     result = single_band_float32.add(1)
 
-    assert isinstance(result.ds, rasterio.io.DatasetWriter)
     assert result.to_rasterio() is result
 
 

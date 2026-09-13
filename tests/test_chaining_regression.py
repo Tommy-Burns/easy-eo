@@ -4,14 +4,17 @@ Two bugs made chaining onto a *derived* dataset fail:
 
 * backend detection. ``mosaic``, ``stack``, ``clip_raster_with_vector``,
   ``clip_raster_with_bbox``, and ``reproject_raster`` gated on
-  ``isinstance(backend, rio.DatasetReader)``. But the backend of any in-memory
-  result (an algebra op, ``to_rasterio()`` of a NumPy-backed dataset, a prior
-  clip/mosaic) is a ``rasterio.io.DatasetWriter``, which is *not* a
-  ``DatasetReader``. So e.g. ``ds.add(1).clip_raster_with_bbox(...)`` raised
-  ``TypeError`` even though the input was genuinely rasterio-backed. The bug
-  hid because the existing tests fed these ops freshly file-loaded datasets
-  (which really are ``DatasetReader``). These tests chain from a derived
-  dataset instead.
+  ``isinstance(backend, rio.DatasetReader)``. At the time, the backend of any
+  in-memory result was a ``rasterio.io.DatasetWriter``, which is *not* a
+  ``DatasetReader``, so e.g. ``ds.add(1).clip_raster_with_bbox(...)`` raised
+  ``TypeError`` even though the input was genuinely rasterio-backed. These
+  tests chain from a derived dataset instead of a freshly loaded one.
+
+  In-memory results are now reopened read-only (see
+  ``RasterioAdapter.write_in_memory``), so an op result no longer reproduces
+  that precondition. A writer-backed dataset can still reach the ops through
+  ``EEORasterDataset.from_rasterio``, though, so the guard is tested against
+  one built explicitly.
 
 * the ``eeo_raster_op`` decorator replaced any ``None`` return with
   ``self`` for chaining, so the bound ``ds.mosaic(other, save_path=...)``
@@ -20,10 +23,11 @@ Two bugs made chaining onto a *derived* dataset fail:
 """
 
 import geopandas as gpd
-from rasterio.io import DatasetReader
+from rasterio.io import DatasetReader, MemoryFile
 from shapely.geometry import box
 
 from eeo.common import is_rasterio_backed
+from eeo.core.core import EEORasterDataset
 
 
 def _inset_bbox(ds):
@@ -32,15 +36,24 @@ def _inset_bbox(ds):
     return (left + 10, bottom + 10, right - 10, top - 10)
 
 
-def test_derived_dataset_is_writer_backed_but_rasterio(single_band_float32):
-    """The precondition that used to trip the old guard.
+def test_a_writer_backed_dataset_is_still_rasterio_backed(single_band_float32):
+    """The precondition that used to trip the old guard, built explicitly.
 
-    A derived dataset's backend is a ``DatasetWriter`` (not a
-    ``DatasetReader``), yet it is genuinely rasterio-backed.
+    A dataset wrapping an open ``DatasetWriter`` (not a ``DatasetReader``) is
+    genuinely rasterio-backed, and must be recognised as such.
     """
-    derived = single_band_float32.add(1)
-    assert not isinstance(derived.ds, DatasetReader)
-    assert is_rasterio_backed(derived)
+    memfile = MemoryFile()
+    writer = memfile.open(**single_band_float32.get_metadata())
+    writer.write(single_band_float32.read())
+    try:
+        wrapped = EEORasterDataset.from_rasterio(writer)
+        assert not isinstance(wrapped.ds, DatasetReader)
+        assert is_rasterio_backed(wrapped)
+        clipped = wrapped.clip_raster_with_bbox(_inset_bbox(wrapped))
+        assert clipped.get_width() > 0
+    finally:
+        writer.close()
+        memfile.close()
 
 
 def test_chain_clip_bbox_on_derived(single_band_float32):
