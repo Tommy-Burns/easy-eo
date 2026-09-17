@@ -21,6 +21,27 @@ are called out under a **Breaking** heading.
   now installs the `lazy` extra at its lower bounds (with numpy 1.26,
   rasterio 1.4, xarray 2024.7 and rioxarray 0.17 on Python 3.10), and the test
   matrix and the monthly latest-dependencies run install it too.
+- A lazy, dask-chunked backend: `load_raster(path, chunks=...)` opens the file
+  as a `rioxarray.open_rasterio` DataArray behind the new `XarrayAdapter`
+  instead of with rasterio. Opening and every metadata accessor compute
+  nothing; `read()` computes only the bands and window requested, so a window
+  of a scene larger than memory stays bounded; `save_raster()` computes and
+  writes one chunk at a time. `chunks` takes `"auto"`, one int, or a dict over
+  `"band"`/`"y"`/`"x"`, and is validated before anything is imported. Leaving
+  it out keeps the rasterio backend, so no existing call changes.
+- Metadata on the lazy backend matches the rasterio backend's exactly —
+  including nodata reported as a float and band descriptions read back as
+  names — checked on synthetic rasters and on a real Landsat 9 band
+  (8081 x 7991), whose full read, windowed reads and saved file are identical
+  across both backends.
+- Operations do not yet run on the lazy backend directly: they promote to
+  rasterio first, which reads the whole raster into memory.
+
+### Changed
+
+- `load_raster` now reports an unreadable file as "could not be opened as a
+  raster" rather than "... as a rasterio dataset", since it may no longer be
+  rasterio that opens it.
 
 ## [0.4.2] - 2026-09-13
 
