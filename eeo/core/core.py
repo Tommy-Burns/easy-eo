@@ -12,10 +12,20 @@ from rasterio import CRS
 from rasterio.coords import BoundingBox
 from rasterio.transform import Affine
 
-from eeo.common import is_rasterio_backed, mask_nodata, resolve_band_index
-from eeo.core.adapters import BaseRasterAdapter, NumpyRasterioAdapter, RasterioAdapter
+from eeo.common import (
+    is_rasterio_backed,
+    mask_nodata,
+    promote_for_decimated_read,
+    resolve_band_index,
+)
+from eeo.core.adapters import (
+    BaseRasterAdapter,
+    NumpyRasterioAdapter,
+    RasterioAdapter,
+    XarrayAdapter,
+)
 from eeo.core.exceptions import ValidationError
-from eeo.core.types import StrPath
+from eeo.core.types import ChunkSpec, StrPath
 
 # Approximate (decimated) statistics never read more than this many pixels per
 # side; a larger raster is decimated to fit, served from overviews when present.
@@ -134,8 +144,12 @@ def _band_stats_line(
 def _stats_lines(ds: EEORasterDataset, mode: str) -> list[str]:
     """Build the statistics block of ``describe`` (may read pixel data)."""
     out_shape = None
-    if mode == "approx" and is_rasterio_backed(ds):
-        out_shape = _decimated_stats_shape(ds.get_shape(), _STATS_DECIMATION_CAP)
+    # Only the rasterio backend reads decimated, and a lazy dataset reaches it
+    # for free. Without this, "approx" on a lazy scene read every pixel of it
+    # — the opposite of what asking for approximate statistics means.
+    source = promote_for_decimated_read(ds) if mode == "approx" else ds
+    if mode == "approx" and is_rasterio_backed(source):
+        out_shape = _decimated_stats_shape(source.get_shape(), _STATS_DECIMATION_CAP)
     approximate = out_shape is not None
 
     if approximate:
@@ -151,7 +165,9 @@ def _stats_lines(ds: EEORasterDataset, mode: str) -> list[str]:
 
     lines = ["", f"  {'statistics':<{width}} : {header}"]
     for band_idx in range(1, ds.get_count() + 1):
-        array = ds.read(band_idx, out_shape=out_shape) if approximate else ds.get_band(band_idx)
+        array = (
+            source.read(band_idx, out_shape=out_shape) if approximate else source.get_band(band_idx)
+        )
         lines.append(_band_stats_line(ds, band_idx, array, approximate, width))
     return lines
 
@@ -227,7 +243,8 @@ def _resolve_initial_band_names(adapter: BaseRasterAdapter, band_names) -> list[
 class EEORasterDataset:
     """A chainable raster dataset backed by a swappable adapter.
 
-    Wraps a raster (rasterio- or NumPy-backed through ``BaseRasterAdapter``)
+    Wraps a raster (rasterio-, NumPy- or lazily xarray-backed through
+    ``BaseRasterAdapter``)
     and exposes metadata accessors plus the chainable operations bound by the
     ``@eeo_raster_op`` / ``@eeo_raster_viz`` decorators. Construct one with
     :func:`eeo.load_raster`, :func:`eeo.load_array`, or the ``from_*``
@@ -306,20 +323,28 @@ class EEORasterDataset:
     # Constructors
     # ========================
     @classmethod
-    def from_path(cls, path: StrPath) -> EEORasterDataset:
-        """Open a raster file as a rasterio-backed dataset.
+    def from_path(cls, path: StrPath, *, chunks: ChunkSpec | None = None) -> EEORasterDataset:
+        """Open a raster file without reading its pixels.
 
         Parameters
         ----------
         path : str or path-like
             Path to a GDAL-readable raster.
+        chunks : str or int or dict or None, default None
+            ``None`` opens the file with rasterio. Anything else opens it on
+            the lazy, dask-chunked xarray backend with these chunk sizes (see
+            :func:`eeo.load_raster`); that needs the ``lazy`` extra.
 
         Returns
         -------
         EEORasterDataset
-            Rasterio-backed dataset; pixels are read lazily.
+            Rasterio-backed dataset, or xarray-backed when ``chunks`` is given.
         """
-        adapter = RasterioAdapter.from_path(path)
+        adapter: BaseRasterAdapter
+        if chunks is None:
+            adapter = RasterioAdapter.from_path(path)
+        else:
+            adapter = XarrayAdapter.from_path(path, chunks=chunks)
         return cls(adapter=adapter, path=path)
 
     @classmethod
@@ -402,9 +427,12 @@ class EEORasterDataset:
 
         Notes
         -----
-        Promoting a NumPy-backed dataset reads its full array into an
-        in-memory rasterio ``MemoryFile``. Band names, ``timestamp``, and
-        ``attrs`` are carried onto the promoted dataset.
+        A lazy dataset opened from a file is promoted by reopening that file
+        with rasterio, which reads no pixels at all — so operations, which all
+        promote first, cost a lazy dataset nothing. Any other NumPy- or
+        xarray-backed dataset reads its full array into an in-memory rasterio
+        ``MemoryFile``. Band names, ``timestamp``, and ``attrs`` are carried
+        onto the promoted dataset.
 
         Examples
         --------
@@ -415,6 +443,19 @@ class EEORasterDataset:
         # isinstance check would wrongly re-promote (full read + copy).
         if isinstance(self._adapter, RasterioAdapter):
             return self
+
+        # A lazy dataset knows the file it was opened from, and rasterio can
+        # open that file itself. Reading the pixels only to write them into a
+        # MemoryFile would be a full copy of a raster that is already on disk,
+        # and would defeat opening it lazily in the first place.
+        if isinstance(self._adapter, XarrayAdapter) and self._adapter.source_path is not None:
+            return EEORasterDataset(
+                adapter=RasterioAdapter.from_path(self._adapter.source_path),
+                path=self.path,
+                timestamp=self.timestamp,
+                attrs=self.attrs,
+                band_names=self.band_names,
+            )
 
         array = self.read()
         transform = self.get_transform()
@@ -516,7 +557,9 @@ class EEORasterDataset:
 
         For the rasterio backend, the arguments are
         ``rasterio.DatasetReader.read`` options (band indexes, ``out_shape``,
-        ``window``, ...). The NumPy backend returns its stored array.
+        ``window``, ...). The NumPy backend returns its stored array. The lazy
+        xarray backend accepts band indexes and ``window`` and computes only
+        that selection.
 
         Returns
         -------
@@ -822,11 +865,11 @@ class EEORasterDataset:
     # ========================
     @property
     def ds(self):
-        """Underlying backend object (rasterio dataset or NumPy array).
+        """Underlying backend object (rasterio dataset, NumPy array or DataArray).
 
         Returns
         -------
-        rasterio.io.DatasetReader or numpy.ndarray
+        rasterio.io.DatasetReader or numpy.ndarray or xarray.DataArray
             The raw backend. Accessing it bypasses Easy-EO's abstractions; use
             the typed accessors where possible.
         """

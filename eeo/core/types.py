@@ -8,6 +8,10 @@ from typing import Literal
 #: handles returned by :func:`eeo.datasets.load_sample_dataset`, ...).
 StrPath = str | os.PathLike
 
+#: Chunk sizes for the lazy backend: ``"auto"``, one int for every dimension,
+#: or a dict mapping ``"band"``, ``"y"`` and/or ``"x"`` to an int or ``"auto"``.
+ChunkSpec = Literal["auto"] | int | dict[str, int | Literal["auto"]]
+
 # Auto-complete literal strings for rasterio resampling
 ResamplingMethod = Literal[
     "nearest",

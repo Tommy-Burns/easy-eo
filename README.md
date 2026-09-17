@@ -191,13 +191,14 @@ conda install -c conda-forge easy-eo
 ```
 
 That is everything you need for the core: raster I/O, algebra, indices,
-preprocessing and plotting. Two heavier integrations are kept separate, so you
-only install them if you use them:
+preprocessing and plotting. Three heavier integrations are kept separate, so
+you only install them if you use them:
 
 | Adds | pip | conda |
 | --- | --- | --- |
 | `stac_search()` and loading scenes from STAC catalogs | `pip install "easy-eo[stac]"` | `conda install -c conda-forge easy-eo pystac-client planetary-computer` |
 | `to_xarray()` / `from_xarray()` | `pip install "easy-eo[xarray]"` | `conda install -c conda-forge easy-eo xarray rioxarray` |
+| Opening a raster lazily (`load_raster(path, chunks=...)`), including over HTTP | `pip install "easy-eo[lazy]"` | `conda install -c conda-forge easy-eo xarray rioxarray dask-core` |
 
 pip extras compose - `pip install "easy-eo[stac,xarray]"` installs both. conda
 has no concept of extras, so `conda install "easy-eo[stac]"` is not a valid

@@ -9,6 +9,100 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- New optional `lazy` extra (`pip install "easy-eo[lazy]"`): xarray, rioxarray
+  and `dask[array]`, the dependencies of the dask-chunked backend described
+  below. The conda equivalent is `conda install -c conda-forge easy-eo xarray
+  rioxarray dask-core` — `dask-core`, not `dask`, which on conda-forge is a metapackage
+  that also installs `distributed` and `bokeh`.
+- The floor `dask>=2024.8` is tested, not assumed: CI's minimum-versions job
+  now installs the `lazy` extra at its lower bounds (with numpy 1.26,
+  rasterio 1.4, xarray 2024.7 and rioxarray 0.17 on Python 3.10), and the test
+  matrix and the monthly latest-dependencies run install it too.
+- A lazy, dask-chunked backend: `load_raster(path, chunks=...)` opens the file
+  as a `rioxarray.open_rasterio` DataArray behind the new `XarrayAdapter`
+  instead of with rasterio. Opening and every metadata accessor compute
+  nothing; `read()` computes only the bands and window requested, so a window
+  of a scene larger than memory stays bounded; `save_raster()` computes and
+  writes one chunk at a time. `chunks` takes `"auto"`, one int, or a dict over
+  `"band"`/`"y"`/`"x"`, and is validated before anything is imported. Leaving
+  it out keeps the rasterio backend, so no existing call changes.
+- Metadata on the lazy backend matches the rasterio backend's exactly —
+  including nodata reported as a float and band descriptions read back as
+  names — checked on synthetic rasters and on a real Landsat 9 band
+  (8081 x 7991), whose full read, windowed reads and saved file are identical
+  across both backends.
+- Every operation now runs on a lazy dataset without reading it. A lazy
+  dataset opened from a file is promoted to the rasterio backend by reopening
+  that file rather than by reading its pixels, so the promotion every
+  operation performs costs nothing and the block-wise engine then streams from
+  the file as it always has. Audited by calling all 33 bound operations and
+  plots on a lazy dataset: 30 now compute nothing at all through dask.
+- `mosaic`, `stack`, `clip_raster_with_vector`, `clip_raster_with_bbox` and
+  `reproject_raster` accept a lazy dataset instead of refusing it. They still
+  refuse a NumPy-backed one, whose pixels are already in memory and which
+  promotion would therefore copy — that stays the caller's decision.
+- Plots decimate a large lazy raster rather than reading it whole, as they
+  already did for rasterio-backed ones.
+- Three operations still read a lazy raster in full, each because it reads in
+  full on every backend, not because of the backend: `stack` (it builds one
+  in-memory array by definition), `clear_fraction` and `plot_histogram`.
+- `load_raster` opens a raster GDAL can reach, not only a local file: an
+  `http(s)`, `s3`, `gs` or `az` URL, or a virtual path such as
+  `/vsizip/products.zip/band.tif`. A remote raster is read in place over HTTP
+  range requests, on either backend; nothing is downloaded whole. Measured on
+  a 5.6 MB cloud-optimized GeoTIFF served locally: opening it lazily and
+  reading its metadata fetched 32 KiB in two requests, one 256 x 256 window
+  cost 288 KiB in one request, and the whole raster came to 4 MB in 15. A
+  remote open runs under GDAL settings tuned for object stores
+  (`eeo.core.remote.GDAL_HTTP_ENV`), which the STAC loader already used.
+- WP-17's acceptance test: a full-scene NDVI inside a process whose memory is
+  hard-capped with `RLIMIT_AS`, on both backends. On an 8000 x 8000 two-band
+  scene (268 MB) the streamed form peaks at about 490 MiB and runs under a
+  900 MiB cap, while the same arithmetic done whole-array does not fit in what
+  streaming needed plus 300 MiB — the test asserts both halves, so streaming
+  that stopped buying anything would be noticed. The comparison is measured
+  against the streamed run rather than against a fixed number, because
+  `RLIMIT_AS` limits address space and how much of it an interpreter reserves
+  varies by version. Repeated on both real products at their
+  finest resolution (a 10980 x 10980 Sentinel-2 pair and a full Landsat 9
+  scene), where the result is also checked pixel for pixel against NumPy.
+- Every other public call — 44 of them, from algebra and the indices through
+  clipping, reprojection, statistics, masking, saving and the plots — is run
+  on both real products inside the same cap, each in its own process.
+- New guide: "Working with Large Rasters" — what streams by default, where a
+  chain stops being bounded and how to keep it bounded, what the lazy backend
+  does and does not buy, and a table of every call that holds a whole raster,
+  with measured figures throughout.
+- `BlockSource.from_dataset(ds, band=...)` accepts a band name as well as an
+  index, as every other band argument in the library does. It is the entry
+  point for running your own function block-wise, so the guide's examples read
+  `band="nir"` rather than `band=2`.
+- The `lazy` extra is listed in the README and getting-started install tables,
+  now that it enables something.
+
+### Fixed
+
+- `chunks="auto"` no longer emits a deprecation warning on Python 3.10 and
+  3.11. rioxarray resolves `"auto"` into a dimension-order tuple and hands it
+  to `DataArray.chunk`, which xarray deprecated; the versions that stopped
+  doing so require Python 3.12, so on 3.10 and 3.11 nothing downstream could
+  avoid it. Easy-EO now resolves `"auto"` itself — to the same block-aligned
+  sizes, asserted against rioxarray's own — and passes a dict.
+- `describe(stats="approx")` read every pixel of a lazy dataset instead of
+  taking a decimated read: the decimation was only wired up for the rasterio
+  backend, so asking for approximate statistics on a lazily-opened scene did
+  the most expensive thing available. On an 8000 x 8000 band it read
+  8000 x 8000 where it now reads 1024 x 1024. Found by running every public
+  call against both real products inside a memory cap.
+
+### Changed
+
+- `load_raster` now reports an unreadable file as "could not be opened as a
+  raster" rather than "... as a rasterio dataset", since it may no longer be
+  rasterio that opens it.
+
 ## [0.4.2] - 2026-09-13
 
 ### Added

@@ -18,6 +18,10 @@ EXTRA_MODULES = [
     ("planetary_computer", "stac"),
     ("xarray", "xarray"),
     ("rioxarray", "xarray"),
+    ("xarray", "lazy"),
+    ("rioxarray", "lazy"),
+    ("dask", "lazy"),
+    ("dask.array", "lazy"),
 ]
 
 # `dev` is tooling, not a runtime feature: it is never passed to
@@ -59,7 +63,8 @@ def test_import_optional_returns_installed_module():
 def test_extra_module_is_importable_or_raises_helpful_error(module, extra):
     """Whether or not the extra is installed, the outcome is documented."""
     purpose = f"the {extra} extra"
-    if importlib.util.find_spec(module) is not None:
+    # find_spec on a submodule imports its parent, which raises if that is absent.
+    if importlib.util.find_spec(module.split(".")[0]) is not None:
         assert import_optional(module, extra=extra, purpose=purpose) is not None
         return
 
@@ -201,9 +206,9 @@ def test_an_unmapped_extra_falls_back_to_the_pip_hint(monkeypatch, by_conda):
     monkeypatch.setattr(_optional, "_installed_by_conda", lambda: by_conda)
 
     with pytest.raises(eeo.MissingDependencyError) as excinfo:
-        import_optional("eeo_not_a_real_package", extra="lazy", purpose="lazy backend")
+        import_optional("eeo_not_a_real_package", extra="unmapped", purpose="a feature")
 
-    assert "pip install 'easy-eo[lazy]'" in str(excinfo.value)
+    assert "pip install 'easy-eo[unmapped]'" in str(excinfo.value)
 
 
 def test_every_declared_extra_has_conda_package_names():

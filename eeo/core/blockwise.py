@@ -25,6 +25,7 @@ from rasterio.windows import Window
 from eeo.common import (
     apply_nodata_mask,
     get_nodata,
+    resolve_band_index,
     resolve_output_dtype,
     resolve_output_nodata,
 )
@@ -86,7 +87,7 @@ class BlockSource:
         self.nodata = nodata
 
     @classmethod
-    def from_dataset(cls, ds: EEORasterDataset, *, band: int | None = None) -> BlockSource:
+    def from_dataset(cls, ds: EEORasterDataset, *, band: int | str | None = None) -> BlockSource:
         """Wrap a raster operand, promoting it to the rasterio backend.
 
         Promotion matters for correctness, not just speed: the NumPy adapter's
@@ -97,15 +98,25 @@ class BlockSource:
         ----------
         ds : EEORasterDataset
             Raster operand.
-        band : int or None, default None
-            1-based band index to read, or None to read every band.
+        band : int or str or None, default None
+            1-based band index or band name to read, or None to read every
+            band. A name is resolved as it is everywhere else a band is
+            addressed.
 
         Returns
         -------
         BlockSource
             Source reading ``ds`` one window at a time.
+
+        Raises
+        ------
+        IndexError
+            If an int index is outside the range of available bands.
+        ValidationError
+            If a name is unknown or declared on more than one band.
         """
-        return cls(dataset=ds.to_rasterio(), band=band, value=None, nodata=get_nodata(ds))
+        index = None if band is None else resolve_band_index(ds, band)
+        return cls(dataset=ds.to_rasterio(), band=index, value=None, nodata=get_nodata(ds))
 
     @classmethod
     def from_scalar(cls, value: float) -> BlockSource:

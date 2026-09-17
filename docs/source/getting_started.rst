@@ -69,6 +69,11 @@ Several extras can be installed at once: ``pip install "easy-eo[stac,xarray]"``.
       - Converting between an :class:`~eeo.core.EEORasterDataset` and a
         georeferenced :class:`xarray.DataArray`, to hand data to the wider
         xarray ecosystem and back — see :doc:`user_guide/xarray_interop`
+    * - ``lazy``
+      - ``xarray``, ``rioxarray``, ``dask``
+      - Opening a raster without reading it: a dask-chunked view whose reads
+        are bounded to the bands and windows you ask for, including rasters
+        read over HTTP — see :doc:`user_guide/large_rasters`
 
 .. _extras-package-manager:
 
@@ -97,6 +102,9 @@ Install the same packages by name instead:
     * - ``xarray``
       - ``pip install "easy-eo[xarray]"``
       - ``conda install -c conda-forge easy-eo xarray rioxarray``
+    * - ``lazy``
+      - ``pip install "easy-eo[lazy]"``
+      - ``conda install -c conda-forge easy-eo xarray rioxarray dask-core``
 
 .. warning::
 

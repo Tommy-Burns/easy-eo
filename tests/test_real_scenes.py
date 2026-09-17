@@ -25,6 +25,13 @@ the test author wrote. The strongest of the block-wise ones needs no expected
 values at all — it recomputes the same NDVI eagerly and demands the two agree
 bit for bit.
 
+**The lazy backend.** The xarray adapter must report the same metadata and
+return the same pixels as rasterio for the same file. Synthetic GeoTIFFs cannot
+show that for a JP2 decoded through ``/vsizip/``, or for a real product's nodata
+and internal tiling, and those are what a user will point it at.
+
+Every check that applies to both missions runs on both products.
+
 Opt in with ``--run-realdata``, pointing the environment variables at
 downloaded products::
 
@@ -37,6 +44,8 @@ Nothing here downloads anything; the products must already be on disk.
 
 import numpy as np
 import pytest
+import rasterio as rio
+from rasterio.windows import Window
 
 import eeo
 from eeo.core.blockwise import (
@@ -425,6 +434,13 @@ BOTH_SCENES = [
 ]
 
 
+#: The scene fixture of each real product, for checks that need no NDVI.
+BOTH_SCENE_FIXTURES = [
+    pytest.param("sentinel2_red_nir", id="sentinel2"),
+    pytest.param("landsat_red_nir", id="landsat"),
+]
+
+
 class TestRealSceneBlockwise:
     @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
     def test_the_scene_needs_more_than_one_block(self, scene, ndvi, request):
@@ -483,16 +499,17 @@ class TestRealSceneBlockwise:
         fill = (ds.read(1) == ds.get_metadata()["nodata"]).mean()
         assert 0.05 < float(fill) < 0.95
 
-    def test_streaming_to_disk_gives_the_same_raster(
-        self, sentinel2_red_nir, sentinel2_ndvi, tmp_path
-    ):
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    def test_streaming_to_disk_gives_the_same_raster(self, scene, ndvi, request, tmp_path):
         # The route that keeps peak memory bounded by the block rather than by
         # the output, which is the only one a larger-than-memory result can use.
         path = tmp_path / "ndvi.tif"
-        streamed = _blockwise_ndvi(sentinel2_red_nir, save_path=path)
+        streamed = _blockwise_ndvi(request.getfixturevalue(scene), save_path=path)
         try:
             assert path.exists()
-            assert np.array_equal(streamed.read(), sentinel2_ndvi.read(), equal_nan=True)
+            assert np.array_equal(
+                streamed.read(), request.getfixturevalue(ndvi).read(), equal_nan=True
+            )
         finally:
             streamed.close()
 
@@ -524,14 +541,15 @@ class TestRealSceneBlockwise:
         finally:
             op_result.close()
 
-    def test_algebra_on_a_real_scene_keeps_its_fill(self, landsat_red_nir):
-        # The plain algebra path, on a scene where a third of the grid is fill.
+    @pytest.mark.parametrize("scene", BOTH_SCENE_FIXTURES)
+    def test_algebra_on_a_real_scene_keeps_its_fill(self, scene, request):
+        # The plain algebra path, on real fill (a third of the Landsat grid).
         # Stated as "fill stays fill" rather than "the fill mask is unchanged",
         # because the two are not the same claim on a uint16 scene: doubling
         # wraps, so a valid pixel of exactly 32768 lands on 0 — the fill value
-        # — of its own accord. This scene contains two of them. That is the
-        # documented integer behaviour, not a masking failure.
-        ds = landsat_red_nir
+        # — of its own accord. The Landsat scene contains two of them. That is
+        # the documented integer behaviour, not a masking failure.
+        ds = request.getfixturevalue(scene)
         fill = ds.get_metadata()["nodata"]
         source = ds.read()
         was_fill = source == fill
@@ -543,10 +561,11 @@ class TestRealSceneBlockwise:
         finally:
             doubled.close()
 
-    def test_a_fractional_op_on_a_real_scene_cannot_wrap(self, landsat_red_nir):
+    @pytest.mark.parametrize("scene", BOTH_SCENE_FIXTURES)
+    def test_a_fractional_op_on_a_real_scene_cannot_wrap(self, scene, request):
         # The float32 route past that wrap: divide is a fractional-result op,
         # so the fill mask of the result is exactly the input's fill.
-        ds = landsat_red_nir
+        ds = request.getfixturevalue(scene)
         was_fill = ds.read() == ds.get_metadata()["nodata"]
         halved = ds.divide(2)
         try:
@@ -555,15 +574,20 @@ class TestRealSceneBlockwise:
         finally:
             halved.close()
 
-    @pytest.mark.parametrize("block_shape", [(1, 1830), (997, 503), (371, 371)])
-    def test_the_block_shape_does_not_change_the_answer(
-        self, sentinel2_red_nir, sentinel2_ndvi, block_shape
-    ):
-        # Shapes that divide the 1830-pixel tile unevenly, so the final row and
-        # column of blocks are truncated, plus one strip of a single row.
-        other = _blockwise_ndvi(sentinel2_red_nir, block_shape=block_shape)
+    @pytest.mark.parametrize(("scene", "ndvi"), BOTH_SCENES)
+    @pytest.mark.parametrize("block_shape", ["strip", (997, 503), (371, 371)])
+    def test_the_block_shape_does_not_change_the_answer(self, scene, ndvi, block_shape, request):
+        # Shapes that divide both scenes (1830x1830 and 8081x7991) unevenly, so
+        # the final row and column of blocks are truncated, plus full-width
+        # strips of a single row.
+        ds = request.getfixturevalue(scene)
+        if block_shape == "strip":
+            block_shape = (1, ds.get_width())
+        other = _blockwise_ndvi(ds, block_shape=block_shape)
         try:
-            assert np.array_equal(other.read(), sentinel2_ndvi.read(), equal_nan=True)
+            assert np.array_equal(
+                other.read(), request.getfixturevalue(ndvi).read(), equal_nan=True
+            )
         finally:
             other.close()
 
@@ -576,35 +600,41 @@ class TestRealSceneStreamingStatistics:
     never holds one, and the comparison only exists to prove it did not need to.
     """
 
-    def test_the_streamed_range_is_exact(self, landsat_red_nir):
+    @pytest.mark.parametrize("scene", BOTH_SCENE_FIXTURES)
+    def test_the_streamed_range_is_exact(self, scene, request):
         from eeo.core.streaming import valid_min_max
 
-        band = landsat_red_nir.read(1).astype(np.float64)
-        band[band == landsat_red_nir.get_metadata()["nodata"]] = np.nan
-        assert valid_min_max(landsat_red_nir, 1) == (
+        ds = request.getfixturevalue(scene)
+
+        band = ds.read(1).astype(np.float64)
+        band[band == ds.get_metadata()["nodata"]] = np.nan
+        assert valid_min_max(ds, 1) == (
             float(np.nanmin(band)),
             float(np.nanmax(band)),
         )
 
-    def test_the_streamed_mean_and_deviation_match(self, landsat_red_nir):
+    @pytest.mark.parametrize("scene", BOTH_SCENE_FIXTURES)
+    def test_the_streamed_mean_and_deviation_match(self, scene, request):
         from eeo.core.streaming import valid_mean_std
 
-        band = landsat_red_nir.read(1).astype(np.float64)
-        band[band == landsat_red_nir.get_metadata()["nodata"]] = np.nan
-        mean, std = valid_mean_std(landsat_red_nir, 1)
-        # 40 million valid pixels of four-digit reflectance: the sum of squares
-        # would be past float64's significant digits, which is what Chan's
-        # parallel update avoids.
+        ds = request.getfixturevalue(scene)
+
+        band = ds.read(1).astype(np.float64)
+        band[band == ds.get_metadata()["nodata"]] = np.nan
+        mean, std = valid_mean_std(ds, 1)
+        # Up to 40 million valid pixels of four-digit reflectance: the sum of
+        # squares would be past float64's significant digits, which is what
+        # Chan's parallel update avoids.
         assert mean == pytest.approx(float(np.nanmean(band)), rel=1e-12)
         assert std == pytest.approx(float(np.nanstd(band)), rel=1e-12)
 
-    @pytest.mark.parametrize("fixture", ["sentinel2_red_nir", "landsat_red_nir"])
-    def test_the_streamed_percentiles_are_exact_on_an_integer_scene(self, fixture, request):
+    @pytest.mark.parametrize("scene", BOTH_SCENE_FIXTURES)
+    def test_the_streamed_percentiles_are_exact_on_an_integer_scene(self, scene, request):
         from eeo.core.streaming import valid_percentiles
 
         # Both missions ship integer imagery, so both take the histogram path
         # and the answer must be exact, not close.
-        ds = request.getfixturevalue(fixture)
+        ds = request.getfixturevalue(scene)
         assert np.issubdtype(np.dtype(ds.get_metadata()["dtype"]), np.integer)
         band = ds.read(1).astype(np.float64)
         band[band == ds.get_metadata()["nodata"]] = np.nan
@@ -614,37 +644,43 @@ class TestRealSceneStreamingStatistics:
             list(np.nanpercentile(band, wanted)), rel=0, abs=0
         )
 
-    def test_the_brightest_pixel_is_the_one_numpy_finds(self, landsat_red_nir):
-        band = landsat_red_nir.read(1).astype(np.float64)
-        band[band == landsat_red_nir.get_metadata()["nodata"]] = np.nan
-        peak = landsat_red_nir.get_maximum_pixel(return_position_as_pixel_coordinate=True)
+    @pytest.mark.parametrize("scene", BOTH_SCENE_FIXTURES)
+    def test_the_brightest_pixel_is_the_one_numpy_finds(self, scene, request):
+        ds = request.getfixturevalue(scene)
+        band = ds.read(1).astype(np.float64)
+        band[band == ds.get_metadata()["nodata"]] = np.nan
+        peak = ds.get_maximum_pixel(return_position_as_pixel_coordinate=True)
         row, col = np.unravel_index(int(np.nanargmax(band)), band.shape)
         assert peak["value"] == float(np.nanmax(band))
         assert peak["position"] == (int(row), int(col))
 
-    def test_the_darkest_pixel_is_found_despite_fill_sharing_its_value(self, landsat_red_nir):
-        # Landsat fill is 0, the smallest a uint16 can be, so the minimum
-        # search has to exclude fill rather than merely order values.
-        floor = landsat_red_nir.get_minimum_pixel()
+    @pytest.mark.parametrize("scene", BOTH_SCENE_FIXTURES)
+    def test_the_darkest_pixel_is_found_despite_fill_sharing_its_value(self, scene, request):
+        ds = request.getfixturevalue(scene)
+        # Both missions' fill is 0, the smallest a uint16 can be, so the
+        # minimum search has to exclude fill rather than merely order values.
+        floor = ds.get_minimum_pixel()
         assert floor["value"] > 0
 
-    def test_percentile_normalization_streams_and_stays_in_range(self, landsat_red_nir):
-        stretched = landsat_red_nir.normalize_percentile()
+    @pytest.mark.parametrize("scene", BOTH_SCENE_FIXTURES)
+    def test_percentile_normalization_streams_and_stays_in_range(self, scene, request):
+        ds = request.getfixturevalue(scene)
+        stretched = ds.normalize_percentile()
         try:
             values = stretched.read()
             assert stretched.read().dtype == np.float32
             assert np.nanmin(values) == pytest.approx(0.0)
             assert np.nanmax(values) == pytest.approx(1.0)
             # Fill is excluded from the thresholds and stays nodata after.
-            assert np.array_equal(
-                np.isnan(values), landsat_red_nir.read() == landsat_red_nir.get_metadata()["nodata"]
-            )
+            assert np.array_equal(np.isnan(values), ds.read() == ds.get_metadata()["nodata"])
         finally:
             stretched.close()
 
-    def test_sampling_a_point_does_not_read_the_scene(self, landsat_red_nir, monkeypatch):
+    @pytest.mark.parametrize("scene", BOTH_SCENE_FIXTURES)
+    def test_sampling_a_point_does_not_read_the_scene(self, scene, request, monkeypatch):
+        ds = request.getfixturevalue(scene)
         # The op used to read the whole band to index one pixel out of it —
-        # 129 MB on this scene, for one number.
+        # 129 MB on the Landsat scene, for one number.
         reads = []
         # The class is not exported at package level; users reach a dataset
         # through the loaders.
@@ -657,6 +693,388 @@ class TestRealSceneStreamingStatistics:
             return array
 
         monkeypatch.setattr(dataset_class, "read", spy)
-        left, _bottom, _right, top = landsat_red_nir.get_bounds()
-        landsat_red_nir.extract_value_at_coordinate((left + 1000.0, top - 1000.0))
+        left, _bottom, _right, top = ds.get_bounds()
+        ds.extract_value_at_coordinate((left + 1000.0, top - 1000.0))
         assert reads == [(1, 1)], f"expected one 1x1 read, got {reads}"
+
+
+# ---------------------------------------------------------------------------
+# Lazy backend
+# ---------------------------------------------------------------------------
+
+#: Chunk size for the lazy tests: small enough that both products' bands split
+#: into several chunks along each axis, so windows and saves cross chunk seams.
+LAZY_CHUNKS = 1024
+
+#: Red and NIR members of each product, as shipped. Sentinel-2 is read at 20 m,
+#: where both bands exist as 5490x5490 JP2s; Landsat as its 8081x7991 GeoTIFFs.
+LAZY_BAND_PATTERNS = {
+    "sentinel2": (
+        "Sentinel-2",
+        "*/GRANULE/*/IMG_DATA/R20m/*_B04_20m.jp2",
+        "*/GRANULE/*/IMG_DATA/R20m/*_B8A_20m.jp2",
+    ),
+    "landsat": ("Landsat", "*_SR_B4.TIF", "*_SR_B5.TIF"),
+}
+
+#: Each product's quality band, and the band name that selects its decoder.
+QUALITY_PATTERNS = {
+    "sentinel2": ("*/GRANULE/*/IMG_DATA/R20m/*_SCL_20m.jp2", "scl"),
+    "landsat": ("*_QA_PIXEL.TIF", "qa_pixel"),
+}
+
+#: The same two bands at each product's finest resolution, for the capped
+#: acceptance run: a 10980x10980 Sentinel-2 pair and the full Landsat scene.
+FULL_BAND_PATTERNS = {
+    "sentinel2": (
+        "Sentinel-2",
+        "*/GRANULE/*/IMG_DATA/R10m/*_B04_10m.jp2",
+        "*/GRANULE/*/IMG_DATA/R10m/*_B08_10m.jp2",
+    ),
+    "landsat": ("Landsat", "*_SR_B4.TIF", "*_SR_B5.TIF"),
+}
+
+
+def _band_hrefs(request, product, patterns_by_product):
+    """GDAL paths to one product's red and NIR bands, inside its archive."""
+    pytest.importorskip("dask.array")
+    pytest.importorskip("rioxarray")
+    from eeo.io._archive import open_product
+
+    scene = request.getfixturevalue(f"{product}_scene")
+    mission, *patterns = patterns_by_product[product]
+    source = open_product(scene, mission)
+    hrefs = []
+    for pattern in patterns:
+        (member,) = source.glob(pattern)
+        hrefs.append(source.href(member))
+    return tuple(hrefs)
+
+
+@pytest.fixture(scope="module", params=["sentinel2", "landsat"])
+def real_band_hrefs(request):
+    """Red and NIR of one product, at the resolution the lazy tests use."""
+    return _band_hrefs(request, request.param, LAZY_BAND_PATTERNS)
+
+
+@pytest.fixture(scope="module", params=["sentinel2", "landsat"])
+def sweep_inputs(request):
+    """One product's red, NIR and quality bands, plus what masking it needs.
+
+    The extra masking arguments are the product's own doing, not the sweep's:
+    a raw Sentinel-2 JP2 declares no nodata (the loader takes it from the
+    product manifest), and a Landsat QA_PIXEL band cannot be decoded without
+    knowing which Landsat flew the scene (it is in the product's metadata).
+    Opening single bands by path bypasses both, so they are supplied here.
+    """
+    product = request.param
+    scene = request.getfixturevalue(f"{product}_scene")
+    red, nir = _band_hrefs(request, product, LAZY_BAND_PATTERNS)
+    pattern, quality_name = QUALITY_PATTERNS[product]
+    (quality,) = _band_hrefs(request, product, {product: ("", pattern)})
+    # "LC09_L2SP_..." names the mission in its first four characters.
+    mask_kwargs = {"nodata": 0} if product == "sentinel2" else {"mission": int(scene.name[2:4])}
+    return red, nir, quality, quality_name, mask_kwargs
+
+
+@pytest.fixture(scope="module", params=["sentinel2", "landsat"])
+def full_band_hrefs(request):
+    """Red and NIR of one product at its finest resolution, with its name."""
+    return request.param, _band_hrefs(request, request.param, FULL_BAND_PATTERNS)
+
+
+def _open_both(href):
+    """The same band opened lazily and with rasterio, straight from the archive."""
+    return eeo.load_raster(href, chunks=LAZY_CHUNKS), eeo.load_raster(href)
+
+
+class TestRealSceneLazyBackend:
+    def test_the_bands_split_into_several_chunks_on_each_axis(self, real_band_hrefs):
+        # Guards the seam checks below against a band that fits in one chunk.
+        for href in real_band_hrefs:
+            lazy, _ = _open_both(href)
+            _, rows, cols = lazy.ds.data.chunks
+            assert len(rows) > 1
+            assert len(cols) > 1
+
+    def test_opening_and_metadata_compute_nothing(self, real_band_hrefs):
+        from dask.callbacks import Callback
+
+        computed = []
+        with Callback(start=lambda dsk: computed.append(dsk)):
+            for href in real_band_hrefs:
+                lazy, _ = _open_both(href)
+                lazy.get_metadata()
+                lazy.describe()
+        assert computed == []
+
+    def test_metadata_matches_rasterio(self, real_band_hrefs):
+        for href in real_band_hrefs:
+            lazy, reference = _open_both(href)
+            assert lazy.get_metadata() == reference.get_metadata()
+            assert lazy.get_bounds() == reference.get_bounds()
+            assert lazy.band_names == reference.band_names
+
+    def test_windows_across_chunk_seams_and_edges_match_rasterio(self, real_band_hrefs):
+        from rasterio.windows import Window
+
+        for href in real_band_hrefs:
+            lazy, reference = _open_both(href)
+            height, width = lazy.get_shape()
+            windows = [
+                # Straddles the first seam in both directions.
+                Window(LAZY_CHUNKS - 7, LAZY_CHUNKS - 5, 300, 200),
+                # One row across the whole width, crossing every column seam.
+                Window(0, LAZY_CHUNKS, width, 1),
+                # The bottom-right corner, inside the truncated last chunks.
+                Window(width - 13, height - 11, 13, 11),
+            ]
+            for window in windows:
+                assert np.array_equal(lazy.read(1, window=window), reference.read(1, window=window))
+
+    def test_the_whole_band_matches_rasterio(self, real_band_hrefs):
+        for href in real_band_hrefs:
+            lazy, reference = _open_both(href)
+            full = lazy.read()
+            assert full.dtype == reference.read().dtype
+            assert np.array_equal(full, reference.read())
+
+    def test_saving_chunk_by_chunk_reproduces_the_band(self, real_band_hrefs, tmp_path):
+        import rasterio as rio
+
+        for i, href in enumerate(real_band_hrefs):
+            lazy, reference = _open_both(href)
+            out = tmp_path / f"band{i}.tif"
+            lazy.save_raster(out)
+            with rio.open(out) as saved:
+                assert np.array_equal(saved.read(), reference.read())
+                assert saved.dtypes[0] == reference.get_metadata()["dtype"]
+                np.testing.assert_equal(saved.nodata, reference.get_metadata()["nodata"])
+                assert saved.crs == reference.get_crs()
+                assert saved.transform == reference.get_transform()
+
+    def test_operations_read_the_file_rather_than_the_lazy_array(self, real_band_hrefs):
+        # 17.3's claim on a real product: a lazy dataset is promoted by
+        # reopening its file, so a chain of operations computes nothing
+        # through dask and never holds the scene.
+        from dask.callbacks import Callback
+
+        computed = []
+        red_href, nir_href = real_band_hrefs
+        with Callback(start=lambda dsk: computed.append(dsk)):
+            lazy_red = eeo.load_raster(red_href, chunks=LAZY_CHUNKS)
+            lazy_nir = eeo.load_raster(nir_href, chunks=LAZY_CHUNKS)
+            result = lazy_nir.normalized_difference(lazy_red).get_mean_pixel()
+        assert computed == []
+        assert np.isfinite(result["value"])
+
+    def test_an_index_gives_the_same_answer_on_both_backends(self, real_band_hrefs):
+        # Operations promote a lazy dataset today; whatever route they take,
+        # the answer must not depend on which backend the bands were opened on.
+        red_href, nir_href = real_band_hrefs
+        lazy_red, red = _open_both(red_href)
+        lazy_nir, nir = _open_both(nir_href)
+        lazy_ndvi = lazy_nir.normalized_difference(lazy_red)
+        ndvi = nir.normalized_difference(red)
+        try:
+            assert np.array_equal(lazy_ndvi.read(), ndvi.read(), equal_nan=True)
+        finally:
+            lazy_ndvi.close()
+            ndvi.close()
+
+
+# ---------------------------------------------------------------------------
+# Memory-capped runs on real products (WP-17's acceptance test)
+# ---------------------------------------------------------------------------
+
+#: Address-space cap for the streamed acceptance run. Generous next to what
+#: streaming needs and mean next to the scenes: a full Sentinel-2 NDVI at 10 m
+#: holds 482 MB per band as float32 if it holds one at all.
+REAL_CAP_MIB = 1400
+
+#: Cap for the per-call sweep. Higher than the acceptance run's, because
+#: ``RLIMIT_AS`` limits *address space* rather than resident memory, and dask's
+#: thread pool reserves far more of the former than it ever uses: a lazy
+#: ``to_xarray`` of one Sentinel-2 band peaks at 457 MiB resident but needs
+#: more than 1.4 GiB of address space. The calls are still held to a resident
+#: budget, which is the number that means anything.
+SWEEP_CAP_MIB = 2200
+
+#: What a streamed full-scene NDVI must stay under, resident. GDAL's pinned
+#: 256 MiB block cache is included in the budget.
+REAL_PEAK_BUDGET_MIB = 900
+
+#: Resident budget for a single swept call. Higher than the streamed NDVI's,
+#: because of one outlier: ``plot_histogram`` is the only plot that does not
+#: read at display resolution, so on the Landsat band it reads all 123 MB and
+#: the nodata mask then promotes that to float64 — 950 MiB peak, against about
+#: 300 for every other plot. Recorded here rather than silently accommodated:
+#: making the histogram decimate would make it approximate, which is a change
+#: to what the function means and belongs in a task of its own.
+SWEEP_PEAK_BUDGET_MIB = 1200
+
+#: Every other public call, run on one lazily-opened band of a real product
+#: (``ds``, red) with a second band (``other``, NIR) and the scene's quality
+#: band (``quality``) available. Each runs in its own capped process, because
+#: memory is not returned to the operating system between calls: run in one
+#: process they fail in the order they happen to come, which measures nothing.
+REAL_SWEEP_CALLS = [
+    ("add", "ds.add(5)"),
+    ("subtract", "ds.subtract(5)"),
+    ("multiply", "ds.multiply(2)"),
+    ("divide", "ds.divide(2)"),
+    ("power", "ds.power(2)"),
+    ("sqrt", "ds.sqrt()"),
+    ("log", "ds.log()"),
+    ("absolute", "ds.absolute()"),
+    ("normalized_difference", "other.normalized_difference(ds)"),
+    ("ndvi", "pair.ndvi('red', nir='nir')"),
+    ("ndwi", "pair.ndwi('nir', green='red')"),
+    ("ndmi", "pair.ndmi('red', nir='nir')"),
+    ("ndbi", "pair.ndbi('nir', swir='red')"),
+    ("evi", "pair.evi('red', 'red', nir='nir')"),
+    ("savi", "pair.savi('red', nir='nir')"),
+    ("normalize_min_max", "ds.normalize_min_max()"),
+    ("normalize_percentile", "ds.normalize_percentile()"),
+    ("standardize", "ds.standardize()"),
+    ("clip_raster_with_bbox", "ds.clip_raster_with_bbox(centre_bbox)"),
+    ("clip_raster_with_vector", "ds.clip_raster_with_vector(centre_frame)"),
+    ("resample", "ds.resample(scale_factor=0.25)"),
+    ("reproject_raster", "ds.reproject_raster(target_crs=4326)"),
+    ("mosaic", "ds.mosaic([other])"),
+    ("stack", "ds.stack([other])"),
+    ("mask_clouds", "pair.mask_clouds(mask=quality_patch, **mask_kwargs)"),
+    ("clear_fraction", "ds.clear_fraction()"),
+    ("get_mean_pixel", "ds.get_mean_pixel()"),
+    ("get_maximum_pixel", "ds.get_maximum_pixel()"),
+    ("get_minimum_pixel", "ds.get_minimum_pixel()"),
+    ("get_percentile_pixel", "ds.get_percentile_pixel(50)"),
+    ("extract_value_at_coordinate", "ds.extract_value_at_coordinate(centre_point)"),
+    ("get_band", "ds.get_band(1)"),
+    ("to_array", "ds.to_array()"),
+    ("to_rasterio", "ds.to_rasterio()"),
+    ("to_xarray", "ds.to_xarray()"),
+    ("describe_approx", "ds.describe(stats='approx')"),
+    ("describe_exact", "ds.describe(stats='exact')"),
+    ("save_raster", "ds.save_raster(out_dir + '/saved.tif')"),
+    ("read_window", "ds.read(1, window=centre_window)"),
+    ("plot_raster", "ds.plot_raster()"),
+    ("plot_histogram", "ds.plot_histogram()"),
+    ("plot_band_array", "ds.plot_band_array()"),
+    ("plot_raster_with_histogram", "ds.plot_raster_with_histogram()"),
+    ("plot_composite", "pair.plot_composite(bands=('red', 'nir', 'red'))"),
+]
+
+#: Calls each documented as holding a whole raster (or two) in memory, so a cap
+#: the size of the scene may deny them. They are still run: what the test then
+#: requires is that they failed for want of memory and nothing else.
+REAL_SWEEP_MAY_EXCEED = {"mosaic", "stack", "to_xarray", "describe_exact"}
+
+
+def _sweep_snippet(inputs, out_dir, call):
+    """Build a snippet that opens one product's bands and makes a single call."""
+    red_href, nir_href, quality_href, quality_name, mask_kwargs = inputs
+    return f"""
+        import geopandas as gpd
+        import eeo
+        from rasterio.windows import Window
+        from shapely.geometry import box
+
+        out_dir = {str(out_dir)!r}
+        mask_kwargs = {mask_kwargs!r}
+        ds = eeo.load_raster({red_href!r}, chunks=1024)
+        other = eeo.load_raster({nir_href!r}, chunks=1024)
+        quality = eeo.load_raster({quality_href!r}, chunks=1024, band_names=[{quality_name!r}])
+
+        left, bottom, right, top = ds.get_bounds()
+        centre_x, centre_y = (left + right) / 2, (bottom + top) / 2
+        span = (right - left) / 8
+        centre_bbox = (centre_x - span, centre_y - span, centre_x + span, centre_y + span)
+        centre_point = (centre_x, centre_y)
+        centre_frame = gpd.GeoDataFrame(geometry=[box(*centre_bbox)], crs=ds.get_crs())
+        height, width = ds.get_shape()
+        centre_window = Window(width // 4, height // 4, 256, 256)
+
+        def patch(raster):
+            return raster.clip_raster_with_bbox(centre_bbox)
+
+        # The named indices, mask_clouds and plot_composite address bands by
+        # name within one dataset, so they need the two bands stacked — and a
+        # stack of two full scenes is one of the calls this cap denies. They
+        # run on a clipped patch instead: what is under test here is that the
+        # call works on real data inside the cap, and the full-scene streaming
+        # behaviour of the index family is covered uncapped above.
+        if {call!r}.startswith(("pair", "quality_patch")):
+            pair = patch(ds).stack([patch(other)], names=["red", "nir"])
+            quality_patch = patch(quality)
+
+        result = {call}
+        report(call={call!r})
+        """
+
+
+class TestRealSceneMemoryCap:
+    """Every public call, on a real product, inside a hard memory cap."""
+
+    def test_a_full_scene_ndvi_streams_under_the_cap(self, full_band_hrefs, tmp_path):
+        from memory_harness import run_capped
+
+        product, (red_href, nir_href) = full_band_hrefs
+        out = tmp_path / f"{product}_ndvi.tif"
+        run = run_capped(
+            f"""
+            import numpy as np
+            import eeo
+            from eeo.core.blockwise import BlockSource, apply_blockwise
+
+            def ndvi(nir, red):
+                nir = nir.astype("float32")
+                red = red.astype("float32")
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    return (nir - red) / (nir + red)
+
+            red = eeo.load_raster({red_href!r}, chunks=1024)
+            nir = eeo.load_raster({nir_href!r}, chunks=1024)
+            result = apply_blockwise(
+                red,
+                ndvi,
+                sources=[BlockSource.from_dataset(nir), BlockSource.from_dataset(red)],
+                fractional=True,
+                save_path={str(out)!r},
+            )
+            report(shape=list(result.get_shape()))
+            """,
+            cap_mib=REAL_CAP_MIB,
+        )
+
+        assert run.ok, run.failure
+        assert run.peak_rss_mib < REAL_PEAK_BUDGET_MIB, f"peaked at {run.peak_rss_mib:.0f} MiB"
+
+        # The scene really is large, and the answer really is NDVI: check a
+        # window against the same arithmetic done straight from the files.
+        height, width = run.result["shape"]
+        assert height * width > 40_000_000, (height, width)
+        window = Window(width // 3, height // 3, 128, 128)
+        with rio.open(out) as saved, rio.open(red_href) as red, rio.open(nir_href) as nir:
+            red_block = red.read(1, window=window).astype("float32")
+            nir_block = nir.read(1, window=window).astype("float32")
+            with np.errstate(divide="ignore", invalid="ignore"):
+                expected = (nir_block - red_block) / (nir_block + red_block)
+            fill = red.nodata
+            if fill is not None:
+                expected[(red_block == fill) | (nir_block == fill)] = np.nan
+            np.testing.assert_allclose(saved.read(1, window=window), expected, equal_nan=True)
+
+    @pytest.mark.parametrize(
+        ("name", "call"), REAL_SWEEP_CALLS, ids=[name for name, _ in REAL_SWEEP_CALLS]
+    )
+    def test_every_other_call_runs_under_the_cap(self, sweep_inputs, tmp_path, name, call):
+        from memory_harness import run_capped
+
+        run = run_capped(_sweep_snippet(sweep_inputs, tmp_path, call), cap_mib=SWEEP_CAP_MIB)
+
+        if name in REAL_SWEEP_MAY_EXCEED:
+            assert run.ok or run.out_of_memory, run.failure
+            return
+        assert run.ok, run.failure
+        assert run.peak_rss_mib < SWEEP_PEAK_BUDGET_MIB, f"peaked at {run.peak_rss_mib:.0f} MiB"

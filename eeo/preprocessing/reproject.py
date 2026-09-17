@@ -4,11 +4,11 @@ import pyproj
 import rasterio as rio
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
-from eeo.common import get_nodata, is_rasterio_backed, normalize_resampling_method
+from eeo.common import get_nodata, normalize_resampling_method, require_rasterio
 from eeo.core.adapters import RasterioAdapter
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
-from eeo.core.exceptions import BackendError, ValidationError
+from eeo.core.exceptions import ValidationError
 
 
 @eeo_raster_op
@@ -58,12 +58,7 @@ def reproject_raster(
     --------
     >>> reprojected = ds.reproject_raster(target_crs=4326)
     """
-    # Ensure reprojection for only rasterio-backend datasets
-    if not is_rasterio_backed(ds):
-        raise BackendError(
-            "reproject requires a rasterio-backed dataset; this dataset uses "
-            "the NumPy backend. Call .to_rasterio() first."
-        )
+    ds = require_rasterio(ds, "reproject")
 
     # Normalize resampling method
     resampling_method = normalize_resampling_method(resampling_method)

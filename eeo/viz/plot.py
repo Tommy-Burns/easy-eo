@@ -10,7 +10,12 @@ import numpy as np
 import rasterio.plot as rioplot
 from rasterio.transform import Affine
 
-from eeo.common import get_nodata, is_rasterio_backed, resolve_band_index
+from eeo.common import (
+    get_nodata,
+    is_rasterio_backed,
+    promote_for_decimated_read,
+    resolve_band_index,
+)
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_viz
 from eeo.core.exceptions import ValidationError
@@ -535,6 +540,8 @@ def _read_band_for_display(
     """
     transform = ds.get_transform()
     out_shape = _display_out_shape(ds.get_shape(), figsize)
+    if out_shape is not None:
+        ds = promote_for_decimated_read(ds)
     if out_shape is None or not is_rasterio_backed(ds):
         return _mask_nodata_for_display(ds, ds.get_band(band)), transform
 

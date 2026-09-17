@@ -7,11 +7,11 @@ import rasterio as rio
 from rasterio.mask import mask
 from rasterio.windows import from_bounds
 
-from eeo.common import is_rasterio_backed
+from eeo.common import require_rasterio
 from eeo.core import EEORasterDataset
 from eeo.core.adapters import RasterioAdapter
 from eeo.core.decorators import eeo_raster_op
-from eeo.core.exceptions import BackendError, ValidationError
+from eeo.core.exceptions import ValidationError
 from eeo.core.types import StrPath
 
 
@@ -84,12 +84,7 @@ def clip_raster_with_vector(
     >>> boundary = gpd.read_file("aoi.geojson")
     >>> clipped = ds.clip_raster_with_vector(boundary)
     """
-    # Ensure clipping for only rasterio-backend datasets
-    if not is_rasterio_backed(ds):
-        raise BackendError(
-            "clip requires a rasterio-backed dataset; this dataset uses the "
-            "NumPy backend. Call .to_rasterio() first."
-        )
+    ds = require_rasterio(ds, "clip")
 
     # Load vector data
     if isinstance(vector_file, gpd.GeoDataFrame):
@@ -182,12 +177,7 @@ def clip_raster_with_bbox(
     --------
     >>> clipped = ds.clip_raster_with_bbox((500000, 4100000, 510000, 4110000))
     """
-    # Ensure rasterio backend
-    if not is_rasterio_backed(ds):
-        raise BackendError(
-            "clip requires a rasterio-backed dataset; this dataset uses the "
-            "NumPy backend. Call .to_rasterio() first."
-        )
+    ds = require_rasterio(ds, "clip")
 
     # Validate bbox
     if not (isinstance(bbox, (tuple, list)) and len(bbox) == 4):

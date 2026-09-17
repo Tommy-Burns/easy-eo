@@ -24,14 +24,17 @@ from .core.exceptions import MissingDependencyError
 # list with nothing to opt into, and `conda install "easy-eo[stac]"` does not
 # merely miss the extra — it fails to parse, because brackets already mean
 # key-value constraints in conda's match syntax. So a conda user installs the
-# same packages by name. The names happen to equal the PyPI ones for every
-# current extra, but that is not a rule (conda-forge ships Matplotlib as
-# `matplotlib-base`), which is why the mapping is written out rather than
-# derived. tests/test_optional_dependencies.py checks it covers every declared
-# extra, so a new extra cannot ship without its conda equivalent.
+# same packages by name. The names usually equal the PyPI ones, but that is not
+# a rule: conda-forge's `dask` is a metapackage that also pulls in `distributed`
+# and `bokeh`, so the lazy extra maps to `dask-core`, the equivalent of pip's
+# `dask[array]` (as Matplotlib is `matplotlib-base`). That is why the mapping is
+# written out rather than derived. tests/test_optional_dependencies.py checks it
+# covers every declared extra, so a new extra cannot ship without its conda
+# equivalent.
 _CONDA_PACKAGES: dict[str, tuple[str, ...]] = {
     "stac": ("pystac-client", "planetary-computer"),
     "xarray": ("xarray", "rioxarray"),
+    "lazy": ("xarray", "rioxarray", "dask-core"),
 }
 
 

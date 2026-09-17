@@ -474,7 +474,7 @@ def test_from_xarray_adds_no_copy_of_the_values():
 
 
 def test_from_xarray_computes_a_dask_backed_array(scene):
-    pytest.importorskip("dask", reason="dask is not part of any current extra")
+    pytest.importorskip("dask", reason="needs the lazy extra (dask)")
 
     ds = eeo.from_xarray(scene.chunk({"y": 2}))
 
