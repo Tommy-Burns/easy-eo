@@ -34,8 +34,21 @@ are called out under a **Breaking** heading.
   names — checked on synthetic rasters and on a real Landsat 9 band
   (8081 x 7991), whose full read, windowed reads and saved file are identical
   across both backends.
-- Operations do not yet run on the lazy backend directly: they promote to
-  rasterio first, which reads the whole raster into memory.
+- Every operation now runs on a lazy dataset without reading it. A lazy
+  dataset opened from a file is promoted to the rasterio backend by reopening
+  that file rather than by reading its pixels, so the promotion every
+  operation performs costs nothing and the block-wise engine then streams from
+  the file as it always has. Audited by calling all 33 bound operations and
+  plots on a lazy dataset: 30 now compute nothing at all through dask.
+- `mosaic`, `stack`, `clip_raster_with_vector`, `clip_raster_with_bbox` and
+  `reproject_raster` accept a lazy dataset instead of refusing it. They still
+  refuse a NumPy-backed one, whose pixels are already in memory and which
+  promotion would therefore copy — that stays the caller's decision.
+- Plots decimate a large lazy raster rather than reading it whole, as they
+  already did for rasterio-backed ones.
+- Three operations still read a lazy raster in full, each because it reads in
+  full on every backend, not because of the backend: `stack` (it builds one
+  in-memory array by definition), `clear_fraction` and `plot_histogram`.
 
 ### Changed
 
