@@ -9,6 +9,19 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- New optional `lazy` extra (`pip install "easy-eo[lazy]"`): xarray, rioxarray
+  and `dask[array]`, the dependencies of the dask-chunked backend being built
+  in WP-17. Installing it enables nothing yet; the backend itself follows. The
+  conda equivalent is `conda install -c conda-forge easy-eo xarray rioxarray
+  dask-core` — `dask-core`, not `dask`, which on conda-forge is a metapackage
+  that also installs `distributed` and `bokeh`.
+- The floor `dask>=2024.8` is tested, not assumed: CI's minimum-versions job
+  now installs the `lazy` extra at its lower bounds (with numpy 1.26,
+  rasterio 1.4, xarray 2024.7 and rioxarray 0.17 on Python 3.10), and the test
+  matrix and the monthly latest-dependencies run install it too.
+
 ## [0.4.2] - 2026-09-13
 
 ### Added
