@@ -8,7 +8,7 @@ This design allows the same high-level API to operate on:
 
 - Raster files on disk (Rasterio-backed)
 - In-memory NumPy arrays
-- Future backends (e.g. xarray, cloud-native rasters)
+- Raster files opened lazily as dask-chunked xarray arrays
 
 The backend is transparent by default (meaning users normally do not need to know
 or care whether the data is backed by Rasterio or NumPy, as all public methods
@@ -16,11 +16,10 @@ behave the same), but advanced users can access or convert it explicitly when ne
 
 .. note::
 
-   An xarray *backend* — a dataset whose pixels stay lazy and chunked — is a
-   future addition, and is a different thing from the xarray *interop* that
-   exists today. :doc:`user_guide/xarray_interop` converts a dataset to a
-   :class:`xarray.DataArray` and back at the boundary; both sides are read into
-   memory, and the backend is unchanged.
+   The xarray *backend* — a dataset whose pixels stay lazy and chunked — is a
+   different thing from xarray *interop*. :doc:`user_guide/xarray_interop`
+   converts a dataset to a :class:`xarray.DataArray` and back at the boundary;
+   both sides are read into memory, and the backend is unchanged.
 
 ------
 
@@ -35,11 +34,11 @@ all I/O and metadata access to an internal **adapter**.
    EEORasterDataset
           |
           v
-   BaseRasterAdapter (abstract)
-        /     \
-       v       v
- Rasterio   NumPy
-  Adapter   Adapter
+    BaseRasterAdapter (abstract)
+       /       |       \
+      v        v        v
+ Rasterio    NumPy    Xarray
+  Adapter   Adapter   Adapter
 
 Each adapter exposes a **uniform interface** for:
 
@@ -88,6 +87,41 @@ This adapter supports:
 - Fast array-based operations
 - Explicit CRS and transform handling
 - Seamless promotion to Rasterio when required
+
+XarrayAdapter
+^^^^^^^^^^^^^
+
+The ``XarrayAdapter`` wraps a :class:`xarray.DataArray` opened by
+``rioxarray.open_rasterio`` with dask chunks. Opening a file reads only its
+metadata; pixels are computed when something reads them, and then only the
+bands and window asked for. It needs the ``lazy`` extra
+(``pip install "easy-eo[lazy]"``) and is selected by passing ``chunks`` to the
+loader — nothing else in your code changes:
+
+.. code-block:: python
+
+   ds = eeo.load_raster("scene.tif", chunks="auto")        # dask decides
+   ds = eeo.load_raster("scene.tif", chunks={"y": 2048, "x": 2048})
+
+``"auto"`` lets dask pick chunk sizes aligned with the file's internal blocks,
+capped at dask's configured chunk size (128 MiB by default) — so a single
+Landsat or Sentinel-2 band usually fits in one chunk. Pass explicit sizes to cut
+it finer.
+
+This adapter supports:
+
+- The same metadata as the rasterio backend: CRS, transform, bounds, nodata,
+  dtype, driver and band names
+- Reading bands and windows (``read(indexes, window=...)``), computing only
+  the chunks the selection touches
+- Saving one chunk at a time, so writing a scene to disk never holds the whole
+  of it in memory
+
+.. note::
+
+   Operations do not yet run on the lazy backend directly: they promote the
+   dataset to rasterio first, which reads the whole raster into memory. Opening
+   lazily is the first step; running operations lazily follows.
 
 -----
 
