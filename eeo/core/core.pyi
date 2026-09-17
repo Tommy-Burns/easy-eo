@@ -20,7 +20,7 @@ from rasterio.enums import Resampling
 from eeo.analysis.indices import BandSpec
 from eeo.analysis.stats import Coordinate
 from eeo.core.adapters import BaseRasterAdapter
-from eeo.core.types import ResamplingMethod, StrPath
+from eeo.core.types import ChunkSpec, ResamplingMethod, StrPath
 from eeo.preprocessing.quality import QAConfidence, QAPixelFlag, SCLClass
 
 class EEORasterDataset:
@@ -42,7 +42,7 @@ class EEORasterDataset:
     def __repr__(self) -> str: ...
     def _band_names_summary(self, limit: int = ...) -> str: ...
     @classmethod
-    def from_path(cls, path: StrPath) -> EEORasterDataset: ...
+    def from_path(cls, path: StrPath, *, chunks: ChunkSpec | None = ...) -> EEORasterDataset: ...
     @classmethod
     def from_rasterio(cls, dataset: rio.DatasetReader) -> EEORasterDataset: ...
     @classmethod

@@ -13,9 +13,14 @@ from rasterio.coords import BoundingBox
 from rasterio.transform import Affine
 
 from eeo.common import is_rasterio_backed, mask_nodata, resolve_band_index
-from eeo.core.adapters import BaseRasterAdapter, NumpyRasterioAdapter, RasterioAdapter
+from eeo.core.adapters import (
+    BaseRasterAdapter,
+    NumpyRasterioAdapter,
+    RasterioAdapter,
+    XarrayAdapter,
+)
 from eeo.core.exceptions import ValidationError
-from eeo.core.types import StrPath
+from eeo.core.types import ChunkSpec, StrPath
 
 # Approximate (decimated) statistics never read more than this many pixels per
 # side; a larger raster is decimated to fit, served from overviews when present.
@@ -227,7 +232,8 @@ def _resolve_initial_band_names(adapter: BaseRasterAdapter, band_names) -> list[
 class EEORasterDataset:
     """A chainable raster dataset backed by a swappable adapter.
 
-    Wraps a raster (rasterio- or NumPy-backed through ``BaseRasterAdapter``)
+    Wraps a raster (rasterio-, NumPy- or lazily xarray-backed through
+    ``BaseRasterAdapter``)
     and exposes metadata accessors plus the chainable operations bound by the
     ``@eeo_raster_op`` / ``@eeo_raster_viz`` decorators. Construct one with
     :func:`eeo.load_raster`, :func:`eeo.load_array`, or the ``from_*``
@@ -306,20 +312,28 @@ class EEORasterDataset:
     # Constructors
     # ========================
     @classmethod
-    def from_path(cls, path: StrPath) -> EEORasterDataset:
-        """Open a raster file as a rasterio-backed dataset.
+    def from_path(cls, path: StrPath, *, chunks: ChunkSpec | None = None) -> EEORasterDataset:
+        """Open a raster file without reading its pixels.
 
         Parameters
         ----------
         path : str or path-like
             Path to a GDAL-readable raster.
+        chunks : str or int or dict or None, default None
+            ``None`` opens the file with rasterio. Anything else opens it on
+            the lazy, dask-chunked xarray backend with these chunk sizes (see
+            :func:`eeo.load_raster`); that needs the ``lazy`` extra.
 
         Returns
         -------
         EEORasterDataset
-            Rasterio-backed dataset; pixels are read lazily.
+            Rasterio-backed dataset, or xarray-backed when ``chunks`` is given.
         """
-        adapter = RasterioAdapter.from_path(path)
+        adapter: BaseRasterAdapter
+        if chunks is None:
+            adapter = RasterioAdapter.from_path(path)
+        else:
+            adapter = XarrayAdapter.from_path(path, chunks=chunks)
         return cls(adapter=adapter, path=path)
 
     @classmethod
@@ -402,8 +416,8 @@ class EEORasterDataset:
 
         Notes
         -----
-        Promoting a NumPy-backed dataset reads its full array into an
-        in-memory rasterio ``MemoryFile``. Band names, ``timestamp``, and
+        Promoting a NumPy- or xarray-backed dataset reads its full array into
+        an in-memory rasterio ``MemoryFile``. Band names, ``timestamp``, and
         ``attrs`` are carried onto the promoted dataset.
 
         Examples
@@ -516,7 +530,9 @@ class EEORasterDataset:
 
         For the rasterio backend, the arguments are
         ``rasterio.DatasetReader.read`` options (band indexes, ``out_shape``,
-        ``window``, ...). The NumPy backend returns its stored array.
+        ``window``, ...). The NumPy backend returns its stored array. The lazy
+        xarray backend accepts band indexes and ``window`` and computes only
+        that selection.
 
         Returns
         -------
@@ -822,11 +838,11 @@ class EEORasterDataset:
     # ========================
     @property
     def ds(self):
-        """Underlying backend object (rasterio dataset or NumPy array).
+        """Underlying backend object (rasterio dataset, NumPy array or DataArray).
 
         Returns
         -------
-        rasterio.io.DatasetReader or numpy.ndarray
+        rasterio.io.DatasetReader or numpy.ndarray or xarray.DataArray
             The raw backend. Accessing it bypasses Easy-EO's abstractions; use
             the typed accessors where possible.
         """

@@ -10,13 +10,14 @@ from rasterio.crs import CRS
 from rasterio.transform import Affine
 
 from eeo.core.core import EEORasterDataset
-from eeo.core.exceptions import BackendError, ValidationError
-from eeo.core.types import StrPath
+from eeo.core.exceptions import BackendError, MissingDependencyError, ValidationError
+from eeo.core.types import ChunkSpec, StrPath
 
 
 def load_raster(
     path: StrPath,
     *,
+    chunks: ChunkSpec | None = None,
     timestamp: datetime | None = None,
     attrs: dict | None = None,
     band_names: list[str | None] | None = None,
@@ -30,6 +31,15 @@ def load_raster(
     ----------
     path : str or path-like
         Path to a GDAL-readable raster file.
+    chunks : str or int or dict or None, default None
+        ``None`` opens the file with rasterio. Anything else opens it on the
+        lazy backend: an :class:`xarray.DataArray` split into dask chunks of
+        this size, from which only the bands and windows an operation asks for
+        are computed. ``"auto"`` lets dask choose sizes aligned with the file's
+        internal blocks; an int sets the size of every dimension; a dict sets
+        some of ``"band"``, ``"y"`` and ``"x"`` (e.g. ``{"y": 2048,
+        "x": 2048}``). Needs the ``lazy`` extra
+        (``pip install "easy-eo[lazy]"``).
     timestamp : datetime.datetime or None, default None
         Optional acquisition time carried with the dataset and preserved
         through operations.
@@ -44,7 +54,8 @@ def load_raster(
     Returns
     -------
     EEORasterDataset
-        A rasterio-backed dataset.
+        A rasterio-backed dataset, or an xarray-backed one when ``chunks`` is
+        given.
 
     Raises
     ------
@@ -52,21 +63,26 @@ def load_raster(
         If ``path`` does not exist.
     BackendError
         If the file exists but cannot be opened as a raster.
+    MissingDependencyError
+        If ``chunks`` is given and the ``lazy`` extra is not installed.
     ValidationError
-        If ``band_names`` is given and its length does not match the band
-        count.
+        If ``chunks`` is not a valid chunk specification, or ``band_names`` is
+        given and its length does not match the band count.
 
     Examples
     --------
     >>> ds = load_raster("scene.tif")
     >>> ds = load_raster("stack.tif", band_names=["blue", "green", "red", "nir"])
+    >>> ds = load_raster("scene.tif", chunks="auto")  # lazy, dask-chunked
     """
     if not os.path.isfile(path):
         raise FileNotFoundError(f'the file "{path}" does not exist')
     try:
-        ds = EEORasterDataset.from_path(path)
+        ds = EEORasterDataset.from_path(path, chunks=chunks)
+    except (MissingDependencyError, ValidationError):
+        raise
     except Exception as e:
-        raise BackendError(f'file "{path}" could not be opened as a rasterio dataset') from e
+        raise BackendError(f'file "{path}" could not be opened as a raster') from e
 
     ds.timestamp = timestamp
     if attrs is not None:

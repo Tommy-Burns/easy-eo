@@ -16,8 +16,8 @@ from eeo.core.types import StrPath
 class BaseRasterAdapter(ABC):
     """Backend-agnostic interface that every raster backend must implement.
 
-    Concrete adapters (NumPy-backed, rasterio-backed, and future lazy
-    backends) implement these methods so that operations in ``eeo`` stay
+    Concrete adapters (NumPy-backed, rasterio-backed, and the lazy
+    xarray-backed one) implement these methods so that operations in ``eeo`` stay
     backend-agnostic. Metadata accessors return rasterio/affine types
     regardless of the underlying backend.
     """
@@ -122,7 +122,8 @@ class BaseRasterAdapter(ABC):
     def backend(self) -> Any:
         """Return the underlying backend object.
 
-        Returns the raw ``rasterio.DatasetReader`` or ``numpy.ndarray``.
+        Returns the raw ``rasterio.DatasetReader``, ``numpy.ndarray`` or
+        ``xarray.DataArray``.
         This bypasses Easy-EO's abstractions; use it only for interop.
         """
         ...
