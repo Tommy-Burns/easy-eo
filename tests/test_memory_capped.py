@@ -32,6 +32,11 @@ CAP_MIB = 1400
 #: GDAL's pinned block cache, so this is generous and still far below the file.
 PEAK_BUDGET_MIB = 800
 
+#: Headroom given to the whole-array form over what the streamed one peaked at,
+#: when showing that it needs more. Wide enough that failing it means the eager
+#: route really is in a different class, not a few megabytes worse.
+EAGER_MARGIN_MIB = 300
+
 
 @pytest.fixture(scope="module")
 def big_scene(tmp_path_factory):
@@ -104,14 +109,13 @@ def test_the_cap_is_real(tmp_path):
     assert run.out_of_memory, run.stderr
 
 
-def test_full_scene_ndvi_completes_under_the_cap(big_scene, tmp_path, chunks):
-    """The acceptance test: the whole scene, streamed to disk, inside the cap."""
-    out = tmp_path / "ndvi.tif"
-    run = run_capped(
+def _streamed_ndvi_run(scene, out, chunks):
+    """Stream a full-scene NDVI to ``out`` in a capped process."""
+    return run_capped(
         f"""
+        import numpy as np
         import eeo
         from eeo.core.blockwise import BlockSource, apply_blockwise
-        import numpy as np
 
         def ndvi(nir, red):
             nir = nir.astype("float32")
@@ -119,11 +123,14 @@ def test_full_scene_ndvi_completes_under_the_cap(big_scene, tmp_path, chunks):
             with np.errstate(divide="ignore", invalid="ignore"):
                 return (nir - red) / (nir + red)
 
-        ds = eeo.load_raster({str(big_scene)!r}, chunks={chunks!r})
+        ds = eeo.load_raster({str(scene)!r}, chunks={chunks!r})
         result = apply_blockwise(
             ds,
             ndvi,
-            sources=[BlockSource.from_dataset(ds, band=2), BlockSource.from_dataset(ds, band=1)],
+            sources=[
+                BlockSource.from_dataset(ds, band="nir"),
+                BlockSource.from_dataset(ds, band="red"),
+            ],
             fractional=True,
             save_path={str(out)!r},
         )
@@ -131,6 +138,12 @@ def test_full_scene_ndvi_completes_under_the_cap(big_scene, tmp_path, chunks):
         """,
         cap_mib=CAP_MIB,
     )
+
+
+def test_full_scene_ndvi_completes_under_the_cap(big_scene, tmp_path, chunks):
+    """The acceptance test: the whole scene, streamed to disk, inside the cap."""
+    out = tmp_path / "ndvi.tif"
+    run = _streamed_ndvi_run(big_scene, out, chunks)
 
     assert run.ok, run.failure
     assert run.result["shape"] == [SIDE, SIDE]
@@ -150,8 +163,20 @@ def test_full_scene_ndvi_completes_under_the_cap(big_scene, tmp_path, chunks):
             )
 
 
-def test_the_whole_array_form_fails_under_the_same_cap(big_scene):
-    """The other half of the claim: the cap really does deny the eager route."""
+def test_the_whole_array_form_needs_far_more_than_the_streamed_one(big_scene, tmp_path):
+    """The other half of the claim: streaming is what makes the cap survivable.
+
+    The cap here is derived from what the streamed run actually peaked at
+    rather than fixed, because a fixed one does not travel: ``RLIMIT_AS``
+    limits address space, and how much of that an interpreter reserves varies
+    with its version and its allocator. Measured against the streamed peak,
+    the claim is the same one in every environment — the whole-array form does
+    not fit in what streaming needs, plus a generous margin.
+    """
+    streamed = _streamed_ndvi_run(big_scene, tmp_path / "streamed.tif", chunks=None)
+    assert streamed.ok, streamed.failure
+    cap_mib = int(streamed.peak_rss_mib) + EAGER_MARGIN_MIB
+
     run = run_capped(
         f"""
         import numpy as np, rasterio
@@ -162,10 +187,10 @@ def test_the_whole_array_form_fails_under_the_same_cap(big_scene):
             ndvi = (nir - red) / (nir + red)
         report(mean=float(np.nanmean(ndvi)))
         """,
-        cap_mib=CAP_MIB,
+        cap_mib=cap_mib,
     )
 
-    assert not run.ok, "the eager form fitted; the cap no longer discriminates"
+    assert not run.ok, f"the whole-array form fitted in {cap_mib} MiB; streaming bought nothing"
     assert run.out_of_memory, run.stderr
 
 

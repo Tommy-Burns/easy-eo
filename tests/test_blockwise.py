@@ -108,6 +108,22 @@ class TestBlockSource:
         assert block.shape == (2, 3)
         assert np.array_equal(block, multiband_uint16.read()[1][:2, :3])
 
+    def test_a_band_source_accepts_a_band_name(self, multiband_uint16):
+        # A name works wherever a band index does; this is the public entry
+        # point for running your own function block-wise, so it must too.
+        multiband_uint16.band_names = ["blue", "green", "red", "nir"]
+        by_name = BlockSource.from_dataset(multiband_uint16, band="red")
+        window = next(block_windows((6, 6), (2, 3)))
+
+        assert np.array_equal(
+            by_name.read(window),
+            BlockSource.from_dataset(multiband_uint16, band=3).read(window),
+        )
+
+    def test_an_unknown_band_name_is_rejected(self, multiband_uint16):
+        with pytest.raises(ValidationError, match="no band named"):
+            BlockSource.from_dataset(multiband_uint16, band="swir")
+
     def test_a_numpy_backed_source_is_promoted_so_windows_are_honoured(self, numpy_backed_dataset):
         # The NumPy adapter's read() ignores a window and would hand back the
         # whole array for every block, silently computing the wrong answer.
