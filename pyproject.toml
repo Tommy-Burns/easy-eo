@@ -148,6 +148,7 @@ known-first-party = ["eeo"]
 # per-method docstrings on the overrides would just duplicate the interface.
 "eeo/core/adapters/numpy.py" = ["D102"]
 "eeo/core/adapters/rasterio.py" = ["D102"]
+"eeo/core/adapters/xarray.py" = ["D102"]
 
 [tool.ruff.format]
 quote-style = "double"
