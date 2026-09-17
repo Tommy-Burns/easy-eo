@@ -84,6 +84,12 @@ are called out under a **Breaking** heading.
 
 ### Fixed
 
+- `chunks="auto"` no longer emits a deprecation warning on Python 3.10 and
+  3.11. rioxarray resolves `"auto"` into a dimension-order tuple and hands it
+  to `DataArray.chunk`, which xarray deprecated; the versions that stopped
+  doing so require Python 3.12, so on 3.10 and 3.11 nothing downstream could
+  avoid it. Easy-EO now resolves `"auto"` itself — to the same block-aligned
+  sizes, asserted against rioxarray's own — and passes a dict.
 - `describe(stats="approx")` read every pixel of a lazy dataset instead of
   taking a decimated read: the decimation was only wired up for the rasterio
   backend, so asking for approximate statistics on a lazily-opened scene did

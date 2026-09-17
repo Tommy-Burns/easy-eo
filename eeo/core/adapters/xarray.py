@@ -30,6 +30,41 @@ def _import_rioxarray() -> Any:
     return import_optional("rioxarray", extra="lazy", purpose=_PURPOSE)
 
 
+def _auto_chunk_sizes(src: Any) -> dict[str, int]:
+    """Return the chunk sizes ``chunks="auto"`` means for an open raster.
+
+    The same sizes :func:`rioxarray.open_rasterio` computes for ``"auto"``:
+    what dask would pick for the configured chunk size, snapped to the file's
+    own internal blocks. They are computed here so they can be passed as a
+    dict keyed by dimension. rioxarray passes its own as a dimension-order
+    tuple, which xarray deprecated and warns about — a warning its callers can
+    do nothing about, and which only versions needing Python 3.12 have stopped
+    emitting.
+
+    Parameters
+    ----------
+    src : rasterio.io.DatasetReader
+        The open raster, for its shape, dtype and block layout.
+
+    Returns
+    -------
+    dict of str to int
+        Chunk size for each of ``"band"``, ``"y"`` and ``"x"``.
+    """
+    dask_array = import_optional("dask.array", extra="lazy", purpose=_PURPOSE)
+    # One band per chunk, as rioxarray does: bands are stored separately, so a
+    # chunk spanning several of them would read from several places at once.
+    blocks = dask_array.core.normalize_chunks(
+        chunks=(1, "auto", "auto"),
+        shape=(src.count, src.height, src.width),
+        dtype=np.dtype(src.dtypes[0]),
+        previous_chunks=tuple((size,) for size in (1, *src.block_shapes[0])),
+    )
+    # normalize_chunks returns every block's size per dimension, regular apart
+    # from a possibly short last one; the first is the size that generates them.
+    return {dim: int(sizes[0]) for dim, sizes in zip(_DIMS, blocks, strict=True) if sizes}
+
+
 def validate_chunks(chunks: object) -> ChunkSpec:
     """Check a chunk specification before it reaches dask.
 
@@ -140,17 +175,23 @@ class XarrayAdapter(BaseRasterAdapter):
         BackendError
             If the file cannot be opened as a raster.
         """
-        chunks = validate_chunks(chunks)
+        # Widened because "auto" is resolved to concrete sizes below, and a
+        # dict[str, int] is not a dict[str, int | Literal["auto"]] to a type
+        # checker: dict values are invariant.
+        spec: ChunkSpec | dict[str, int] = validate_chunks(chunks)
         rioxarray = _import_rioxarray()
         # dask is not imported by rioxarray itself; check it up front so a
         # missing package is reported as the extra, not as an xarray error.
         import_optional("dask.array", extra="lazy", purpose=_PURPOSE)
         try:
             with open_env(path):
-                # rasterio supplies the driver, which rioxarray does not record.
+                # rasterio supplies the driver, which rioxarray does not
+                # record, and the block layout "auto" is resolved against.
                 with rio.open(path) as src:
                     driver = src.driver
-                dataarray = rioxarray.open_rasterio(path, chunks=chunks)
+                    if spec == "auto":
+                        spec = _auto_chunk_sizes(src)
+                dataarray = rioxarray.open_rasterio(path, chunks=spec)
         except Exception as e:
             raise BackendError(f"failed to open raster lazily: {path}") from e
         return cls(dataarray, driver=driver, source_path=path)
