@@ -44,6 +44,8 @@ Nothing here downloads anything; the products must already be on disk.
 
 import numpy as np
 import pytest
+import rasterio as rio
+from rasterio.windows import Window
 
 import eeo
 from eeo.core.blockwise import (
@@ -715,23 +717,70 @@ LAZY_BAND_PATTERNS = {
     "landsat": ("Landsat", "*_SR_B4.TIF", "*_SR_B5.TIF"),
 }
 
+#: Each product's quality band, and the band name that selects its decoder.
+QUALITY_PATTERNS = {
+    "sentinel2": ("*/GRANULE/*/IMG_DATA/R20m/*_SCL_20m.jp2", "scl"),
+    "landsat": ("*_QA_PIXEL.TIF", "qa_pixel"),
+}
 
-@pytest.fixture(scope="module", params=["sentinel2", "landsat"])
-def real_band_hrefs(request):
+#: The same two bands at each product's finest resolution, for the capped
+#: acceptance run: a 10980x10980 Sentinel-2 pair and the full Landsat scene.
+FULL_BAND_PATTERNS = {
+    "sentinel2": (
+        "Sentinel-2",
+        "*/GRANULE/*/IMG_DATA/R10m/*_B04_10m.jp2",
+        "*/GRANULE/*/IMG_DATA/R10m/*_B08_10m.jp2",
+    ),
+    "landsat": ("Landsat", "*_SR_B4.TIF", "*_SR_B5.TIF"),
+}
+
+
+def _band_hrefs(request, product, patterns_by_product):
     """GDAL paths to one product's red and NIR bands, inside its archive."""
     pytest.importorskip("dask.array")
     pytest.importorskip("rioxarray")
     from eeo.io._archive import open_product
 
-    product = request.param
     scene = request.getfixturevalue(f"{product}_scene")
-    mission, *patterns = LAZY_BAND_PATTERNS[product]
+    mission, *patterns = patterns_by_product[product]
     source = open_product(scene, mission)
     hrefs = []
     for pattern in patterns:
         (member,) = source.glob(pattern)
         hrefs.append(source.href(member))
     return tuple(hrefs)
+
+
+@pytest.fixture(scope="module", params=["sentinel2", "landsat"])
+def real_band_hrefs(request):
+    """Red and NIR of one product, at the resolution the lazy tests use."""
+    return _band_hrefs(request, request.param, LAZY_BAND_PATTERNS)
+
+
+@pytest.fixture(scope="module", params=["sentinel2", "landsat"])
+def sweep_inputs(request):
+    """One product's red, NIR and quality bands, plus what masking it needs.
+
+    The extra masking arguments are the product's own doing, not the sweep's:
+    a raw Sentinel-2 JP2 declares no nodata (the loader takes it from the
+    product manifest), and a Landsat QA_PIXEL band cannot be decoded without
+    knowing which Landsat flew the scene (it is in the product's metadata).
+    Opening single bands by path bypasses both, so they are supplied here.
+    """
+    product = request.param
+    scene = request.getfixturevalue(f"{product}_scene")
+    red, nir = _band_hrefs(request, product, LAZY_BAND_PATTERNS)
+    pattern, quality_name = QUALITY_PATTERNS[product]
+    (quality,) = _band_hrefs(request, product, {product: ("", pattern)})
+    # "LC09_L2SP_..." names the mission in its first four characters.
+    mask_kwargs = {"nodata": 0} if product == "sentinel2" else {"mission": int(scene.name[2:4])}
+    return red, nir, quality, quality_name, mask_kwargs
+
+
+@pytest.fixture(scope="module", params=["sentinel2", "landsat"])
+def full_band_hrefs(request):
+    """Red and NIR of one product at its finest resolution, with its name."""
+    return request.param, _band_hrefs(request, request.param, FULL_BAND_PATTERNS)
 
 
 def _open_both(href):
@@ -832,3 +881,200 @@ class TestRealSceneLazyBackend:
         finally:
             lazy_ndvi.close()
             ndvi.close()
+
+
+# ---------------------------------------------------------------------------
+# Memory-capped runs on real products (WP-17's acceptance test)
+# ---------------------------------------------------------------------------
+
+#: Address-space cap for the streamed acceptance run. Generous next to what
+#: streaming needs and mean next to the scenes: a full Sentinel-2 NDVI at 10 m
+#: holds 482 MB per band as float32 if it holds one at all.
+REAL_CAP_MIB = 1400
+
+#: Cap for the per-call sweep. Higher than the acceptance run's, because
+#: ``RLIMIT_AS`` limits *address space* rather than resident memory, and dask's
+#: thread pool reserves far more of the former than it ever uses: a lazy
+#: ``to_xarray`` of one Sentinel-2 band peaks at 457 MiB resident but needs
+#: more than 1.4 GiB of address space. The calls are still held to a resident
+#: budget, which is the number that means anything.
+SWEEP_CAP_MIB = 2200
+
+#: What a streamed full-scene NDVI must stay under, resident. GDAL's pinned
+#: 256 MiB block cache is included in the budget.
+REAL_PEAK_BUDGET_MIB = 900
+
+#: Resident budget for a single swept call. Higher than the streamed NDVI's,
+#: because of one outlier: ``plot_histogram`` is the only plot that does not
+#: read at display resolution, so on the Landsat band it reads all 123 MB and
+#: the nodata mask then promotes that to float64 — 950 MiB peak, against about
+#: 300 for every other plot. Recorded here rather than silently accommodated:
+#: making the histogram decimate would make it approximate, which is a change
+#: to what the function means and belongs in a task of its own.
+SWEEP_PEAK_BUDGET_MIB = 1200
+
+#: Every other public call, run on one lazily-opened band of a real product
+#: (``ds``, red) with a second band (``other``, NIR) and the scene's quality
+#: band (``quality``) available. Each runs in its own capped process, because
+#: memory is not returned to the operating system between calls: run in one
+#: process they fail in the order they happen to come, which measures nothing.
+REAL_SWEEP_CALLS = [
+    ("add", "ds.add(5)"),
+    ("subtract", "ds.subtract(5)"),
+    ("multiply", "ds.multiply(2)"),
+    ("divide", "ds.divide(2)"),
+    ("power", "ds.power(2)"),
+    ("sqrt", "ds.sqrt()"),
+    ("log", "ds.log()"),
+    ("absolute", "ds.absolute()"),
+    ("normalized_difference", "other.normalized_difference(ds)"),
+    ("ndvi", "pair.ndvi('red', nir='nir')"),
+    ("ndwi", "pair.ndwi('nir', green='red')"),
+    ("ndmi", "pair.ndmi('red', nir='nir')"),
+    ("ndbi", "pair.ndbi('nir', swir='red')"),
+    ("evi", "pair.evi('red', 'red', nir='nir')"),
+    ("savi", "pair.savi('red', nir='nir')"),
+    ("normalize_min_max", "ds.normalize_min_max()"),
+    ("normalize_percentile", "ds.normalize_percentile()"),
+    ("standardize", "ds.standardize()"),
+    ("clip_raster_with_bbox", "ds.clip_raster_with_bbox(centre_bbox)"),
+    ("clip_raster_with_vector", "ds.clip_raster_with_vector(centre_frame)"),
+    ("resample", "ds.resample(scale_factor=0.25)"),
+    ("reproject_raster", "ds.reproject_raster(target_crs=4326)"),
+    ("mosaic", "ds.mosaic([other])"),
+    ("stack", "ds.stack([other])"),
+    ("mask_clouds", "pair.mask_clouds(mask=quality_patch, **mask_kwargs)"),
+    ("clear_fraction", "ds.clear_fraction()"),
+    ("get_mean_pixel", "ds.get_mean_pixel()"),
+    ("get_maximum_pixel", "ds.get_maximum_pixel()"),
+    ("get_minimum_pixel", "ds.get_minimum_pixel()"),
+    ("get_percentile_pixel", "ds.get_percentile_pixel(50)"),
+    ("extract_value_at_coordinate", "ds.extract_value_at_coordinate(centre_point)"),
+    ("get_band", "ds.get_band(1)"),
+    ("to_array", "ds.to_array()"),
+    ("to_rasterio", "ds.to_rasterio()"),
+    ("to_xarray", "ds.to_xarray()"),
+    ("describe_approx", "ds.describe(stats='approx')"),
+    ("describe_exact", "ds.describe(stats='exact')"),
+    ("save_raster", "ds.save_raster(out_dir + '/saved.tif')"),
+    ("read_window", "ds.read(1, window=centre_window)"),
+    ("plot_raster", "ds.plot_raster()"),
+    ("plot_histogram", "ds.plot_histogram()"),
+    ("plot_band_array", "ds.plot_band_array()"),
+    ("plot_raster_with_histogram", "ds.plot_raster_with_histogram()"),
+    ("plot_composite", "pair.plot_composite(bands=('red', 'nir', 'red'))"),
+]
+
+#: Calls each documented as holding a whole raster (or two) in memory, so a cap
+#: the size of the scene may deny them. They are still run: what the test then
+#: requires is that they failed for want of memory and nothing else.
+REAL_SWEEP_MAY_EXCEED = {"mosaic", "stack", "to_xarray", "describe_exact"}
+
+
+def _sweep_snippet(inputs, out_dir, call):
+    """Build a snippet that opens one product's bands and makes a single call."""
+    red_href, nir_href, quality_href, quality_name, mask_kwargs = inputs
+    return f"""
+        import geopandas as gpd
+        import eeo
+        from rasterio.windows import Window
+        from shapely.geometry import box
+
+        out_dir = {str(out_dir)!r}
+        mask_kwargs = {mask_kwargs!r}
+        ds = eeo.load_raster({red_href!r}, chunks=1024)
+        other = eeo.load_raster({nir_href!r}, chunks=1024)
+        quality = eeo.load_raster({quality_href!r}, chunks=1024, band_names=[{quality_name!r}])
+
+        left, bottom, right, top = ds.get_bounds()
+        centre_x, centre_y = (left + right) / 2, (bottom + top) / 2
+        span = (right - left) / 8
+        centre_bbox = (centre_x - span, centre_y - span, centre_x + span, centre_y + span)
+        centre_point = (centre_x, centre_y)
+        centre_frame = gpd.GeoDataFrame(geometry=[box(*centre_bbox)], crs=ds.get_crs())
+        height, width = ds.get_shape()
+        centre_window = Window(width // 4, height // 4, 256, 256)
+
+        def patch(raster):
+            return raster.clip_raster_with_bbox(centre_bbox)
+
+        # The named indices, mask_clouds and plot_composite address bands by
+        # name within one dataset, so they need the two bands stacked — and a
+        # stack of two full scenes is one of the calls this cap denies. They
+        # run on a clipped patch instead: what is under test here is that the
+        # call works on real data inside the cap, and the full-scene streaming
+        # behaviour of the index family is covered uncapped above.
+        if {call!r}.startswith(("pair", "quality_patch")):
+            pair = patch(ds).stack([patch(other)], names=["red", "nir"])
+            quality_patch = patch(quality)
+
+        result = {call}
+        report(call={call!r})
+        """
+
+
+class TestRealSceneMemoryCap:
+    """Every public call, on a real product, inside a hard memory cap."""
+
+    def test_a_full_scene_ndvi_streams_under_the_cap(self, full_band_hrefs, tmp_path):
+        from memory_harness import run_capped
+
+        product, (red_href, nir_href) = full_band_hrefs
+        out = tmp_path / f"{product}_ndvi.tif"
+        run = run_capped(
+            f"""
+            import numpy as np
+            import eeo
+            from eeo.core.blockwise import BlockSource, apply_blockwise
+
+            def ndvi(nir, red):
+                nir = nir.astype("float32")
+                red = red.astype("float32")
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    return (nir - red) / (nir + red)
+
+            red = eeo.load_raster({red_href!r}, chunks=1024)
+            nir = eeo.load_raster({nir_href!r}, chunks=1024)
+            result = apply_blockwise(
+                red,
+                ndvi,
+                sources=[BlockSource.from_dataset(nir), BlockSource.from_dataset(red)],
+                fractional=True,
+                save_path={str(out)!r},
+            )
+            report(shape=list(result.get_shape()))
+            """,
+            cap_mib=REAL_CAP_MIB,
+        )
+
+        assert run.ok, run.failure
+        assert run.peak_rss_mib < REAL_PEAK_BUDGET_MIB, f"peaked at {run.peak_rss_mib:.0f} MiB"
+
+        # The scene really is large, and the answer really is NDVI: check a
+        # window against the same arithmetic done straight from the files.
+        height, width = run.result["shape"]
+        assert height * width > 40_000_000, (height, width)
+        window = Window(width // 3, height // 3, 128, 128)
+        with rio.open(out) as saved, rio.open(red_href) as red, rio.open(nir_href) as nir:
+            red_block = red.read(1, window=window).astype("float32")
+            nir_block = nir.read(1, window=window).astype("float32")
+            with np.errstate(divide="ignore", invalid="ignore"):
+                expected = (nir_block - red_block) / (nir_block + red_block)
+            fill = red.nodata
+            if fill is not None:
+                expected[(red_block == fill) | (nir_block == fill)] = np.nan
+            np.testing.assert_allclose(saved.read(1, window=window), expected, equal_nan=True)
+
+    @pytest.mark.parametrize(
+        ("name", "call"), REAL_SWEEP_CALLS, ids=[name for name, _ in REAL_SWEEP_CALLS]
+    )
+    def test_every_other_call_runs_under_the_cap(self, sweep_inputs, tmp_path, name, call):
+        from memory_harness import run_capped
+
+        run = run_capped(_sweep_snippet(sweep_inputs, tmp_path, call), cap_mib=SWEEP_CAP_MIB)
+
+        if name in REAL_SWEEP_MAY_EXCEED:
+            assert run.ok or run.out_of_memory, run.failure
+            return
+        assert run.ok, run.failure
+        assert run.peak_rss_mib < SWEEP_PEAK_BUDGET_MIB, f"peaked at {run.peak_rss_mib:.0f} MiB"

@@ -24,7 +24,8 @@ pytest.importorskip("dask.array")
 pytest.importorskip("rioxarray")
 
 HEIGHT, WIDTH = 120, 160
-LARGE_SIDE = 600
+# Larger than both display budgets and describe's 1024-pixel decimation cap.
+LARGE_SIDE = 1400
 TRANSFORM = from_origin(500000.0, 4000000.0, 10.0, 10.0)
 CRS_UTM = CRS.from_epsg(32633)
 
@@ -228,7 +229,7 @@ def test_saving_an_op_result_round_trips(both, tmp_path):
 
 @pytest.fixture
 def large_scene_path(tmp_path):
-    """600x600 single-band raster, larger than the tiny figures' display budget."""
+    """A raster larger than the display budget and the statistics cap."""
     array = np.linspace(0.0, 1.0, LARGE_SIDE * LARGE_SIDE, dtype="float32").reshape(
         1, LARGE_SIDE, LARGE_SIDE
     )
@@ -266,6 +267,27 @@ def test_plotting_reads_at_display_resolution_not_in_full(large_scene_path, monk
         # cosmetic warning is irrelevant to the reads under test.
         warnings.filterwarnings("ignore", message="Tight layout not applied", category=UserWarning)
         lazy.plot_raster(figsize=(1, 1))
+
+    assert computed.count == 0, "the lazy raster was read instead of the file"
+    assert shapes, "nothing was read at all"
+    assert all(max(shape[-2:]) < LARGE_SIDE for shape in shapes), shapes
+
+
+def test_approximate_statistics_decimate_rather_than_read_the_scene(large_scene_path, monkeypatch):
+    """``describe(stats="approx")`` must not read a lazy raster in full."""
+    shapes = []
+    original = RasterioAdapter.read
+
+    def spy(self, *args, **kwargs):
+        array = original(self, *args, **kwargs)
+        shapes.append(np.shape(array))
+        return array
+
+    monkeypatch.setattr(RasterioAdapter, "read", spy)
+    lazy = eeo.load_raster(large_scene_path, chunks=128)
+
+    with Computes() as computed:
+        lazy.describe(stats="approx")
 
     assert computed.count == 0, "the lazy raster was read instead of the file"
     assert shapes, "nothing was read at all"
