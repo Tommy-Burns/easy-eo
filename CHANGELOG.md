@@ -60,6 +60,26 @@ are called out under a **Breaking** heading.
   remote open runs under GDAL settings tuned for object stores
   (`eeo.core.remote.GDAL_HTTP_ENV`), which the STAC loader already used.
 
+- WP-17's acceptance test: a full-scene NDVI inside a process whose memory is
+  hard-capped with `RLIMIT_AS`, on both backends. On an 8000 x 8000 two-band
+  scene (268 MB) the streamed form peaks at about 490 MiB and runs under a
+  900 MiB cap, while the same arithmetic done whole-array fails below
+  1500 MiB — the test asserts both halves, so a cap that stopped
+  discriminating would be noticed. Repeated on both real products at their
+  finest resolution (a 10980 x 10980 Sentinel-2 pair and a full Landsat 9
+  scene), where the result is also checked pixel for pixel against NumPy.
+- Every other public call — 44 of them, from algebra and the indices through
+  clipping, reprojection, statistics, masking, saving and the plots — is run
+  on both real products inside the same cap, each in its own process.
+
+### Fixed
+
+- `describe(stats="approx")` read every pixel of a lazy dataset instead of
+  taking a decimated read: the decimation was only wired up for the rasterio
+  backend, so asking for approximate statistics on a lazily-opened scene did
+  the most expensive thing available. On an 8000 x 8000 band it read
+  8000 x 8000 where it now reads 1024 x 1024.
+
 ### Changed
 
 - `load_raster` now reports an unreadable file as "could not be opened as a

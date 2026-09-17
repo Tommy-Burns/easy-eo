@@ -12,7 +12,12 @@ from rasterio import CRS
 from rasterio.coords import BoundingBox
 from rasterio.transform import Affine
 
-from eeo.common import is_rasterio_backed, mask_nodata, resolve_band_index
+from eeo.common import (
+    is_rasterio_backed,
+    mask_nodata,
+    promote_for_decimated_read,
+    resolve_band_index,
+)
 from eeo.core.adapters import (
     BaseRasterAdapter,
     NumpyRasterioAdapter,
@@ -139,8 +144,12 @@ def _band_stats_line(
 def _stats_lines(ds: EEORasterDataset, mode: str) -> list[str]:
     """Build the statistics block of ``describe`` (may read pixel data)."""
     out_shape = None
-    if mode == "approx" and is_rasterio_backed(ds):
-        out_shape = _decimated_stats_shape(ds.get_shape(), _STATS_DECIMATION_CAP)
+    # Only the rasterio backend reads decimated, and a lazy dataset reaches it
+    # for free. Without this, "approx" on a lazy scene read every pixel of it
+    # — the opposite of what asking for approximate statistics means.
+    source = promote_for_decimated_read(ds) if mode == "approx" else ds
+    if mode == "approx" and is_rasterio_backed(source):
+        out_shape = _decimated_stats_shape(source.get_shape(), _STATS_DECIMATION_CAP)
     approximate = out_shape is not None
 
     if approximate:
@@ -156,7 +165,9 @@ def _stats_lines(ds: EEORasterDataset, mode: str) -> list[str]:
 
     lines = ["", f"  {'statistics':<{width}} : {header}"]
     for band_idx in range(1, ds.get_count() + 1):
-        array = ds.read(band_idx, out_shape=out_shape) if approximate else ds.get_band(band_idx)
+        array = (
+            source.read(band_idx, out_shape=out_shape) if approximate else source.get_band(band_idx)
+        )
         lines.append(_band_stats_line(ds, band_idx, array, approximate, width))
     return lines
 
