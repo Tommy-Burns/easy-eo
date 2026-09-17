@@ -11,6 +11,7 @@ from rasterio.transform import Affine
 
 from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import BackendError, MissingDependencyError, ValidationError
+from eeo.core.remote import is_gdal_path
 from eeo.core.types import ChunkSpec, StrPath
 
 
@@ -30,7 +31,11 @@ def load_raster(
     Parameters
     ----------
     path : str or path-like
-        Path to a GDAL-readable raster file.
+        Path to a GDAL-readable raster: a local file, an ``http(s)``, ``s3``,
+        ``gs`` or ``az`` URL, or a GDAL virtual path such as
+        ``/vsizip/products.zip/band.tif``. A remote raster is read in place
+        over HTTP range requests — nothing is downloaded whole — which is
+        worth pairing with ``chunks`` for a cloud-optimized GeoTIFF.
     chunks : str or int or dict or None, default None
         ``None`` opens the file with rasterio. Anything else opens it on the
         lazy backend: an :class:`xarray.DataArray` split into dask chunks of
@@ -60,7 +65,9 @@ def load_raster(
     Raises
     ------
     FileNotFoundError
-        If ``path`` does not exist.
+        If ``path`` names a local file that does not exist. A URL or virtual
+        path is left to GDAL, which reports an unreachable one as a
+        ``BackendError``.
     BackendError
         If the file exists but cannot be opened as a raster.
     MissingDependencyError
@@ -74,8 +81,9 @@ def load_raster(
     >>> ds = load_raster("scene.tif")
     >>> ds = load_raster("stack.tif", band_names=["blue", "green", "red", "nir"])
     >>> ds = load_raster("scene.tif", chunks="auto")  # lazy, dask-chunked
+    >>> ds = load_raster("https://example.com/scene.tif", chunks="auto")
     """
-    if not os.path.isfile(path):
+    if not is_gdal_path(path) and not os.path.isfile(path):
         raise FileNotFoundError(f'the file "{path}" does not exist')
     try:
         ds = EEORasterDataset.from_path(path, chunks=chunks)

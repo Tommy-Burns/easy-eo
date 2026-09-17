@@ -46,17 +46,7 @@ from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
 
 from eeo.core.exceptions import ValidationError
-
-# GDAL settings for reading a remote COG efficiently. Object stores answer a
-# directory probe by listing the whole container, which costs far more than the
-# read itself; HTTP/2 multiplexing and the VSI cache keep the range requests for
-# the tiles we actually want.
-_GDAL_HTTP_ENV = {
-    "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
-    "GDAL_HTTP_MULTIPLEX": "YES",
-    "GDAL_HTTP_VERSION": "2",
-    "VSI_CACHE": "TRUE",
-}
+from eeo.core.remote import GDAL_HTTP_ENV as _GDAL_HTTP_ENV
 
 
 class Grid(NamedTuple):

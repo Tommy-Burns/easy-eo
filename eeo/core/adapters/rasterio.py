@@ -9,6 +9,7 @@ import rasterio as rio
 from rasterio.io import DatasetReader, DatasetWriter, MemoryFile
 
 from eeo.core.exceptions import BackendError
+from eeo.core.remote import open_env
 from eeo.core.types import StrPath
 
 from .base import BaseRasterAdapter
@@ -47,7 +48,8 @@ class RasterioAdapter(BaseRasterAdapter):
     @classmethod
     def from_path(cls, path: StrPath) -> RasterioAdapter:
         try:
-            dataset = rio.open(path)
+            with open_env(path):
+                dataset = rio.open(path)
         except Exception as e:
             raise BackendError(f"failed to open raster: {path}") from e
         return cls(dataset)

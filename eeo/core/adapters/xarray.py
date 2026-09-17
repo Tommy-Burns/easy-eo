@@ -15,6 +15,7 @@ from rasterio.windows import Window
 
 from eeo._optional import import_optional
 from eeo.core.exceptions import BackendError, ValidationError
+from eeo.core.remote import open_env
 from eeo.core.types import ChunkSpec, StrPath
 
 from .base import BaseRasterAdapter
@@ -145,10 +146,11 @@ class XarrayAdapter(BaseRasterAdapter):
         # missing package is reported as the extra, not as an xarray error.
         import_optional("dask.array", extra="lazy", purpose=_PURPOSE)
         try:
-            # rasterio supplies the driver, which rioxarray does not record.
-            with rio.open(path) as src:
-                driver = src.driver
-            dataarray = rioxarray.open_rasterio(path, chunks=chunks)
+            with open_env(path):
+                # rasterio supplies the driver, which rioxarray does not record.
+                with rio.open(path) as src:
+                    driver = src.driver
+                dataarray = rioxarray.open_rasterio(path, chunks=chunks)
         except Exception as e:
             raise BackendError(f"failed to open raster lazily: {path}") from e
         return cls(dataarray, driver=driver, source_path=path)
