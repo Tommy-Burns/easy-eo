@@ -113,6 +113,18 @@ def test_local_paths_are_not_remote(path):
     assert not is_gdal_path(path)
 
 
+@pytest.mark.parametrize("path", [b"/data/scene.tif", b"https://example.com/scene.tif"])
+def test_a_bytes_path_is_left_to_the_filesystem(path):
+    """os.fspath keeps bytes as bytes, and a bytes path is never treated as a URL.
+
+    GDAL is handed str paths everywhere in Easy-EO, so rather than guess an
+    encoding for one that arrives as bytes, both predicates decline it and the
+    ordinary local-file handling applies.
+    """
+    assert not is_remote(path)
+    assert not is_gdal_path(path)
+
+
 def test_an_archive_member_is_gdal_s_to_resolve_but_is_not_remote():
     """A local virtual path exists to GDAL and not to os.path.isfile."""
     path = "/vsizip/products.zip/scene.tif"
@@ -214,3 +226,50 @@ def test_saving_a_remote_raster_locally_round_trips(served, expected, tmp_path, 
     with rio.open(out) as saved:
         np.testing.assert_array_equal(saved.read(), expected)
         assert saved.descriptions == ("red", "nir")
+
+
+# ----------------------------------------------------- the test server itself
+
+
+def _resolver(directory):
+    """A handler bound to ``directory``, without opening a socket."""
+    from http_fixtures import RangeRequestHandler
+
+    bound = type(
+        "BoundHandler",
+        (RangeRequestHandler,),
+        {"directory": str(directory), "log_path": str(directory / "requests.log")},
+    )
+    return object.__new__(bound)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/../outside.txt",
+        "/../../outside.txt",
+        "/..%2Foutside.txt",
+        "/subdir/../../outside.txt",
+        "/%2e%2e/outside.txt",
+    ],
+)
+def test_the_test_server_refuses_paths_that_leave_its_directory(tmp_path, path):
+    """A request path is attacker-shaped by definition; it must not escape."""
+    (tmp_path.parent / "outside.txt").write_text("not for serving", encoding="utf-8")
+    served_dir = tmp_path / "served"
+    served_dir.mkdir()
+    handler = _resolver(served_dir)
+    handler.path = path
+
+    assert handler._resolve() is None
+
+
+def test_the_test_server_serves_a_file_inside_its_directory(tmp_path):
+    """The other half: the refusal above must not be refusing everything."""
+    served_dir = tmp_path / "served"
+    served_dir.mkdir()
+    (served_dir / "scene.tif").write_bytes(b"pixels")
+    handler = _resolver(served_dir)
+    handler.path = "/scene.tif?token=abc"
+
+    assert handler._resolve() == (served_dir / "scene.tif").resolve()

@@ -5,6 +5,7 @@ report the same metadata and return the same pixels.
 """
 
 import importlib
+import warnings
 
 import numpy as np
 import pytest
@@ -82,6 +83,35 @@ def test_chunks_select_the_lazy_backend(lazy_extra, stack_path, chunks):
     assert ds.path == stack_path
 
 
+def test_auto_chunks_match_rioxarrays_own_and_warn_about_nothing(lazy_extra, stack_path):
+    """``chunks="auto"`` must mean what rioxarray means by it, quietly.
+
+    rioxarray resolves ``"auto"`` to a dimension-order tuple and hands that to
+    ``DataArray.chunk``, which xarray warns about; versions that stopped doing
+    it need Python 3.12, so on 3.10 and 3.11 the warning is unavoidable from
+    the outside. Easy-EO therefore resolves ``"auto"`` itself, to the same
+    sizes — which is what this test pins, in both directions.
+
+    The warning is matched by its message rather than its category on purpose:
+    xarray raises it as a ``FutureWarning`` where the version before it used a
+    ``DeprecationWarning``, and either would fail the suite's warning gate.
+    """
+    import rioxarray
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        ours = load_raster(stack_path, chunks="auto")
+
+    assert [str(w.message) for w in caught if "chunks as dimension-order" in str(w.message)] == []
+
+    with warnings.catch_warnings():
+        # The reference call is the one that warns; that is the point.
+        warnings.simplefilter("ignore")
+        reference = rioxarray.open_rasterio(stack_path, chunks="auto")
+
+    assert ours.ds.data.chunks == reference.data.chunks
+
+
 def test_without_chunks_the_backend_is_unchanged(stack_path):
     assert isinstance(load_raster(stack_path)._adapter, RasterioAdapter)
 
@@ -147,6 +177,22 @@ def test_constructor_rejects_other_dimensions(lazy_extra):
 
     with pytest.raises(ValidationError, match="dimensions"):
         XarrayAdapter(xr.DataArray(np.zeros((2, 3)), dims=("y", "x")))
+
+
+def test_reading_an_in_memory_dataarray_hands_back_a_copy(lazy_extra, stack_path):
+    """A DataArray that is not dask-backed hands out views of its own buffer.
+
+    The adapter copies in that case, so writing into what ``read()`` returned
+    cannot reach back into the dataset it came from.
+    """
+    loaded = load_raster(stack_path, chunks=20).ds.compute()  # dask -> in memory
+    adapter = XarrayAdapter(loaded)
+
+    band = adapter.read(1)
+    band[:] = 7
+
+    assert not np.shares_memory(band, loaded.data)
+    np.testing.assert_array_equal(adapter.read(1), load_raster(stack_path).read(1))
 
 
 # -------------------------------------------------------------- metadata

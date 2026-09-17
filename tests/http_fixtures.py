@@ -19,13 +19,13 @@ from __future__ import annotations
 import contextlib
 import http.server
 import json
-import os
 import socketserver
 import subprocess
 import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import unquote
 
 
 class RangeRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -44,17 +44,35 @@ class RangeRequestHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: D102, N802 - http.server's naming
         self._serve(body=True)
 
+    def _resolve(self) -> Path | None:
+        """Map the request path to a file inside the served directory, or None.
+
+        Anything that escapes the directory is refused rather than served: a
+        request path is attacker-controlled by construction, and ``..`` in one
+        would otherwise reach any file the test process can read.
+        """
+        requested = unquote(self.path.split("?")[0].split("#")[0]).lstrip("/")
+        root = Path(self.directory).resolve()
+        try:
+            target = (root / requested).resolve()
+        except OSError:
+            return None
+        if target != root and root not in target.parents:
+            return None
+        return target if target.is_file() else None
+
     def _serve(self, *, body: bool) -> None:
-        path = os.path.join(self.directory, self.path.lstrip("/").split("?")[0])
-        if not os.path.isfile(path):
-            # GDAL probes for sidecars (.aux.xml, .ovr, ...); 404 is the answer.
+        path = self._resolve()
+        if path is None:
+            # GDAL probes for sidecars (.aux.xml, .ovr, ...); 404 is the
+            # answer, and so is a path that points outside the directory.
             self.send_response(404)
             self.send_header("Content-Length", "0")
             self.end_headers()
             self._record(status=404, served=0)
             return
 
-        size = os.path.getsize(path)
+        size = path.stat().st_size
         start, stop, status = 0, size - 1, 200
         header = self.headers.get("Range")
         if header and header.startswith("bytes="):
@@ -75,7 +93,7 @@ class RangeRequestHandler(http.server.BaseHTTPRequestHandler):
         if not body:
             self._record(status=status, served=0)
             return
-        with open(path, "rb") as handle:
+        with path.open("rb") as handle:
             handle.seek(start)
             data = handle.read(length)
         self._record(status=status, served=len(data))
