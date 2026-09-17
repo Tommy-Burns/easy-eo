@@ -50,6 +50,16 @@ are called out under a **Breaking** heading.
   full on every backend, not because of the backend: `stack` (it builds one
   in-memory array by definition), `clear_fraction` and `plot_histogram`.
 
+- `load_raster` opens a raster GDAL can reach, not only a local file: an
+  `http(s)`, `s3`, `gs` or `az` URL, or a virtual path such as
+  `/vsizip/products.zip/band.tif`. A remote raster is read in place over HTTP
+  range requests, on either backend; nothing is downloaded whole. Measured on
+  a 5.6 MB cloud-optimized GeoTIFF served locally: opening it lazily and
+  reading its metadata fetched 32 KiB in two requests, one 256 x 256 window
+  cost 288 KiB in one request, and the whole raster came to 4 MB in 15. A
+  remote open runs under GDAL settings tuned for object stores
+  (`eeo.core.remote.GDAL_HTTP_ENV`), which the STAC loader already used.
+
 ### Changed
 
 - `load_raster` now reports an unreadable file as "could not be opened as a
