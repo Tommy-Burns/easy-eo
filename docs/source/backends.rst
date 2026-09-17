@@ -123,6 +123,31 @@ its file rather than reading its pixels, after which the block-wise engine
 streams from the file a window at a time. So ``ds.to_rasterio()``, which every
 operation calls, is free for a lazy dataset opened from a file.
 
+Reading over HTTP
+^^^^^^^^^^^^^^^^^
+
+The loader takes a URL wherever it takes a path, so a cloud-optimized GeoTIFF
+can be read where it sits:
+
+.. code-block:: python
+
+   url = "https://example.com/scenes/B04.tif"
+   ds = eeo.load_raster(url, chunks=1024)
+   patch = ds.read(1, window=Window(2048, 2048, 512, 512))
+
+Nothing is downloaded whole. GDAL fetches byte ranges, so opening the raster
+costs its header and reading a window costs the tiles that window covers. The
+same works without ``chunks`` on the rasterio backend, and for ``s3://``,
+``gs://`` and ``az://`` paths, as well as for a file inside a local archive
+(``/vsizip/products.zip/B04.tif``).
+
+.. note::
+
+   A remote read is only as selective as the file allows. A *cloud-optimized*
+   GeoTIFF is internally tiled, so a window touches a few tiles; a plain
+   striped GeoTIFF makes GDAL fetch whole rows, and a JPEG 2000 may fetch far
+   more than you asked for.
+
 .. note::
 
    This means an operation on a lazy dataset does not build a dask graph and
