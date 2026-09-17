@@ -12,10 +12,9 @@ are called out under a **Breaking** heading.
 ### Added
 
 - New optional `lazy` extra (`pip install "easy-eo[lazy]"`): xarray, rioxarray
-  and `dask[array]`, the dependencies of the dask-chunked backend being built
-  in WP-17. Installing it enables nothing yet; the backend itself follows. The
-  conda equivalent is `conda install -c conda-forge easy-eo xarray rioxarray
-  dask-core` — `dask-core`, not `dask`, which on conda-forge is a metapackage
+  and `dask[array]`, the dependencies of the dask-chunked backend described
+  below. The conda equivalent is `conda install -c conda-forge easy-eo xarray
+  rioxarray dask-core` — `dask-core`, not `dask`, which on conda-forge is a metapackage
   that also installs `distributed` and `bokeh`.
 - The floor `dask>=2024.8` is tested, not assumed: CI's minimum-versions job
   now installs the `lazy` extra at its lower bounds (with numpy 1.26,
@@ -49,7 +48,6 @@ are called out under a **Breaking** heading.
 - Three operations still read a lazy raster in full, each because it reads in
   full on every backend, not because of the backend: `stack` (it builds one
   in-memory array by definition), `clear_fraction` and `plot_histogram`.
-
 - `load_raster` opens a raster GDAL can reach, not only a local file: an
   `http(s)`, `s3`, `gs` or `az` URL, or a virtual path such as
   `/vsizip/products.zip/band.tif`. A remote raster is read in place over HTTP
@@ -59,18 +57,30 @@ are called out under a **Breaking** heading.
   cost 288 KiB in one request, and the whole raster came to 4 MB in 15. A
   remote open runs under GDAL settings tuned for object stores
   (`eeo.core.remote.GDAL_HTTP_ENV`), which the STAC loader already used.
-
 - WP-17's acceptance test: a full-scene NDVI inside a process whose memory is
   hard-capped with `RLIMIT_AS`, on both backends. On an 8000 x 8000 two-band
   scene (268 MB) the streamed form peaks at about 490 MiB and runs under a
-  900 MiB cap, while the same arithmetic done whole-array fails below
-  1500 MiB — the test asserts both halves, so a cap that stopped
-  discriminating would be noticed. Repeated on both real products at their
+  900 MiB cap, while the same arithmetic done whole-array does not fit in what
+  streaming needed plus 300 MiB — the test asserts both halves, so streaming
+  that stopped buying anything would be noticed. The comparison is measured
+  against the streamed run rather than against a fixed number, because
+  `RLIMIT_AS` limits address space and how much of it an interpreter reserves
+  varies by version. Repeated on both real products at their
   finest resolution (a 10980 x 10980 Sentinel-2 pair and a full Landsat 9
   scene), where the result is also checked pixel for pixel against NumPy.
 - Every other public call — 44 of them, from algebra and the indices through
   clipping, reprojection, statistics, masking, saving and the plots — is run
   on both real products inside the same cap, each in its own process.
+- New guide: "Working with Large Rasters" — what streams by default, where a
+  chain stops being bounded and how to keep it bounded, what the lazy backend
+  does and does not buy, and a table of every call that holds a whole raster,
+  with measured figures throughout.
+- `BlockSource.from_dataset(ds, band=...)` accepts a band name as well as an
+  index, as every other band argument in the library does. It is the entry
+  point for running your own function block-wise, so the guide's examples read
+  `band="nir"` rather than `band=2`.
+- The `lazy` extra is listed in the README and getting-started install tables,
+  now that it enables something.
 
 ### Fixed
 
@@ -78,7 +88,8 @@ are called out under a **Breaking** heading.
   taking a decimated read: the decimation was only wired up for the rasterio
   backend, so asking for approximate statistics on a lazily-opened scene did
   the most expensive thing available. On an 8000 x 8000 band it read
-  8000 x 8000 where it now reads 1024 x 1024.
+  8000 x 8000 where it now reads 1024 x 1024. Found by running every public
+  call against both real products inside a memory cap.
 
 ### Changed
 
