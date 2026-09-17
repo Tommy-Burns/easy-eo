@@ -19,6 +19,7 @@ from __future__ import annotations
 import contextlib
 import http.server
 import json
+import os
 import socketserver
 import subprocess
 import sys
@@ -45,21 +46,24 @@ class RangeRequestHandler(http.server.BaseHTTPRequestHandler):
         self._serve(body=True)
 
     def _resolve(self) -> Path | None:
-        """Map the request path to a file inside the served directory, or None.
+        """Return the file this request names, or None if it names no file.
 
-        Anything that escapes the directory is refused rather than served: a
-        request path is attacker-controlled by construction, and ``..`` in one
-        would otherwise reach any file the test process can read.
+        The request path is attacker-controlled by construction, so it is
+        never used to *build* a filesystem path — only to pick one out of the
+        directory's own listing by exact name. A path cannot escape a
+        directory it was never joined to, and ``..`` or an encoded separator
+        simply matches no entry. Only files directly in the directory are
+        served, which is all the fixtures need.
         """
         requested = unquote(self.path.split("?")[0].split("#")[0]).lstrip("/")
-        root = Path(self.directory).resolve()
         try:
-            target = (root / requested).resolve()
+            entries = list(Path(self.directory).iterdir())
         except OSError:
             return None
-        if target != root and root not in target.parents:
-            return None
-        return target if target.is_file() else None
+        for entry in entries:
+            if entry.name == requested and entry.is_file():
+                return entry
+        return None
 
     def _serve(self, *, body: bool) -> None:
         path = self._resolve()
@@ -127,7 +131,13 @@ def _main() -> None:
         {"directory": directory, "log_path": log_path},
     )
     with _Server(("127.0.0.1", 0), handler) as httpd:
-        Path(port_path).write_text(str(httpd.server_address[1]), encoding="utf-8")
+        # Written to a temporary file and moved into place, so the parent can
+        # never read the file while it is still empty — which on Windows it
+        # did, producing a URL with no port in it at all.
+        port_file = Path(port_path)
+        pending = port_file.with_suffix(".pending")
+        pending.write_text(str(httpd.server_address[1]), encoding="utf-8")
+        os.replace(pending, port_file)
         httpd.serve_forever()
 
 
@@ -190,13 +200,18 @@ def serve_directory(directory, tmp_path):
     )
     try:
         deadline = time.monotonic() + 30
-        while not port_path.exists():
+        port = ""
+        while not port.isdigit():
+            # The port, not merely the file: a file that exists but is not yet
+            # readable would otherwise yield "http://127.0.0.1:/scene.tif".
+            port = port_path.read_text(encoding="utf-8").strip() if port_path.exists() else ""
+            if port.isdigit():
+                break
             if child.poll() is not None:
                 raise RuntimeError(f"the test HTTP server exited with {child.returncode}")
             if time.monotonic() > deadline:
                 raise RuntimeError("the test HTTP server did not report a port")
             time.sleep(0.02)
-        port = port_path.read_text(encoding="utf-8").strip()
         yield ServedDirectory(f"http://127.0.0.1:{port}", log_path)
     finally:
         child.terminate()

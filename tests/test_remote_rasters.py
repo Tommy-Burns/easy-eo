@@ -231,6 +231,19 @@ def test_saving_a_remote_raster_locally_round_trips(served, expected, tmp_path, 
 # ----------------------------------------------------- the test server itself
 
 
+def test_the_server_reports_a_real_port(served):
+    """The port handshake must not be read before the child has written it.
+
+    Read too early, it yields ``http://127.0.0.1:/scene.tif`` — a URL with no
+    port, which fails as a 404 far from its cause. Windows produced exactly
+    that: the file existed before its contents did.
+    """
+    host, _, port = served.base_url.rpartition(":")
+
+    assert host == "http://127.0.0.1"
+    assert port.isdigit(), served.base_url
+
+
 def _resolver(directory):
     """A handler bound to ``directory``, without opening a socket."""
     from http_fixtures import RangeRequestHandler
