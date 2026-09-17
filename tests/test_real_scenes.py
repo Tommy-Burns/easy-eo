@@ -809,6 +809,23 @@ class TestRealSceneLazyBackend:
                 assert saved.crs == reference.get_crs()
                 assert saved.transform == reference.get_transform()
 
+    def test_operations_read_the_file_rather_than_the_lazy_array(self, real_band_hrefs):
+        # 17.3's claim on a real product: a lazy dataset is promoted by
+        # reopening its file, so a chain of operations computes nothing
+        # through dask and never holds the scene.
+        from dask.callbacks import Callback
+
+        from eeo.core.core import EEORasterDataset
+
+        computed = []
+        red_href, nir_href = real_band_hrefs
+        with Callback(start=lambda dsk: computed.append(dsk)):
+            lazy_red = EEORasterDataset.from_path(red_href, chunks=LAZY_CHUNKS)
+            lazy_nir = EEORasterDataset.from_path(nir_href, chunks=LAZY_CHUNKS)
+            result = lazy_nir.normalized_difference(lazy_red).get_mean_pixel()
+        assert computed == []
+        assert np.isfinite(result["value"])
+
     def test_an_index_gives_the_same_answer_on_both_backends(self, real_band_hrefs):
         # Operations promote a lazy dataset today; whatever route they take,
         # the answer must not depend on which backend the bands were opened on.
