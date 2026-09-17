@@ -735,13 +735,8 @@ def real_band_hrefs(request):
 
 
 def _open_both(href):
-    """The same band opened lazily and with rasterio."""
-    from eeo.core.core import EEORasterDataset
-
-    return (
-        EEORasterDataset.from_path(href, chunks=LAZY_CHUNKS),
-        EEORasterDataset.from_path(href),
-    )
+    """The same band opened lazily and with rasterio, straight from the archive."""
+    return eeo.load_raster(href, chunks=LAZY_CHUNKS), eeo.load_raster(href)
 
 
 class TestRealSceneLazyBackend:
@@ -815,13 +810,11 @@ class TestRealSceneLazyBackend:
         # through dask and never holds the scene.
         from dask.callbacks import Callback
 
-        from eeo.core.core import EEORasterDataset
-
         computed = []
         red_href, nir_href = real_band_hrefs
         with Callback(start=lambda dsk: computed.append(dsk)):
-            lazy_red = EEORasterDataset.from_path(red_href, chunks=LAZY_CHUNKS)
-            lazy_nir = EEORasterDataset.from_path(nir_href, chunks=LAZY_CHUNKS)
+            lazy_red = eeo.load_raster(red_href, chunks=LAZY_CHUNKS)
+            lazy_nir = eeo.load_raster(nir_href, chunks=LAZY_CHUNKS)
             result = lazy_nir.normalized_difference(lazy_red).get_mean_pixel()
         assert computed == []
         assert np.isfinite(result["value"])
