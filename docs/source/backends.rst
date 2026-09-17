@@ -117,11 +117,19 @@ This adapter supports:
 - Saving one chunk at a time, so writing a scene to disk never holds the whole
   of it in memory
 
+Operations work on a lazy dataset exactly as they do on any other, and they do
+not read it to do so: promoting a lazy dataset to the rasterio backend reopens
+its file rather than reading its pixels, after which the block-wise engine
+streams from the file a window at a time. So ``ds.to_rasterio()``, which every
+operation calls, is free for a lazy dataset opened from a file.
+
 .. note::
 
-   Operations do not yet run on the lazy backend directly: they promote the
-   dataset to rasterio first, which reads the whole raster into memory. Opening
-   lazily is the first step; running operations lazily follows.
+   This means an operation on a lazy dataset does not build a dask graph and
+   does not return a lazy result — it returns an ordinary rasterio-backed
+   raster, computed there and then. What the lazy backend gives you today is
+   an unread, chunked view of a file, and reads bounded to the bands and
+   windows you ask for.
 
 -----
 
