@@ -95,6 +95,7 @@ runnable notebooks — each one openable in Colab with nothing to install.
    user_guide/visualization
    user_guide/statistical_locations
    user_guide/xarray_interop
+   user_guide/large_rasters
    backends
    citation
 
