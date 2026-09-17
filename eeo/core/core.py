@@ -416,9 +416,12 @@ class EEORasterDataset:
 
         Notes
         -----
-        Promoting a NumPy- or xarray-backed dataset reads its full array into
-        an in-memory rasterio ``MemoryFile``. Band names, ``timestamp``, and
-        ``attrs`` are carried onto the promoted dataset.
+        A lazy dataset opened from a file is promoted by reopening that file
+        with rasterio, which reads no pixels at all — so operations, which all
+        promote first, cost a lazy dataset nothing. Any other NumPy- or
+        xarray-backed dataset reads its full array into an in-memory rasterio
+        ``MemoryFile``. Band names, ``timestamp``, and ``attrs`` are carried
+        onto the promoted dataset.
 
         Examples
         --------
@@ -429,6 +432,19 @@ class EEORasterDataset:
         # isinstance check would wrongly re-promote (full read + copy).
         if isinstance(self._adapter, RasterioAdapter):
             return self
+
+        # A lazy dataset knows the file it was opened from, and rasterio can
+        # open that file itself. Reading the pixels only to write them into a
+        # MemoryFile would be a full copy of a raster that is already on disk,
+        # and would defeat opening it lazily in the first place.
+        if isinstance(self._adapter, XarrayAdapter) and self._adapter.source_path is not None:
+            return EEORasterDataset(
+                adapter=RasterioAdapter.from_path(self._adapter.source_path),
+                path=self.path,
+                timestamp=self.timestamp,
+                attrs=self.attrs,
+                band_names=self.band_names,
+            )
 
         array = self.read()
         transform = self.get_transform()

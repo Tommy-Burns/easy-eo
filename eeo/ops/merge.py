@@ -5,13 +5,12 @@ from collections.abc import Iterable
 import numpy as np
 from rasterio.merge import merge
 
-from eeo.common import is_rasterio_backed, normalize_resampling_method
+from eeo.common import normalize_resampling_method, require_rasterio
 from eeo.core.adapters import RasterioAdapter
 from eeo.core.core import EEORasterDataset
 from eeo.core.decorators import eeo_raster_op
 from eeo.core.exceptions import (
     AlignmentError,
-    BackendError,
     CRSMismatchError,
     ValidationError,
 )
@@ -82,12 +81,9 @@ def mosaic(
     --------
     >>> mosaicked = ds.mosaic([ds_tile_2, ds_tile_3])
     """
-    # Ensure mosaic for only rasterio-backend datasets
-    if not is_rasterio_backed(ds):
-        raise BackendError(
-            "mosaic requires a rasterio-backed dataset; this dataset uses the "
-            "NumPy backend. Call .to_rasterio() first."
-        )
+    # rasterio.merge works on open rasterio datasets, so every input has to be
+    # on that backend; a lazy one is promoted by reopening its file.
+    ds = require_rasterio(ds, "mosaic")
 
     # normalize resampling
     resampling_method = normalize_resampling_method(resampling_method)
@@ -116,8 +112,10 @@ def mosaic(
 
         src_datasets.append(obj)
 
-    # extract datasets and perform mosaics
-    datasets = [d.ds for d in src_datasets]
+    # extract datasets and perform mosaics. The promoted datasets are held for
+    # the duration: each owns the open rasterio dataset that merge reads from.
+    promoted = [require_rasterio(d, "mosaic") for d in src_datasets]
+    datasets = [d.ds for d in promoted]
     mosaic_data, out_transform = merge(datasets, resampling=resampling_method, **kwargs)
 
     # modify metadata
@@ -201,12 +199,7 @@ def stack(
     >>> rgb = ds_red.stack([ds_green, ds_blue])
     >>> rgb = ds_red.stack([ds_green, ds_blue], names=["red", "green", "blue"])
     """
-    # Ensure stack for only rasterio-backend datasets
-    if not is_rasterio_backed(ds):
-        raise BackendError(
-            "stack requires a rasterio-backed dataset; this dataset uses the "
-            "NumPy backend. Call .to_rasterio() first."
-        )
+    ds = require_rasterio(ds, "stack")
 
     # normalize inputs
     others = [others] if isinstance(others, EEORasterDataset) else list(others)

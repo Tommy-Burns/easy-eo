@@ -84,6 +84,10 @@ class XarrayAdapter(BaseRasterAdapter):
         (not masked or scaled).
     driver : str, default "GTiff"
         GDAL driver of the source, reported in the metadata.
+    source_path : str or path-like or None, default None
+        File the array was opened from, when it was opened from one. It is
+        what lets a lazy dataset be promoted to the rasterio backend by
+        reopening the file rather than by reading every pixel.
 
     Raises
     ------
@@ -93,7 +97,9 @@ class XarrayAdapter(BaseRasterAdapter):
         If ``dataarray`` does not have dimensions ``("band", "y", "x")``.
     """
 
-    def __init__(self, dataarray: Any, *, driver: str = "GTiff") -> None:
+    def __init__(
+        self, dataarray: Any, *, driver: str = "GTiff", source_path: StrPath | None = None
+    ) -> None:
         _import_rioxarray()
         if tuple(dataarray.dims) != _DIMS:
             raise ValidationError(
@@ -101,6 +107,7 @@ class XarrayAdapter(BaseRasterAdapter):
             )
         self._da = dataarray
         self._driver = driver
+        self._source_path = source_path
 
     # ========================
     # Factories
@@ -144,7 +151,12 @@ class XarrayAdapter(BaseRasterAdapter):
             dataarray = rioxarray.open_rasterio(path, chunks=chunks)
         except Exception as e:
             raise BackendError(f"failed to open raster lazily: {path}") from e
-        return cls(dataarray, driver=driver)
+        return cls(dataarray, driver=driver, source_path=path)
+
+    @property
+    def source_path(self) -> StrPath | None:
+        """File this array was opened from, or None if it was not opened from one."""
+        return self._source_path
 
     # ========================
     # Metadata

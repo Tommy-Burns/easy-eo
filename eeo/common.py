@@ -40,6 +40,73 @@ def is_rasterio_backed(ds: EEORasterDataset) -> bool:
     return isinstance(ds._adapter, RasterioAdapter)
 
 
+def require_rasterio(ds: EEORasterDataset, operation: str) -> EEORasterDataset:
+    """Return ``ds`` on the rasterio backend, for an op that needs one.
+
+    A lazy dataset is promoted, which for a file-backed one reopens the file
+    and reads nothing. A NumPy-backed one is refused rather than promoted
+    silently: its pixels are already in memory and promoting copies all of
+    them, so that is the caller's decision to make.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Dataset the operation was called on.
+    operation : str
+        Name of the operation, used in the error message.
+
+    Returns
+    -------
+    EEORasterDataset
+        ``ds`` itself when it is rasterio-backed, else a promoted copy.
+
+    Raises
+    ------
+    BackendError
+        If ``ds`` uses the NumPy backend.
+    """
+    from eeo.core.exceptions import BackendError
+
+    if is_rasterio_backed(ds):
+        return ds
+    if _is_promotable_without_reading(ds):
+        return ds.to_rasterio()
+    raise BackendError(
+        f"{operation} requires a rasterio-backed dataset; this dataset uses the "
+        "NumPy backend. Call .to_rasterio() first."
+    )
+
+
+def promote_for_decimated_read(ds: EEORasterDataset) -> EEORasterDataset:
+    """Return a dataset that can serve a decimated (``out_shape``) read.
+
+    Only the rasterio backend reads decimated. A lazy dataset reaches it by
+    reopening its file, which is what keeps plotting a large lazy raster from
+    reading it whole. Anything else is returned unchanged, for the caller to
+    fall back on a full read.
+
+    Parameters
+    ----------
+    ds : EEORasterDataset
+        Dataset about to be read for display.
+
+    Returns
+    -------
+    EEORasterDataset
+        ``ds``, or a rasterio-backed promotion of it that cost no read.
+    """
+    if not is_rasterio_backed(ds) and _is_promotable_without_reading(ds):
+        return ds.to_rasterio()
+    return ds
+
+
+def _is_promotable_without_reading(ds: EEORasterDataset) -> bool:
+    """Report whether ``ds`` can reach the rasterio backend without a read."""
+    from eeo.core.adapters import XarrayAdapter
+
+    return isinstance(ds._adapter, XarrayAdapter) and ds._adapter.source_path is not None
+
+
 def normalize_resampling_method(value):
     """Normalize a resampling method to a ``rasterio.enums.Resampling`` value."""
     from eeo.core.exceptions import ValidationError
