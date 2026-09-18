@@ -9,13 +9,15 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-18
+
 ### Added
 
 - New optional `lazy` extra (`pip install "easy-eo[lazy]"`): xarray, rioxarray
   and `dask[array]`, the dependencies of the dask-chunked backend described
   below. The conda equivalent is `conda install -c conda-forge easy-eo xarray
-  rioxarray dask-core` — `dask-core`, not `dask`, which on conda-forge is a metapackage
-  that also installs `distributed` and `bokeh`.
+  rioxarray dask-core` — `dask-core`, not `dask`, which on conda-forge is a
+  metapackage that also installs `distributed` and `bokeh`.
 - The floor `dask>=2024.8` is tested, not assumed: CI's minimum-versions job
   now installs the `lazy` extra at its lower bounds (with numpy 1.26,
   rasterio 1.4, xarray 2024.7 and rioxarray 0.17 on Python 3.10), and the test
@@ -57,8 +59,8 @@ are called out under a **Breaking** heading.
   cost 288 KiB in one request, and the whole raster came to 4 MB in 15. A
   remote open runs under GDAL settings tuned for object stores
   (`eeo.core.remote.GDAL_HTTP_ENV`), which the STAC loader already used.
-- WP-17's acceptance test: a full-scene NDVI inside a process whose memory is
-  hard-capped with `RLIMIT_AS`, on both backends. On an 8000 x 8000 two-band
+- An acceptance test for the memory claim: a full-scene NDVI inside a process
+  whose memory is hard-capped with `RLIMIT_AS`, on both backends. On an 8000 x 8000 two-band
   scene (268 MB) the streamed form peaks at about 490 MiB and runs under a
   900 MiB cap, while the same arithmetic done whole-array does not fit in what
   streaming needed plus 300 MiB — the test asserts both halves, so streaming
@@ -895,7 +897,8 @@ Initial public beta release.
 - Visualization: `plot_raster`, `plot_composite`,
   `plot_raster_with_histogram`, `plot_band_array`.
 
-[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.3.1...v0.4.0
