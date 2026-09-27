@@ -118,6 +118,35 @@ Building a series from a folder of rasters
 (:meth:`eeo.EEOTimeSeries.from_folder`) is not implemented yet; the call exists
 and names the code that does the same thing today.
 
+Collapsing a series to one raster
+---------------------------------
+
+Four reducers take a series and return a single dataset: ``median()``,
+``mean()``, ``min()`` and ``max()``.
+
+.. code-block:: python
+
+    composite = ts.median()
+    peak_greenness = ts.map(eeo.ndvi, red="B04", nir="B08").max()
+    ts.median(save_path="composite.tif")     # never held in memory
+
+**Nodata across time is absent, not contagious.** Elsewhere in Easy-EO a pixel
+missing from any operand is missing from the output; that rule is for operations
+*combining* rasters. A reducer computes a statistic, and a statistic treats
+nodata as absent — so a pixel clouded at two of five timesteps still gets a
+median.
+
+``median()`` and ``mean()`` are float32 with NaN for such a pixel: a median over
+an even number of timesteps averages the two middle values. ``min()`` and
+``max()`` keep the timesteps' own dtype, because they select a value that was
+measured rather than computing a new one, and mark a missing pixel with the
+timesteps' nodata value. All four stream window by window, so peak memory is one
+block per timestep rather than the series, and all four return a plain dataset
+that chains like any other.
+
+The result carries no timestamp — a composite was not acquired at any one moment
+— and records what it reduced in ``attrs``.
+
 .. autofunction:: eeo.time_series
 
 .. autoclass:: eeo.EEOTimeSeries
