@@ -185,6 +185,41 @@ It is the same thing as ``ts.map(eeo.mask_clouds).median()`` minus the quality
 band, spelled as one call because it is the workflow the series exists for. Do
 it by hand when a timestep's mask lives in a separate raster.
 
+What happened here: a trajectory
+--------------------------------
+
+The counterpart to a composite. Where the reducers collapse time into one
+raster, :meth:`eeo.EEOTimeSeries.extract_at` collapses space into one table —
+what happened at a single location, indexed by time:
+
+.. code-block:: python
+
+    ndvi = ts.map(eeo.ndvi, red="B04", nir="B08", name="ndvi")
+    trajectory = ndvi.extract_at((11.1, 46.6), crs="EPSG:4326")
+
+    trajectory                      # a pandas DataFrame indexed by acquisition time
+    trajectory["ndvi"].idxmax()     # when it was greenest
+    trajectory.plot()               # straight into matplotlib
+
+It reads one pixel per timestep and band — never a band, never a scene — so a
+trajectory over a season of full Sentinel-2 tiles costs a few dozen pixels.
+``crs=`` transforms the point for you, which saves converting the lon/lat a
+catalog search handed back. Columns are named after the bands, and a pixel that
+was nodata at a timestep is ``NaN`` there rather than its fill value, so a
+cloudy date reads as a gap.
+
+Several locations are a concat of several calls:
+
+.. code-block:: python
+
+    import pandas as pd
+
+    plots = {"north": (11.10, 46.60), "south": (11.15, 46.55)}
+    table = pd.concat(
+        {name: ndvi.extract_at(point, crs="EPSG:4326") for name, point in plots.items()},
+        names=["plot"],
+    )
+
 .. autofunction:: eeo.time_series
 
 .. autoclass:: eeo.EEOTimeSeries
