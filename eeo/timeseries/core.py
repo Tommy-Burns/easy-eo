@@ -13,6 +13,7 @@ import contextlib
 import datetime as dt
 import logging
 import os
+import re
 import tempfile
 import warnings
 from collections.abc import Callable, Iterable, Sequence
@@ -55,15 +56,43 @@ _NO_TIMESTAMP = (
     "or pass timestamps=[...] with one entry per dataset."
 )
 
-_FOLDER_NOT_IMPLEMENTED = (
-    "building a time series from a folder is not implemented yet. Load the "
-    "scenes yourself and hand them over, which is the same thing with the "
-    "timestamps made explicit:\n\n"
-    "    paths = sorted(pathlib.Path({folder!r}).glob({pattern!r}))\n"
-    "    ts = eeo.time_series([eeo.load_raster(p, timestamp=...) for p in paths])\n\n"
-    "A STAC search needs none of that — every item states its acquisition "
+_NO_MATCHES = (
+    "no files in {folder} match {pattern!r}. Check the pattern — it is a glob, "
+    "so {pattern!r} matches only that directory's own files, and '**/*.tif' "
+    "walks subdirectories too — and check the extension: a glob is "
+    "case-sensitive, so a folder of '.TIF' files needs '*.TIF'."
+)
+
+_NO_DATE_IN_NAME = (
+    "{name!r} carries no date in its name, and a time series is ordered by "
+    "time. Recognised forms are an 8-digit or dash-separated date, optionally "
+    "followed by a time: '20230412', '2023-04-12', '20230412T100621' (what a "
+    "Sentinel-2 or Landsat filename holds). For anything else, pass a function "
+    "that reads the date wherever it lives:\n\n"
+    "    ts = eeo.time_series(folder, timestamp=lambda path: my_date(path))\n\n"
+    "A STAC search needs none of this — every item states its acquisition "
     "time — so eeo.time_series(eeo.stac_search(...), assets=[...]) is the "
-    "supported path today."
+    "shorter path where the scenes are in a catalog."
+)
+
+# An ISO-ish date, optionally with a time, anywhere in a filename: '2023-04-12',
+# '20230412', '20230412T100621', '2023-04-12_10:06:21'. The separator is
+# back-referenced so a half-punctuated '2023-0412' is not read as a date, and
+# the digit run is bounded at both ends so an 8-digit stretch of a longer number
+# is not either. Deliberately not a strptime pattern: the formats worth
+# recognising are few, and a format mini-language is a second thing to learn
+# where a callable is already the escape hatch.
+_FILENAME_DATE = re.compile(
+    r"""
+    (?<!\d)
+    (?P<year>\d{4}) (?P<dsep>-?) (?P<month>\d{2}) (?P=dsep) (?P<day>\d{2})
+    (?:
+        [T_ ]
+        (?P<hour>\d{2}) (?P<tsep>:?) (?P<minute>\d{2}) (?P=tsep) (?P<second>\d{2})
+    )?
+    (?!\d)
+    """,
+    re.VERBOSE,
 )
 
 
@@ -101,6 +130,49 @@ def _resolve_timestamps(
             f"datasets; give exactly one timestamp per dataset"
         )
     return [_as_utc(value, index=index) for index, value in enumerate(given)]
+
+
+def _timestamp_from_name(path: Path) -> dt.datetime:
+    """Read an acquisition time out of a filename, as UTC.
+
+    Scans left to right and takes the first match that is a real date, so a
+    name holding something that merely looks like one — a tile id, a version
+    number — falls through to the date after it. Only the filename is read, not
+    the directories above it: a folder named by date is a convention, and
+    guessing at it would make the timestamp depend on where the file was
+    stored. ``timestamp=`` covers that case.
+    """
+    for match in _FILENAME_DATE.finditer(path.name):
+        parts = match.groupdict()
+        try:
+            return dt.datetime(
+                int(parts["year"]),
+                int(parts["month"]),
+                int(parts["day"]),
+                int(parts["hour"] or 0),
+                int(parts["minute"] or 0),
+                int(parts["second"] or 0),
+                tzinfo=_UTC,
+            )
+        except ValueError:
+            continue
+    raise ValidationError(_NO_DATE_IN_NAME.format(name=path.name))
+
+
+def _timestamp_for(resolve: Callable[[Path], dt.datetime], path: Path) -> dt.datetime:
+    """Apply a timestamp resolver to one path, naming the file if it misbehaves.
+
+    The generic timestamp check reports a position, which says nothing about
+    which file on disk was at fault; a folder's timestamps are per-file, so the
+    filename is the useful thing to report.
+    """
+    value = resolve(path)
+    if not isinstance(value, dt.datetime):
+        raise ValidationError(
+            f"timestamp= returned a {type(value).__name__} for {path.name!r}, but a "
+            f"timestep is placed in time by a datetime.datetime"
+        )
+    return value if value.tzinfo is not None else value.replace(tzinfo=_UTC)
 
 
 def _through_file(
@@ -731,48 +803,157 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         folder: StrPath,
         pattern: str = "*.tif",
         *,
+        timestamp: Callable[[Path], dt.datetime] | None = None,
         chunks: ChunkSpec | None = None,
+        auto_align: bool = False,
+        auto_reproject: bool = False,
+        method: str = "nearest",
+        reference: int = 0,
     ) -> EEOTimeSeries:
-        """Build a series from rasters on disk — not implemented yet.
+        """Build a series from rasters on disk, dated by their filenames.
 
-        The signature is here so the shape of the eventual call is fixed and
-        documented, and so this path names the code that does the same thing
-        today rather than failing as a missing attribute.
+        The path for scenes already downloaded, exported from another tool, or
+        written by an earlier step of your own: one file per timestep, each
+        opened with :func:`eeo.load_raster`, so the series is file-backed and
+        reads nothing until an operation asks for a window.
 
-        When it lands, it will glob ``folder`` with ``pattern`` (so
-        ``"**/*.tif"`` walks subdirectories), open each hit with
-        :func:`eeo.load_raster`, and take each timestamp from the filename's
-        date, with a hook for files that carry theirs elsewhere.
+        Unlike a catalog item, a file does not state when it was acquired. Its
+        name usually does, and that is what is read by default; ``timestamp=``
+        takes over where it does not.
 
         Parameters
         ----------
         folder : str or path-like
             Directory holding the rasters.
         pattern : str, default "*.tif"
-            Glob pattern selecting them.
+            Glob pattern selecting them, matched with :meth:`pathlib.Path.glob`
+            — so ``"*.tif"`` takes that directory's own files and
+            ``"**/*.tif"`` walks subdirectories. Case-sensitive, as a glob is:
+            a folder of ``.TIF`` files needs ``"*.TIF"``. Directories the
+            pattern happens to match are skipped.
+        timestamp : callable or None, default None
+            How each file is placed in time. None reads the first date in the
+            filename, accepting ``20230412``, ``2023-04-12``, and either with a
+            time after it (``20230412T100621``) — which covers Sentinel-2 and
+            Landsat names as they are delivered. Otherwise a function taking a
+            :class:`pathlib.Path` and returning a
+            :class:`~datetime.datetime`, which is the hook for a date that
+            lives somewhere else: the parent directory's name, a sidecar file,
+            or the file's own ``TIFFTAG_DATETIME`` tag. A naive datetime is read
+            as UTC.
         chunks : str or int or dict or None, default None
-            Chunk sizes for opening each raster on the lazy backend.
+            Chunk sizes for opening each raster on the lazy, dask-chunked
+            backend (see :func:`eeo.load_raster`), which needs the ``lazy``
+            extra. None opens them with rasterio, which already defers reads.
+        auto_align, auto_reproject, method, reference
+            Grid consistency across timesteps, as :class:`EEOTimeSeries`
+            documents them. Worth knowing for a folder: files written at
+            different times by different tools are the likeliest source of a
+            series whose timesteps do not quite share a grid.
 
         Returns
         -------
         EEOTimeSeries
-            Never returns.
+            Series of one timestep per file, oldest first, each carrying its
+            date and whatever band names the file's GDAL band descriptions
+            declare.
 
         Raises
         ------
-        NotImplementedError
-            Always, with the code that does the same thing today.
+        ValidationError
+            If ``folder`` does not exist or is not a directory, if ``pattern``
+            matches no files, if a filename holds no recognisable date and no
+            ``timestamp`` was given, if ``timestamp`` returns something that is
+            not a datetime, or if ``chunks`` is not a valid chunk
+            specification. Also whatever :class:`EEOTimeSeries` rejects: a
+            mismatched grid, CRS, or band set across the files.
+        MissingDependencyError
+            If ``chunks`` is given without the ``lazy`` extra installed.
+
+        See Also
+        --------
+        from_stac : Build a series from a catalog search, where the items
+            already state their acquisition times.
+
+        Notes
+        -----
+        Dates are resolved for every file before any of them is opened, so a
+        folder holding one undated name is refused without opening the rest.
 
         Examples
         --------
         >>> import eeo
-        >>> eeo.EEOTimeSeries.from_folder("scenes/")  # doctest: +SKIP
-        Traceback (most recent call last):
-        NotImplementedError: building a time series from a folder is not implemented yet ...
+        >>> ts = eeo.time_series("scenes/")  # doctest: +SKIP
+        >>> ts = eeo.time_series("scenes/", pattern="**/*.tif")  # doctest: +SKIP
+
+        Where the date is in the folder rather than the file — one directory per
+        acquisition, each holding ``B04.tif`` — read it from the path:
+
+        >>> import datetime as dt
+        >>> ts = eeo.time_series(  # doctest: +SKIP
+        ...     "scenes/",
+        ...     pattern="*/B04.tif",
+        ...     timestamp=lambda path: dt.datetime.fromisoformat(path.parent.name),
+        ... )
         """
-        raise NotImplementedError(
-            _FOLDER_NOT_IMPLEMENTED.format(folder=os.fspath(folder), pattern=pattern)
-        )
+        if timestamp is not None and not callable(timestamp):
+            raise ValidationError(
+                f"timestamp= is a function taking a path and returning a datetime, "
+                f"not a {type(timestamp).__name__}. To place the timesteps by hand, "
+                f"load the rasters yourself and pass timestamps=[...] to "
+                f"eeo.time_series"
+            )
+        if chunks is not None:
+            validate_chunks(chunks)
+
+        directory = Path(os.fspath(folder))
+        if not directory.exists():
+            raise ValidationError(f"no such folder: {directory}")
+        if not directory.is_dir():
+            raise ValidationError(
+                f"{directory} is a file, not a folder. A series is built from several "
+                f"rasters: pass the directory holding them (and a pattern that selects "
+                f"them), or open this one on its own with eeo.load_raster"
+            )
+
+        # Sorted so the read order is the same on every filesystem. The series
+        # sorts itself by timestamp regardless; this is what decides the order
+        # of two files that carry the same date.
+        try:
+            paths = sorted(path for path in directory.glob(pattern) if path.is_file())
+        except (ValueError, NotImplementedError) as err:
+            # An absolute or empty pattern. Path.glob's own message says only
+            # that the pattern is unacceptable, which from a method that used to
+            # raise NotImplementedError for everything would read as "still not
+            # implemented".
+            raise ValidationError(
+                f"{pattern!r} is not a usable glob pattern: {err}. It is matched "
+                f"relative to {directory}, so it cannot start with a separator"
+            ) from err
+        if not paths:
+            raise ValidationError(_NO_MATCHES.format(folder=directory, pattern=pattern))
+
+        # Resolved before anything is opened: an undated filename halfway
+        # through would otherwise leave every earlier file open.
+        resolve = _timestamp_from_name if timestamp is None else timestamp
+        stamps = [_timestamp_for(resolve, path) for path in paths]
+
+        scenes: list[EEORasterDataset] = []
+        try:
+            for path, stamp in zip(paths, stamps, strict=True):
+                scenes.append(load_raster(path, chunks=chunks, timestamp=stamp))
+            return cls(
+                scenes,
+                auto_align=auto_align,
+                auto_reproject=auto_reproject,
+                method=method,
+                reference=reference,
+            )
+        except BaseException:
+            for scene in scenes:
+                with contextlib.suppress(Exception):
+                    scene.close()
+            raise
 
     # ========================
     # Sequence protocol
@@ -1426,14 +1607,17 @@ def time_series(
         The scenes. A search result or its items go to
         :meth:`EEOTimeSeries.from_stac`; datasets go to the
         :class:`EEOTimeSeries` constructor; a directory path goes to
-        :meth:`EEOTimeSeries.from_folder`, which is not implemented yet.
+        :meth:`EEOTimeSeries.from_folder`.
     assets : str or sequence of str or None, default None
         Assets to read from each item. Required for a STAC source, rejected for
         datasets, which already hold their bands.
     **kwargs
         Keyword arguments of the constructor the source selects — ``bbox``,
         ``crop``, ``mask``, ``resampling``, ``cache`` and ``chunks`` for a STAC
-        source, ``timestamps`` for datasets.
+        source, ``pattern``, ``timestamp`` and ``chunks`` for a folder,
+        ``timestamps`` for datasets. The grid-consistency arguments
+        (``auto_align``, ``auto_reproject``, ``method``, ``reference``) go
+        through all three.
 
     Returns
     -------
@@ -1446,9 +1630,6 @@ def time_series(
         If ``source`` is not one of the accepted forms, is empty, mixes items
         and datasets, or is a STAC source without ``assets`` (or datasets
         with them). Also whatever the selected constructor rejects.
-    NotImplementedError
-        If ``source`` is a path: building a series from a folder is not
-            implemented yet.
 
     Examples
     --------
@@ -1459,6 +1640,10 @@ def time_series(
     ...     "sentinel-2-l2a", bbox=(11.0, 46.5, 11.2, 46.7), limit=5
     ... )  # doctest: +SKIP
     >>> ts = eeo.time_series(results, assets=["B04", "B08"])  # doctest: +SKIP
+
+    From a folder of rasters, dated by their filenames:
+
+    >>> ts = eeo.time_series("scenes/", pattern="**/*.tif")  # doctest: +SKIP
 
     From datasets you loaded yourself:
 
