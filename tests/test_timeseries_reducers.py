@@ -237,3 +237,187 @@ def test_the_reducers_are_also_plain_functions(season_series):
     # is what keeps core.py from growing a statistics library.
     assert reducers.median(season_series).to_array()[0, 1, 1] == pytest.approx(900.0)
     assert reducers.maximum(season_series).to_array()[0, 1, 1] == 1000
+
+
+# --------------------------------------------------------------------------
+# composite: mask each timestep with its own quality band, then reduce
+# --------------------------------------------------------------------------
+CLEAR = 4  # SCLClass.VEGETATION
+CLOUD = 9  # SCLClass.CLOUD_HIGH_PROBABILITY
+SHADOW = 3  # SCLClass.CLOUD_SHADOWS
+
+
+def s2_scene(month, red, nir, *, flagged=(), flag=CLOUD, names=("red", "nir", "scl")):
+    """A three-band Sentinel-2-like scene whose SCL band flags some pixels."""
+    scl = np.full((4, 4), CLEAR, dtype="uint16")
+    for row, col in flagged:
+        scl[row, col] = flag
+    bands = np.stack(
+        [
+            np.full((4, 4), red, dtype="uint16"),
+            np.full((4, 4), nir, dtype="uint16"),
+            scl,
+        ]
+    )
+    return scene(month, bands, names=list(names))
+
+
+@pytest.fixture
+def clouded_series():
+    """Three timesteps whose cloud roams, plus one pixel clouded throughout.
+
+    Pixel (3, 3) is clouded at every timestep — the one a composite cannot
+    fill. Pixels (0, 0), (1, 1) and (2, 2) are each clouded once, so each has
+    two clear timesteps to be built from.
+    """
+    scenes = [
+        s2_scene(4, 1000, 2000, flagged=[(0, 0), (3, 3)]),
+        s2_scene(5, 900, 3000, flagged=[(1, 1), (3, 3)]),
+        s2_scene(6, 800, 4000, flagged=[(2, 2), (3, 3)]),
+    ]
+    ts = eeo.time_series(scenes)
+    yield ts
+    ts.close()
+
+
+def test_the_composite_leaves_the_quality_band_out(clouded_series):
+    # A median of scene-class numbers would be a class nobody assigned.
+    result = clouded_series.composite()
+
+    assert result.get_count() == 2
+    assert result.band_names == ["red", "nir"]
+
+
+def test_a_clear_pixel_is_the_median_of_every_timestep(clouded_series):
+    values = clouded_series.composite().to_array()
+
+    assert values[0, 0, 1] == pytest.approx(900.0)
+    assert values[1, 0, 1] == pytest.approx(3000.0)
+
+
+def test_a_pixel_clouded_once_is_built_from_the_timesteps_that_saw_it(clouded_series):
+    values = clouded_series.composite().to_array()
+
+    # (0, 0) is clouded in April, leaving red 900 and 800: median 850.
+    assert values[0, 0, 0] == pytest.approx(850.0)
+    # (2, 2) is clouded in June, leaving 1000 and 900: median 950.
+    assert values[0, 2, 2] == pytest.approx(950.0)
+
+
+def test_a_pixel_clouded_at_every_timestep_cannot_be_filled(clouded_series):
+    values = clouded_series.composite().to_array()
+
+    assert np.isnan(values[0, 3, 3])
+    assert np.isnan(values[1, 3, 3])
+
+
+def test_the_composite_records_what_it_covered(clouded_series):
+    attrs = clouded_series.composite().attrs
+
+    assert attrs["temporal_reduction"] == "median"
+    assert attrs["timesteps"] == 3
+    assert attrs["time_start"].month == 4
+    assert attrs["time_end"].month == 6
+
+
+def test_the_statistic_can_be_chosen(clouded_series):
+    smallest = clouded_series.composite(how="min")
+
+    assert smallest.get_metadata()["dtype"] == "uint16"
+    # (0, 0) is clouded in April, so the smallest clear red is 800.
+    assert int(smallest.to_array()[0, 0, 0]) == 800
+
+
+def test_the_quality_band_can_be_named(clouded_series):
+    by_name = clouded_series.composite(mask_band="scl").to_array()
+    by_index = clouded_series.composite(mask_band=3).to_array()
+
+    np.testing.assert_allclose(by_name, by_index)
+
+
+def test_which_classes_count_as_cloud_can_be_chosen():
+    # Cloud shadow is masked by default; asking for cloud only keeps it.
+    scenes = [
+        s2_scene(4, 1000, 2000, flagged=[(0, 0)], flag=SHADOW),
+        s2_scene(5, 900, 3000),
+    ]
+    ts = eeo.time_series(scenes)
+
+    default = ts.composite().to_array()
+    cloud_only = ts.composite(classes=[CLOUD]).to_array()
+
+    assert default[0, 0, 0] == pytest.approx(900.0)
+    assert cloud_only[0, 0, 0] == pytest.approx(950.0)
+    ts.close()
+
+
+def test_a_series_with_no_quality_band_says_what_to_load(season_series):
+    with pytest.raises(ValidationError, match="no quality band"):
+        season_series.composite()
+
+
+def test_a_series_of_nothing_but_a_quality_band_is_refused():
+    scl = np.full((1, 4, 4), CLEAR, dtype="uint16")
+    ts = eeo.time_series([scene(4, scl, names=["scl"]), scene(5, scl, names=["scl"])])
+
+    with pytest.raises(ValidationError, match="nothing to composite"):
+        ts.composite()
+
+    ts.close()
+
+
+def test_landsat_flags_are_refused_on_a_sentinel2_series(clouded_series):
+    with pytest.raises(ValidationError, match="use classes="):
+        clouded_series.composite(flags=[3])
+
+
+def test_the_masked_timesteps_can_be_kept(clouded_series, tmp_path):
+    out = tmp_path / "masked"
+
+    result = clouded_series.composite(mask_dir=out)
+
+    written = sorted(out.glob("*.tif"))
+    assert len(written) == 3
+    # Masking happens before the reduction, so what was written is masked but
+    # not yet reduced: three bands each, the quality band among them.
+    assert eeo.load_raster(written[0]).get_count() == 3
+    assert result.to_array()[0, 0, 0] == pytest.approx(850.0)
+
+
+def test_the_composite_can_be_written_straight_to_disk(clouded_series, tmp_path):
+    out = tmp_path / "composite.tif"
+
+    result = clouded_series.composite(save_path=out)
+
+    assert out.exists()
+    assert result.band_names == ["red", "nir"]
+    assert result.to_array()[0, 0, 1] == pytest.approx(900.0)
+    result.close()
+
+
+def test_a_composite_chains_like_any_dataset(clouded_series):
+    ndvi = clouded_series.composite().ndvi(red="red", nir="nir")
+
+    # Clear pixel: red 900, nir 3000 -> (3000 - 900) / 3900.
+    assert ndvi.to_array()[0, 0, 1] == pytest.approx(2100 / 3900, abs=1e-6)
+
+
+def test_a_landsat_series_composites_from_qa_pixel():
+    # QA_PIXEL packs flags into bits: 0 is a clear pixel, bit 3 is cloud.
+    def landsat(month, value, *, clouded):
+        qa = np.zeros((4, 4), dtype="uint16")
+        for row, col in clouded:
+            qa[row, col] = 1 << 3
+        bands = np.stack([np.full((4, 4), value, dtype="uint16"), qa])
+        ds = scene(month, bands, names=["red", "qa_pixel"])
+        ds.attrs["mission"] = "Landsat 9"
+        return ds
+
+    ts = eeo.time_series([landsat(4, 1000, clouded=[(0, 0)]), landsat(5, 500, clouded=[])])
+
+    result = ts.composite()
+
+    assert result.band_names == ["red"]
+    assert result.to_array()[0, 0, 0] == pytest.approx(500.0)
+    assert result.to_array()[0, 1, 1] == pytest.approx(750.0)
+    ts.close()
