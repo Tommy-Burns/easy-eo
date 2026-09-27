@@ -138,6 +138,22 @@ are called out under a **Breaking** heading.
 - The reducers take an internal band subset, which is what lets a composite
   leave the quality band out of its output while reducing everything else.
 
+- `EEOTimeSeries.extract_at(coordinates)` samples one location at every
+  timestep and returns a `pandas.DataFrame` indexed by a `DatetimeIndex` named
+  `time`, with one float column per band, named after the band (`band_<n>` where
+  it has none). A pixel that was nodata at a timestep is `NaN` there rather than
+  its fill value, so a cloudy date reads as a gap instead of a dip. `bands=`
+  selects a subset, `crs=` transforms the point onto the series' CRS — handy for
+  the lon/lat a catalog search hands back — and `attrs` records the point
+  sampled. It reads one pixel per timestep and band, never a band and never a
+  scene, so a trajectory over a season of full tiles costs a few dozen pixels. A
+  point outside the extent is refused with the extent named, rather than failing
+  as an out-of-bounds index.
+- `pandas` is now a declared dependency (`pandas>=2.0`, the floor
+  `geopandas>=1.1` already implied) because the library returns a DataFrame
+  rather than only importing pandas through geopandas, and `eeo.show_versions()`
+  reports its version alongside the rest of the stack.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that
