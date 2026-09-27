@@ -55,11 +55,20 @@ Building a series
 .. code-block:: python
 
    ts = eeo.time_series(results, assets=["B04", "B08", "SCL"])   # a catalog search
+   ts = eeo.time_series("scenes/")                               # a folder of GeoTIFFs
    ts = eeo.time_series([scene_may, scene_june, scene_july])     # scenes you loaded
 
 Every timestep needs to know when it was taken. Catalog results and the
-Sentinel-2 and Landsat loaders record that for you, so this only comes up if you
-built the scenes by hand — then pass the dates yourself:
+Sentinel-2 and Landsat loaders record that for you. A folder has to be read from
+the filenames, which works as long as they carry a date — ``20230412``,
+``2023-04-12``, or either with a time after it, which is how Sentinel-2 and
+Landsat files arrive. Where they do not, say where the date is:
+
+.. code-block:: python
+
+   ts = eeo.time_series("scenes/", timestamp=lambda path: read_the_date(path))
+
+And if you built the scenes by hand, pass the dates yourself:
 
 .. code-block:: python
 

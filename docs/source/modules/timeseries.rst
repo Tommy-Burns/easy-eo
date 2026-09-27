@@ -13,8 +13,8 @@ measurement repeated — so a spectral stack and a temporal stack can never be
 confused for one another.
 
 :func:`eeo.time_series` is the call to reach for. It reads whatever holds the
-scenes and delegates: a STAC search result, its items, or datasets you loaded
-yourself.
+scenes and delegates: a STAC search result, its items, a folder of rasters, or
+datasets you loaded yourself.
 
 A catalog search is the shortest path, because every item already states its
 acquisition time:
@@ -41,6 +41,44 @@ stays bounded in memory; :meth:`eeo.EEOTimeSeries.close` removes them. Pass
 ``cache=`` a directory to keep the files instead — signed catalog URLs expire,
 cached GeoTIFFs do not — or ``cache=False`` to keep every scene in memory,
 which is faster for a small area.
+
+A folder of rasters
+-------------------
+
+:meth:`eeo.EEOTimeSeries.from_folder` builds a series from files on disk — one
+raster per timestep — which is what scenes downloaded, exported from another
+tool, or written by an earlier step of your own look like:
+
+.. code-block:: python
+
+    ts = eeo.time_series("scenes/")                        # scenes/*.tif
+    ts = eeo.time_series("scenes/", pattern="**/*.tif")    # subdirectories too
+
+The files are opened, not read, so the series is file-backed from the start and
+holds no pixels.
+
+A file, unlike a catalog item, does not state when it was acquired — but its name
+usually does, and that is what is read: ``20230412``, ``2023-04-12``, or either
+with a time after it (``20230412T100621``), which covers Sentinel-2 and Landsat
+names as they are delivered. The first real date in the name wins, so the
+acquisition date of a Landsat product id is taken rather than its processing
+date. Only the filename is read, never the directories above it — a folder named
+by date is a convention, and guessing at it would make a timestep's date depend
+on where its file was stored.
+
+``timestamp=`` takes over where the filename does not carry one. It is a
+function of the path, so it can read the date from wherever it actually lives:
+
+.. code-block:: python
+
+    ts = eeo.time_series(
+        "scenes/",
+        pattern="*/B04.tif",
+        timestamp=lambda path: dt.datetime.fromisoformat(path.parent.name),
+    )
+
+``chunks=`` opens the files on the lazy backend instead, and the
+grid-consistency arguments apply as everywhere else.
 
 One grid, one set of bands
 --------------------------
@@ -118,10 +156,6 @@ Datasets loaded by hand work the same way, as long as each carries a timestamp:
         for path in products
     ]
     ts = eeo.time_series(scenes)
-
-Building a series from a folder of rasters
-(:meth:`eeo.EEOTimeSeries.from_folder`) is not implemented yet; the call exists
-and names the code that does the same thing today.
 
 Collapsing a series to one raster
 ---------------------------------
