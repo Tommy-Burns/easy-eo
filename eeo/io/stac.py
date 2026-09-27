@@ -201,6 +201,48 @@ def _mission(properties: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _processing_baseline(properties: Mapping[str, Any]) -> str | None:
+    """Read a Sentinel-2 item's processing baseline from its properties.
+
+    The baseline decides how stored values relate to reflectance: from 04.00, an
+    L2A product shifts them by ``BOA_ADD_OFFSET``, so a series that mixes
+    baselines mixes two radiometric conventions. ``load_sentinel2`` reads this
+    from the product manifest; this is the catalog route to the same string, so
+    a series built from a search can tell rather than guess from the date —
+    which matters because the reprocessed archive carries 04.00 or later on
+    acquisitions from long before the switch.
+
+    The STAC Sentinel-2 extension deprecated ``s2:processing_baseline`` in
+    favour of ``processing:version``, so the current field is read first and the
+    old one accepted for catalogs that still publish it.
+
+    Parameters
+    ----------
+    properties : Mapping
+        The STAC item's properties.
+
+    Returns
+    -------
+    str or None
+        The baseline as the catalog states it (e.g. ``"05.11"``), or None when
+        neither field is present.
+
+    Examples
+    --------
+    >>> _processing_baseline({"processing:version": "05.11"})
+    '05.11'
+    >>> _processing_baseline({"s2:processing_baseline": "02.07"})
+    '02.07'
+    >>> _processing_baseline({}) is None
+    True
+    """
+    for field in ("processing:version", "s2:processing_baseline"):
+        value = properties.get(field)
+        if isinstance(value, (str, int, float)) and str(value).strip():
+            return str(value).strip()
+    return None
+
+
 def _sensor_attrs(properties: Mapping[str, Any]) -> dict[str, Any]:
     """Provenance describing the sensor, for the attrs of a loaded scene.
 
@@ -219,6 +261,14 @@ def _sensor_attrs(properties: Mapping[str, Any]) -> dict[str, Any]:
     instruments = properties.get("instruments")
     if isinstance(instruments, (list, tuple)) and instruments:
         attrs["instruments"] = list(instruments)
+    if mission == "Sentinel-2":
+        # Recorded for Sentinel-2 only, under the name load_sentinel2 uses, so
+        # whatever reads it does not have to know which route the scene came by.
+        # Other missions have no baseline, and their processing version does not
+        # mean the same thing.
+        baseline = _processing_baseline(properties)
+        if baseline is not None:
+            attrs["processing_baseline"] = baseline
     return attrs
 
 

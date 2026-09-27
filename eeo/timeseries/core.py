@@ -11,23 +11,39 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import logging
 import os
 import tempfile
+import warnings
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, cast, overload
 
+import rasterio as rio
 from rasterio import CRS
 from rasterio.transform import Affine
+from rasterio.warp import reproject
 
+from eeo.common import get_nodata, normalize_resampling_method
+from eeo.core.adapters import RasterioAdapter
 from eeo.core.adapters.xarray import validate_chunks
 from eeo.core.core import EEORasterDataset
-from eeo.core.exceptions import ValidationError
+from eeo.core.exceptions import AlignmentError, CRSMismatchError, ValidationError
 from eeo.core.loader import load_raster
 from eeo.core.types import ChunkSpec, ResamplingMethod, StrPath
 from eeo.io.stac import STACItem, STACSearchResult
 
 _UTC = dt.timezone.utc
+
+_LOGGER = logging.getLogger(__name__)
+
+# Sentinel-2 processing baseline 04.00 was deployed on this date, and from it an
+# L2A product carries BOA_ADD_OFFSET (-1000 DN for every band in practice), so
+# the same ground reads about 1000 DN higher after it than before. Until
+# Easy-EO decodes reflectance, a series spanning the date mixes two radiometric
+# conventions, which is worth a warning rather than a silent bias.
+# https://sentinels.copernicus.eu/-/imminent-deployment-of-sentinel-2-processing-baseline-04.00-on-25-january-2022
+_BASELINE_04_00 = dt.datetime(2022, 1, 25, tzinfo=_UTC)
 
 _NO_TIMESTAMP = (
     "timestep {index} carries no timestamp, and a time series is ordered by "
@@ -109,6 +125,221 @@ def _through_file(
     return load_raster(path, chunks=chunks, timestamp=timestamp, attrs=attrs, band_names=band_names)
 
 
+def _crs_of(ds: EEORasterDataset) -> CRS | None:
+    """Return a dataset's CRS as a :class:`rasterio.crs.CRS`, or None if it has none.
+
+    A NumPy-backed dataset hands back whatever was passed to
+    :func:`eeo.load_array` — an EPSG int or a string, not necessarily a ``CRS``
+    — so comparing two datasets' CRSs directly can report a mismatch between
+    two spellings of the same system. Everything here compares this instead.
+    """
+    crs = ds.get_crs()
+    if crs is None or isinstance(crs, CRS):
+        return crs
+    return CRS.from_user_input(crs)
+
+
+def _same_grid(ds: EEORasterDataset, reference: EEORasterDataset) -> bool:
+    """Report whether two datasets share a pixel grid exactly."""
+    return (
+        ds.get_shape() == reference.get_shape() and ds.get_transform() == reference.get_transform()
+    )
+
+
+def _onto_grid(
+    ds: EEORasterDataset, reference: EEORasterDataset, *, method: str
+) -> EEORasterDataset:
+    """Warp one dataset onto another's exact grid: its CRS, transform and shape.
+
+    Alignment across time has to land on the reference grid *exactly* —
+    timesteps of one area differ in origin and extent, not merely in size, and a
+    composite of rasters that merely share a shape would average different
+    ground. So this warps to an explicit destination grid rather than resampling
+    to a shape.
+
+    The dtype and nodata value are the input's; the timestamp, attrs and band
+    names are carried over, since this is called directly rather than through
+    the operation decorator that would otherwise do it.
+    """
+    source = ds.to_rasterio()
+    target_crs = _crs_of(reference)
+    transform = reference.get_transform()
+    height, width = reference.get_shape()
+    nodata = get_nodata(source)
+    resampling = normalize_resampling_method(method)
+
+    meta = source.get_metadata()
+    meta.update(crs=target_crs, transform=transform, width=width, height=height)
+
+    def warp_bands(destination):
+        for band in range(1, source.get_count() + 1):
+            reproject(
+                source=rio.band(source.ds, band),
+                destination=rio.band(destination, band),
+                src_transform=source.get_transform(),
+                src_crs=_crs_of(source),
+                dst_transform=transform,
+                dst_crs=target_crs,
+                src_nodata=nodata,
+                dst_nodata=nodata,
+                resampling=resampling,
+            )
+
+    return EEORasterDataset(
+        adapter=RasterioAdapter.write_in_memory(meta, warp_bands),
+        timestamp=ds.timestamp,
+        attrs=ds.attrs,
+        band_names=ds.band_names,
+    )
+
+
+def _check_bands(datasets: Sequence[EEORasterDataset], reference: int) -> None:
+    """Refuse a series whose timesteps do not hold the same bands.
+
+    Band count is never fixed automatically: a timestep with a different number
+    of bands is a different measurement, not a misaligned one. Names are checked
+    because they are how bands are addressed — if band 1 is "red" in one
+    timestep and "nir" in another, every mapped index would be silently wrong.
+    """
+    ref = datasets[reference]
+    ref_count = ref.get_count()
+    ref_names = ref.band_names
+    for index, ds in enumerate(datasets):
+        if index == reference:
+            continue
+        if ds.get_count() != ref_count:
+            raise ValidationError(
+                f"timestep {index} has {ds.get_count()} bands but timestep {reference} "
+                f"has {ref_count}; every timestep of a series must hold the same bands, "
+                f"so load the same ones for each"
+            )
+        for position, (theirs, ours) in enumerate(
+            zip(ds.band_names, ref_names, strict=True), start=1
+        ):
+            if theirs and ours and theirs != ours:
+                raise ValidationError(
+                    f"band {position} is {ours!r} in timestep {reference} but {theirs!r} "
+                    f"in timestep {index}; a band must mean the same thing at every "
+                    f"timestep, or an index computed across them addresses different "
+                    f"data. Load the bands in the same order, or rename them to agree"
+                )
+
+
+def _on_one_grid(
+    datasets: Sequence[EEORasterDataset],
+    reference: int,
+    *,
+    auto_align: bool,
+    auto_reproject: bool,
+    method: str,
+) -> list[EEORasterDataset]:
+    """Return the timesteps on the reference's grid, aligning them if allowed.
+
+    A CRS mismatch needs ``auto_reproject``, a grid mismatch ``auto_align``;
+    either way the fix is the same warp onto the reference grid, because a
+    reprojection that did not land on that grid would leave the series
+    unaligned. Neither happens silently: without permission the mismatch is an
+    error naming the flag that would fix it.
+    """
+    ref = datasets[reference]
+    ref_crs = _crs_of(ref)
+    aligned = list(datasets)
+    reprojected: list[int] = []
+    resampled: list[int] = []
+
+    for index, ds in enumerate(datasets):
+        if index == reference:
+            continue
+        if _crs_of(ds) != ref_crs:
+            if not auto_reproject:
+                raise CRSMismatchError(
+                    f"timestep {index} is in {_crs_of(ds)} but timestep {reference} is "
+                    f"in {ref_crs}; a series must be in one CRS. Pass "
+                    f"auto_reproject=True to warp the others onto the reference's grid"
+                )
+            aligned[index] = _onto_grid(ds, ref, method=method)
+            reprojected.append(index)
+        elif not _same_grid(ds, ref):
+            if not auto_align:
+                raise AlignmentError(
+                    f"timestep {index} is {ds.get_shape()} pixels on a different grid "
+                    f"from timestep {reference}, which is {ref.get_shape()}; a series "
+                    f"must share one grid so its timesteps can be compared pixel by "
+                    f"pixel. Pass auto_align=True to resample the others onto the "
+                    f"reference's grid"
+                )
+            aligned[index] = _onto_grid(ds, ref, method=method)
+            resampled.append(index)
+
+    # CODE_STYLE: an alignment that happens automatically says so.
+    if reprojected:
+        _LOGGER.info(
+            "reprojected timesteps %s onto timestep %d's grid (%s) with method=%s",
+            reprojected,
+            reference,
+            ref_crs,
+            method,
+        )
+    if resampled:
+        _LOGGER.info(
+            "aligned timesteps %s onto timestep %d's grid with method=%s",
+            resampled,
+            reference,
+            method,
+        )
+    return aligned
+
+
+def _baseline_side(ds: EEORasterDataset, timestamp: dt.datetime) -> str | None:
+    """Say which side of Sentinel-2 baseline 04.00 a timestep sits on.
+
+    The product's own recorded baseline decides it where there is one, because
+    that is a fact rather than an inference: the reprocessed archive carries
+    baseline 04.00 or later on acquisitions from well before the switch, so the
+    date alone would put those on the wrong side. Only when nothing is recorded
+    does the acquisition date stand in. Returns None for anything that is not a
+    Sentinel-2 scene, or whose mission is not recorded.
+    """
+    mission = ds.attrs.get("mission")
+    if not (isinstance(mission, str) and mission.strip().casefold().startswith("sentinel-2")):
+        return None
+
+    recorded = ds.attrs.get("processing_baseline")
+    if recorded is not None:
+        try:
+            value = float(str(recorded).strip())
+        except ValueError:
+            value = float("nan")
+        if value == value:  # not NaN
+            return "post" if value >= 4.0 else "pre"
+
+    return "post" if timestamp >= _BASELINE_04_00 else "pre"
+
+
+def _warn_on_mixed_baseline(
+    datasets: Sequence[EEORasterDataset], timestamps: Sequence[dt.datetime]
+) -> None:
+    """Warn when a Sentinel-2 series straddles the baseline 04.00 change."""
+    sides = [_baseline_side(ds, stamp) for ds, stamp in zip(datasets, timestamps, strict=True)]
+    before = sides.count("pre")
+    after = sides.count("post")
+    if not (before and after):
+        return
+    warnings.warn(
+        f"this series spans the Sentinel-2 processing baseline 04.00 change of "
+        f"{_BASELINE_04_00.date()}: {before} timestep(s) sit before it and {after} "
+        f"after. From baseline 04.00 a Level-2A product shifts its stored values by "
+        f"BOA_ADD_OFFSET, -1000 DN for every band, so the same ground reads about "
+        f"1000 DN higher after the change than before it. Easy-EO reads stored values "
+        f"and does not decode reflectance, so a composite over this series is biased "
+        f"by however many scenes fall on each side, and an index trajectory shows a "
+        f"step at the boundary that is not in the ground. Keep the series on one side "
+        f"of that date, or use scenes reprocessed to a single baseline.",
+        UserWarning,
+        stacklevel=4,
+    )
+
+
 def _apply(op: Callable[..., Any], ds: EEORasterDataset, kwargs: dict[str, Any]) -> Any:
     """Run one operation on one dataset, exactly as calling it on the dataset would.
 
@@ -155,14 +386,49 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         carry. None takes each dataset's own ``timestamp``. A naive datetime is
         read as UTC. The datasets themselves are left untouched either way, so
         supplying timestamps here does not mutate the caller's objects.
+    auto_align : bool, default False
+        Whether a timestep on a different pixel grid from the reference may be
+        resampled onto it. False refuses the series with an
+        :class:`~eeo.AlignmentError` instead, because resampling a series is
+        expensive and changes the pixels: opting in says you want that.
+    auto_reproject : bool, default False
+        Whether a timestep in a different CRS may be warped onto the
+        reference's. False refuses with a :class:`~eeo.CRSMismatchError`. Both
+        fixes are the same warp onto the reference grid; this flag is the
+        permission for the CRS part, as ``mosaic`` spells it.
+    method : str, default "nearest"
+        Resampling method used when either flag triggers. Nearest by default
+        rather than bilinear: a series built for cloud masking or compositing
+        carries a quality band whose values are class numbers, and blending
+        class numbers invents classes.
+    reference : int, default 0
+        Which timestep's CRS, grid and bands the others must match, indexed in
+        time order — 0 is the earliest, -1 the latest. The default follows
+        ``mosaic`` and ``stack``, where the first input sets the grid; a
+        chronological series cannot be reordered to put a different scene
+        first, which is what this is for.
 
     Raises
     ------
     ValidationError
         If ``datasets`` is empty, holds anything that is not an
         ``EEORasterDataset``, or has a timestep with no timestamp and no
-        ``timestamps`` entry; or if ``timestamps`` is given with a length that
-        does not match.
+        ``timestamps`` entry; if ``timestamps`` is given with a length that
+        does not match; if ``reference`` is not a timestep; or if the timesteps
+        do not hold the same number of bands, or disagree about what a band is
+        called.
+    CRSMismatchError
+        If timesteps are in different CRSs and ``auto_reproject`` is False.
+    AlignmentError
+        If timesteps are on different pixel grids and ``auto_align`` is False.
+
+    Warns
+    -----
+    UserWarning
+        If a Sentinel-2 series spans the processing baseline 04.00 change of
+        25 January 2022, across which the same ground reads about 1000 DN
+        apart. Stored values are not decoded to reflectance, so a composite or
+        trajectory over such a series carries a step that is not in the ground.
 
     Notes
     -----
@@ -171,8 +437,9 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
     datasets (what a catalog load returns) keeps every window in memory. This
     is why :meth:`from_stac` caches scenes to disk by default.
 
-    Consistency of CRS, grid and band structure across timesteps is not
-    enforced here yet; the grid properties describe the earliest timestep.
+    Validation reads metadata only — no pixels — so refusing a mismatched
+    series costs nothing. Alignment, when opted into, does read: each
+    mismatched timestep is warped onto the reference grid there and then.
 
     Examples
     --------
@@ -199,6 +466,10 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         datasets: Iterable[EEORasterDataset],
         *,
         timestamps: Sequence[dt.datetime] | None = None,
+        auto_align: bool = False,
+        auto_reproject: bool = False,
+        method: str = "nearest",
+        reference: int = 0,
     ) -> None:
         items = list(datasets)
         if not items:
@@ -216,8 +487,25 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         # A stable sort, so reprocessed duplicates of one acquisition — which
         # catalogs do return — keep the order they arrived in.
         order = sorted(range(len(items)), key=lambda index: stamps[index])
-        self._datasets: list[EEORasterDataset] = [items[index] for index in order]
+        ordered = [items[index] for index in order]
         self._timestamps: list[dt.datetime] = [stamps[index] for index in order]
+
+        if not -len(ordered) <= reference < len(ordered):
+            raise ValidationError(
+                f"reference={reference} is not a timestep of a {len(ordered)}-step "
+                f"series; it indexes the series in time order, so 0 is the earliest"
+            )
+        reference %= len(ordered)
+        self._reference = reference
+        _check_bands(ordered, reference)
+        self._datasets: list[EEORasterDataset] = _on_one_grid(
+            ordered,
+            reference,
+            auto_align=auto_align,
+            auto_reproject=auto_reproject,
+            method=method,
+        )
+        _warn_on_mixed_baseline(self._datasets, self._timestamps)
         # Set by from_stac when it owns a temporary scene cache.
         self._cache: tempfile.TemporaryDirectory | None = None
         # Set by from_stac when its scenes were opened on the lazy backend, so
@@ -239,6 +527,10 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         resampling: ResamplingMethod | Any = "nearest",
         cache: bool | StrPath = True,
         chunks: ChunkSpec | None = None,
+        auto_align: bool = False,
+        auto_reproject: bool = False,
+        method: str = "nearest",
+        reference: int = 0,
     ) -> EEOTimeSeries:
         """Build a series from a STAC search, reading the same assets from each item.
 
@@ -284,6 +576,11 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             — the lazy backend adds dask on top of that, it is not what makes
             the series bounded. Cannot be combined with ``cache=False``: an
             in-memory scene has no file to open lazily.
+        auto_align, auto_reproject, method, reference
+            Grid consistency across timesteps, as :class:`EEOTimeSeries`
+            documents them. Worth knowing for a catalog search: items covering
+            one area can land in different UTM zones, and a search wide enough
+            to cross a zone boundary needs ``auto_reproject=True``.
 
         Returns
         -------
@@ -301,6 +598,10 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             :meth:`eeo.io.STACItem.load` rejects (an unknown asset, a bbox
             that is not four ordered lon/lat values, ``mask`` without a search
             geometry).
+        CRSMismatchError
+            If the items are in different CRSs and ``auto_reproject`` is False.
+        AlignmentError
+            If the items land on different grids and ``auto_align`` is False.
         MissingDependencyError
             If ``chunks`` is given without the ``lazy`` extra installed.
 
@@ -378,7 +679,13 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
                 if directory is not None:
                     scene = _through_file(scene, directory, index, chunks, timestamp=stamp)
                 scenes.append(scene)
-            series = cls(scenes)
+            series = cls(
+                scenes,
+                auto_align=auto_align,
+                auto_reproject=auto_reproject,
+                method=method,
+                reference=reference,
+            )
         except BaseException:
             for scene in scenes:
                 with contextlib.suppress(Exception):
@@ -651,41 +958,56 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         return list(self._timestamps)
 
     @property
-    def crs(self) -> CRS:
-        """Coordinate reference system of the earliest timestep.
+    def reference(self) -> EEORasterDataset:
+        """The timestep whose CRS, grid and bands the others match.
 
         Returns
         -------
-        rasterio.crs.CRS
-            The CRS the series is read in.
+        EEORasterDataset
+            The timestep chosen by ``reference`` at construction — the earliest
+            by default. Every other timestep was checked against it, and
+            aligned onto it where that was allowed.
         """
-        return self._datasets[0].get_crs()
+        return self._datasets[self._reference]
+
+    @property
+    def crs(self) -> CRS | None:
+        """Coordinate reference system of the series.
+
+        Returns
+        -------
+        rasterio.crs.CRS or None
+            The one CRS every timestep is in, or None if the reference timestep
+            declares none. Always a ``CRS``, even where a timestep was built
+            from an EPSG code or a string.
+        """
+        return _crs_of(self.reference)
 
     @property
     def transform(self) -> Affine:
-        """Affine transform of the earliest timestep.
+        """Affine transform of the series' grid.
 
         Returns
         -------
         affine.Affine
-            Mapping from pixel to world coordinates.
+            Mapping from pixel to world coordinates, shared by every timestep.
         """
-        return self._datasets[0].get_transform()
+        return self.reference.get_transform()
 
     @property
     def shape(self) -> tuple[int, int]:
-        """Pixel dimensions of the earliest timestep.
+        """Pixel dimensions of the series' grid.
 
         Returns
         -------
         tuple of int
-            ``(height, width)``.
+            ``(height, width)``, shared by every timestep.
         """
-        return self._datasets[0].get_shape()
+        return self.reference.get_shape()
 
     @property
     def band_count(self) -> int:
-        """Band count of the earliest timestep.
+        """Number of bands each timestep holds.
 
         Named ``band_count`` rather than ``count``, which a sequence already
         uses to count occurrences of a value.
@@ -693,20 +1015,22 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         Returns
         -------
         int
-            Number of bands each timestep is expected to hold.
+            Band count, the same at every timestep.
         """
-        return self._datasets[0].get_count()
+        return self.reference.get_count()
 
     @property
     def band_names(self) -> list[str | None]:
-        """Band names of the earliest timestep.
+        """Band names of the series.
 
         Returns
         -------
         list of (str or None)
-            One entry per band, ``None`` for an unnamed band.
+            One entry per band, ``None`` for a band the reference timestep does
+            not name. No two timesteps may disagree about a name, so these
+            describe the series.
         """
-        return self._datasets[0].band_names
+        return self.reference.band_names
 
     # ========================
     # Lifecycle
