@@ -156,6 +156,22 @@ That is :meth:`~eeo.EEOTimeSeries.map` with :func:`eeo.mask_clouds` followed by
 ``median()``, in one call — with the quality band left out of the result, since
 an average of scene-class numbers would not mean anything.
 
+One raster for the whole season is not always the question. To collapse *within*
+each month instead of across everything, group first:
+
+.. code-block:: python
+
+   monthly = ts.resample_time("MS").composite()
+
+   len(monthly)              # one timestep per month
+   monthly.timestamps[0]     # the month it covers
+
+That is a series again, so everything on this page still works on it — including
+reducing it a second time, which is how you get the greenest month of a season.
+Periods are written the way pandas writes them: ``"D"`` a day, ``"7D"`` seven
+days, ``"W"`` a week, ``"MS"`` a month, ``"YS"`` a year. A month with no
+acquisitions is simply absent from the result.
+
 -----
 
 Following one place through time

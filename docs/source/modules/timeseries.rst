@@ -226,6 +226,58 @@ other.
 The result carries no timestamp — a composite was not acquired at any one moment
 — and records what it reduced in ``attrs``.
 
+Monthly composites: binning in time
+-----------------------------------
+
+Forty acquisitions is rarely the number a question is asked in. *"How did this
+field green up?"* is about months. :meth:`eeo.EEOTimeSeries.resample_time`
+groups the timesteps into periods, and the reducers then work *within* each
+period instead of across the whole series:
+
+.. code-block:: python
+
+    monthly = ts.resample_time("MS").median()      # one raster per calendar month
+    monthly = ts.resample_time("MS").composite()   # ...cloud-free
+    weekly = ts.resample_time("7D").max()
+
+What comes back is a series like any other — one timestep per period — so it can
+be mapped over, sampled, sliced, saved, or reduced again:
+
+.. code-block:: python
+
+    monthly = ts.resample_time("MS").composite()
+    greenest = monthly.map(eeo.ndvi, red="B04", nir="B08").max()
+
+Periods are pandas offset aliases, passed to pandas untouched: ``"D"`` a day,
+``"7D"`` seven days, ``"W"`` a week, ``"MS"`` a calendar month, ``"QS"`` a
+quarter, ``"YS"`` a year, and anchored forms such as ``"W-MON"``.
+
+.. note::
+
+   Prefer the **start-of-period** spellings above. pandas 2.2 renamed the
+   end-of-period aliases — ``"M"`` became ``"ME"``, ``"Q"`` became ``"QE"``,
+   ``"Y"`` became ``"YE"`` — and Easy-EO supports pandas on both sides of that
+   change, so ``"MS"`` works on every installation while ``"M"`` does not. A
+   period Easy-EO cannot use is refused with that rename named.
+
+A period holding no acquisition is dropped rather than carried: a series cannot
+hold a timestep with no raster behind it, so a cloudy May simply is not in the
+result. Grouping itself reads nothing — it is arithmetic on the timestamps — and
+the grouping is inspectable before you commit to reducing it:
+
+.. code-block:: python
+
+    periods = ts.resample_time("MS")
+    len(periods)                       # how many months have anything in them
+    [len(period) for period in periods]  # how many acquisitions each holds
+
+Each result is stamped with its **period's label**, because a reducer states no
+timestamp of its own — a composite was not acquired at any one moment — and
+records the span it actually covers in ``attrs`` (``time_start``, ``time_end``,
+``timesteps``), plus the period under ``temporal_bin``. ``save_dir=`` writes one
+raster per period and reads the series back from those files, which is what makes
+a season of full scenes workable.
+
 A cloud-free composite
 ----------------------
 
@@ -304,3 +356,7 @@ Several locations are a concat of several calls:
 .. autoclass:: eeo.EEOTimeSeries
     :members:
     :special-members: __len__, __getitem__
+
+.. autoclass:: eeo.timeseries.TemporalBins
+    :members:
+    :special-members: __len__, __iter__
