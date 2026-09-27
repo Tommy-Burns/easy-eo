@@ -92,6 +92,13 @@ are called out under a **Breaking** heading.
   this, a catalog-built series could only infer the baseline from the
   acquisition date.
 
+- Shared test fixtures for the temporal layer: `season_stack` (five monthly
+  two-band scenes over one growing season, on one grid, with a two-timestep
+  nodata gap at one pixel), `season_series` (the same as an `EEOTimeSeries`) and
+  `season_reference` (a constant single-band partner for two-raster ops). Values
+  are uniform within a scene and chosen so every reduction over the stack is a
+  round number, which is what the temporal reducers will be measured against.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that

@@ -771,3 +771,103 @@ def test_a_stac_series_reads_its_baseline_from_the_items(tmp_path):
 
     assert [ds.attrs["processing_baseline"] for ds in ts] == ["05.11", "05.11"]
     ts.close()
+
+
+# --------------------------------------------------------------------------
+# The synthetic five-timestep season stack (shared fixtures in conftest.py)
+# --------------------------------------------------------------------------
+def test_the_season_stack_describes_itself_as_one_series(season_series):
+    assert len(season_series) == 5
+    assert [stamp.date().isoformat() for stamp in season_series.timestamps] == [
+        "2023-03-01",
+        "2023-04-01",
+        "2023-05-01",
+        "2023-06-01",
+        "2023-07-01",
+    ]
+    assert season_series.shape == (4, 4)
+    assert season_series.band_count == 2
+    assert season_series.band_names == ["red", "nir"]
+    assert season_series.crs.to_epsg() == 32633
+    assert "5 timesteps from 2023-03-01 to 2023-07-01" in repr(season_series)
+
+
+def test_map_normalized_difference_across_the_stack(season_series, season_reference):
+    # The acceptance case for the time-series core: an existing two-raster op,
+    # unmodified, applied across every timestep.
+    result = season_series.map(eeo.normalized_difference, other=season_reference)
+
+    assert len(result) == 5
+    assert result.band_count == 2
+    assert result.shape == season_series.shape
+    assert result.transform == season_series.transform
+    assert result.timestamps == season_series.timestamps
+    assert result[0].get_metadata()["dtype"] == "float32"
+
+    # (band - 1000) / (band + 1000) per timestep, at a pixel valid throughout.
+    red_expected = [0.0, -0.052632, -0.111111, -0.052632, 0.0]
+    nir_expected = [1 / 3, 0.5, 0.6, 0.5, 1 / 3]
+    for index, ds in enumerate(result):
+        values = ds.to_array()
+        assert values[0, 1, 1] == pytest.approx(red_expected[index], abs=1e-6)
+        assert values[1, 1, 1] == pytest.approx(nir_expected[index], abs=1e-6)
+
+
+def test_an_index_across_the_stack_traces_the_season(season_series):
+    trajectory = [
+        float(ds.to_array()[0, 1, 1]) for ds in season_series.map(eeo.ndvi, red="red", nir="nir")
+    ]
+
+    assert trajectory == pytest.approx([1 / 3, 0.538462, 2 / 3, 0.538462, 1 / 3], abs=1e-6)
+    # Rises to midsummer and falls back, symmetrically.
+    assert trajectory[0] < trajectory[1] < trajectory[2]
+    assert trajectory[2] > trajectory[3] > trajectory[4]
+    assert trajectory[0] == pytest.approx(trajectory[4])
+
+
+def test_the_nodata_gaps_survive_a_mapped_index(season_series):
+    # Pixel (0, 0) is nodata at the third and fourth timesteps only; the index
+    # must mark those and only those, so a reducer can skip them.
+    gap_pixel = [
+        float(ds.to_array()[0, 0, 0]) for ds in season_series.map(eeo.ndvi, red="red", nir="nir")
+    ]
+
+    assert not np.isnan(gap_pixel[0])
+    assert not np.isnan(gap_pixel[1])
+    assert np.isnan(gap_pixel[2])
+    assert np.isnan(gap_pixel[3])
+    assert not np.isnan(gap_pixel[4])
+
+
+def test_slicing_the_season_keeps_a_sub_season(season_series):
+    midsummer = season_series[1:4]
+
+    assert len(midsummer) == 3
+    assert [stamp.month for stamp in midsummer.timestamps] == [4, 5, 6]
+    assert midsummer.band_names == ["red", "nir"]
+
+
+def test_mapping_the_season_to_files_writes_one_raster_per_timestep(season_series, tmp_path):
+    result = season_series.map(eeo.ndvi, red="red", nir="nir", save_dir=tmp_path / "ndvi")
+
+    written = sorted((tmp_path / "ndvi").glob("*.tif"))
+    assert [path.name for path in written] == [
+        "0000_20230301T000000.tif",
+        "0001_20230401T000000.tif",
+        "0002_20230501T000000.tif",
+        "0003_20230601T000000.tif",
+        "0004_20230701T000000.tif",
+    ]
+    assert [float(ds.to_array()[0, 1, 1]) for ds in result] == pytest.approx(
+        [1 / 3, 0.538462, 2 / 3, 0.538462, 1 / 3], abs=1e-6
+    )
+    result.close()
+
+
+def test_the_stack_needs_no_alignment_flags(season_stack):
+    # One grid, one CRS, one set of bands: the series builds without permission
+    # to touch the pixels, which is the case every real workflow should hit.
+    ts = eeo.time_series(season_stack)
+
+    assert ts.reference is ts[0]
+    assert all(ds.get_transform() == ts.transform for ds in ts)

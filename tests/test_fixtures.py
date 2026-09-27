@@ -65,3 +65,45 @@ def test_raster_3x3_contract(raster_3x3):
     assert isinstance(ds._adapter, NumpyRasterioAdapter)
     np.testing.assert_array_equal(ds.read()[0], np.arange(1, 10, dtype=np.float32).reshape(3, 3))
     assert ds.get_crs() == CRS.from_epsg(4326)
+
+
+def test_season_stack_contract(season_stack):
+    assert len(season_stack) == 5
+    for index, ds in enumerate(season_stack):
+        assert isinstance(ds._adapter, RasterioAdapter)
+        assert ds.get_count() == 2
+        assert ds.get_shape() == (4, 4)
+        assert ds.band_names == ["red", "nir"]
+        assert ds.get_crs() == CRS.from_epsg(32633)
+        assert ds.get_metadata()["nodata"] == 0
+        assert ds.timestamp.month == (3, 4, 5, 6, 7)[index]
+        assert ds.timestamp.tzinfo is not None
+        assert ds.read().dtype == np.uint16
+
+    # Uniform within a scene, so every reduction across the stack is exact.
+    reds = [int(ds.read()[0, 1, 1]) for ds in season_stack]
+    nirs = [int(ds.read()[1, 1, 1]) for ds in season_stack]
+    assert reds == [1000, 900, 800, 900, 1000]
+    assert nirs == [2000, 3000, 4000, 3000, 2000]
+
+    # Pixel (0, 0) is the nodata gap, at the third and fourth timesteps only.
+    gaps = [int(ds.read()[0, 0, 0]) for ds in season_stack]
+    assert gaps == [1000, 900, 0, 0, 1000]
+
+
+def test_season_series_contract(season_series):
+    assert len(season_series) == 5
+    assert season_series.band_names == ["red", "nir"]
+    assert season_series.shape == (4, 4)
+    assert [stamp.month for stamp in season_series.timestamps] == [3, 4, 5, 6, 7]
+
+
+def test_season_reference_contract(season_reference, season_stack):
+    assert isinstance(season_reference._adapter, RasterioAdapter)
+    assert season_reference.get_count() == 1
+    # On the stack's grid, so a two-raster op needs no alignment.
+    assert season_reference.get_shape() == season_stack[0].get_shape()
+    assert season_reference.get_transform() == season_stack[0].get_transform()
+    np.testing.assert_array_equal(
+        season_reference.read()[0], np.full((4, 4), 1000, dtype=np.uint16)
+    )
