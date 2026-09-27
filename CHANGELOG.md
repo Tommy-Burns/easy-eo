@@ -23,6 +23,20 @@ are called out under a **Breaking** heading.
   delegates: a `STACSearchResult` or its items to
   `EEOTimeSeries.from_stac`, loaded datasets to the constructor, a directory
   path to `EEOTimeSeries.from_folder`. The classmethods remain public.
+- `EEOTimeSeries.resample_time(freq)` groups a series into periods and reduces
+  within each one, so a season becomes monthly composites: `median()`, `mean()`,
+  `min()`, `max()` and `composite()` on the returned `TemporalBins` each give
+  back a new series with one timestep per period — a series like any other, so
+  it can be mapped over, sampled, sliced, saved, or reduced again. `save_dir=`
+  writes one raster per period and reads the result from those files. Periods
+  are pandas offset aliases, passed to pandas untouched, so `"D"`, `"7D"`,
+  `"W"`, `"MS"`, `"QS"`, `"YS"` and anchored forms like `"W-MON"` all work.
+  Prefer the start-of-period spellings: pandas 2.2 renamed `"M"` to `"ME"` (and
+  `"Q"`, `"Y"` likewise) and Easy-EO supports pandas either side of that, so
+  `"MS"` works everywhere; an unusable period is refused with the rename named.
+  A period holding no acquisition is dropped. Each result carries its period's
+  label as its timestamp — a reducer states none of its own — and records the
+  span it actually covers in `attrs`.
 - `STACSearchResult.deduplicate()` keeps one item per acquisition, dropping the
   reprocessings a catalog publishes alongside the original — every copy matches
   a search, and a repeated date is weighted twice in a median composite. It
