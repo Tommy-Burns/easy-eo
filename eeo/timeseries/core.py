@@ -37,6 +37,7 @@ from eeo.io.stac import STACItem, STACSearchResult
 from eeo.preprocessing.masking import _find_quality_band, mask_clouds
 from eeo.preprocessing.quality import QA_PIXEL_DEFAULT_MIN_CLOUD_CONFIDENCE
 from eeo.timeseries import extract, reducers
+from eeo.timeseries.binning import TemporalBins, resample_time
 
 _UTC = dt.timezone.utc
 
@@ -1074,6 +1075,79 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         derived = type(self)(datasets, timestamps=timestamps)
         derived._chunks = self._chunks
         return derived
+
+    def resample_time(self, freq: str) -> TemporalBins:
+        """Group the timesteps into periods, to be reduced within each one.
+
+        Forty acquisitions is rarely the number a question is asked in. Binning
+        reduces *within* each period rather than across the whole series, so a
+        season becomes six monthly composites — and the result is a series like
+        any other, which can be mapped over, sampled, reduced again or saved.
+
+        Parameters
+        ----------
+        freq : str
+            Period length, as a pandas offset alias: ``"D"`` a day, ``"7D"``
+            seven days, ``"W"`` a week, ``"MS"`` a calendar month, ``"QS"`` a
+            quarter, ``"YS"`` a year. Passed to pandas untouched, so its whole
+            vocabulary is available — including anchored aliases such as
+            ``"W-MON"``.
+
+            Prefer the start-of-period spellings above. pandas 2.2 renamed the
+            end-of-period aliases (``"M"`` to ``"ME"``, ``"Q"`` to ``"QE"``,
+            ``"Y"`` to ``"YE"``), and Easy-EO supports pandas on both sides of
+            that change, so ``"MS"`` works everywhere and ``"M"`` does not.
+
+        Returns
+        -------
+        TemporalBins
+            The grouping, with :meth:`~eeo.timeseries.TemporalBins.median`,
+            ``mean``, ``min``, ``max`` and
+            :meth:`~eeo.timeseries.TemporalBins.composite` to call on it, each
+            returning a new series with one timestep per period. Periods holding
+            no acquisition are dropped, since a series cannot hold a timestep
+            with no raster behind it.
+
+        Raises
+        ------
+        ValidationError
+            If ``freq`` is not a period pandas recognises. The message says so in
+            pandas' words and names the rename above, which is the likeliest
+            cause.
+
+        Notes
+        -----
+        Reads nothing: grouping is arithmetic on the timestamps, and the pixels
+        are only touched when a reducer is called.
+
+        Each result is stamped with its period's label — a reducer states no
+        timestamp of its own, since a composite was not acquired at one moment —
+        and records the span it actually covers in ``attrs``
+        (``time_start``, ``time_end``, ``timesteps``), plus the period alias
+        under ``temporal_bin``.
+
+        Examples
+        --------
+        >>> import eeo
+        >>> monthly = ts.resample_time("MS").median()  # doctest: +SKIP
+        >>> len(monthly)  # doctest: +SKIP
+        6
+        >>> monthly.timestamps[0].date()  # doctest: +SKIP
+        datetime.date(2023, 4, 1)
+
+        A monthly cloud-free composite, then the greenest month of the season:
+
+        >>> monthly = ts.resample_time("MS").composite()  # doctest: +SKIP
+        >>> peak = monthly.map(eeo.ndvi, red="B04", nir="B08").max()  # doctest: +SKIP
+
+        The grouping itself is inspectable, which is the quick way to see whether
+        a period is long enough to be worth compositing:
+
+        >>> bins = ts.resample_time("MS")  # doctest: +SKIP
+        >>> [len(period) for period in bins]  # doctest: +SKIP
+        [5, 7, 6, 8, 7, 5]
+        """
+        return resample_time(self, freq)
 
     def deduplicate(self) -> EEOTimeSeries:
         """Keep one timestep per acquisition time.

@@ -7,6 +7,7 @@ is actually built from a catalog search, and the ``lazy`` extra only when
 ``chunks=`` asks for the dask-chunked backend.
 """
 
+from .binning import TemporalBins
 from .core import EEOTimeSeries, time_series
 
-__all__ = ["EEOTimeSeries", "time_series"]
+__all__ = ["EEOTimeSeries", "TemporalBins", "time_series"]
