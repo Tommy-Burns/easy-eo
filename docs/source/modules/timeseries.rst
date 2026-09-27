@@ -80,6 +80,47 @@ function of the path, so it can read the date from wherever it actually lives:
 ``chunks=`` opens the files on the lazy backend instead, and the
 grid-consistency arguments apply as everywhere else.
 
+One acquisition, one timestep
+-----------------------------
+
+A catalog publishes a scene again each time the mission reprocesses its archive,
+and every copy matches a search. That is correct of the catalog and wrong for a
+series: a statistic across time counts each timestep once, so a repeated moment
+is weighted twice in a median and the composite leans toward whichever dates
+happen to be duplicated.
+
+Drop the extra copies before anything is read:
+
+.. code-block:: python
+
+    ts = eeo.time_series(results.deduplicate(), assets=["B04", "B08", "SCL"])
+
+:meth:`eeo.io.STACSearchResult.deduplicate` decides on metadata the search
+already returned, so a duplicate never costs a read.
+:meth:`eeo.EEOTimeSeries.deduplicate` applies the same rule to a series already
+built, which is what the folder and hand-assembled paths have.
+
+Two items are the same acquisition when they share a collection, an acquisition
+time, and the ground they cover — read from ``grid:code`` (``"MGRS-33TUL"`` for
+Sentinel-2, ``"WRS2-192029"`` for Landsat), or from the footprint where the
+catalog declares no grid. Of the copies, the winner is:
+
+1. the **highest processing version** — for Sentinel-2 the processing baseline;
+2. else, the **most recently processed**, from ``processing:datetime``,
+   or from ``updated`` or ``created`` where the catalog states none;
+3. else, whichever the catalog listed first.
+
+Version comes before time because ``created`` and ``updated`` describe the STAC
+record and not the data — the specification says so — and a metadata-only fix
+must not let an older processing outrank a better one.
+
+**Two tiles of one overpass are not duplicates.** They share an acquisition time
+and cover different ground, so both are kept: over an area exceeding a tile
+boundary each holds a different part of it, and they want :func:`eeo.mosaic`
+rather than dropping. This is why nothing is deduplicated automatically — a
+series that repeats a moment only *warns*, naming both causes, because the two
+have opposite fixes.
+
 One grid, one set of bands
 --------------------------
 

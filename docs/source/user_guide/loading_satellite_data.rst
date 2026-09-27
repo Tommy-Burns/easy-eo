@@ -478,8 +478,18 @@ threshold. When an exact cut-off matters, filter the result yourself:
    clear = [item for item in results if item.cloud_cover <= 20]
 
 **Catalogs return reprocessed duplicates.** One acquisition can appear as
-several scenes with the same timestamp and different processing baselines.
-They are kept as separate items; pick by ``item.id`` if it matters.
+several scenes with the same timestamp and different processing baselines, and
+they are all kept as separate items. That only matters once you treat the result
+as a time series, where the repeated date is counted twice — so
+``results.deduplicate()`` keeps the best-processed copy of each acquisition:
+
+.. code-block:: python
+
+   one_per_acquisition = results.deduplicate()
+
+It compares metadata the search already returned and reads nothing. Two tiles of
+one overpass are not duplicates and both survive. See
+:doc:`time_series` for what a duplicate does to a composite.
 
 **Catalog outages surface as errors.** A search hits somebody else's service.
 If it is down you will see the client's transport error, not an Easy-EO one —

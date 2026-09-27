@@ -190,17 +190,19 @@ clear scenes, but a cloudy scene still sees the ground somewhere, and that
 somewhere may be the only look you get at it. Let the cloudy ones in and let
 ``composite()`` sort out which pixels to use.
 
-**Catalogs list some scenes twice.** The same overpass is often published more
-than once, and both copies match a search — which would count that day twice.
-Keeping one scene per date is enough:
+**Catalogs list some scenes twice.** A scene gets published again whenever the
+mission reprocesses its archive, and both copies match a search — which counts
+that day twice in a composite, and pulls it toward whichever dates happen to be
+duplicated. Drop the extras before you read anything:
 
 .. code-block:: python
 
-   one_per_date = {}
-   for item in results:
-       one_per_date.setdefault(item.timestamp.date(), item)
+   ts = eeo.time_series(results.deduplicate(), assets=["B04", "B08", "SCL"])
 
-   ts = eeo.time_series(list(one_per_date.values()), assets=["B04", "B08", "SCL"])
+The best-processed copy of each acquisition survives. Two tiles of one overpass
+are not duplicates and are both kept — over a wide area they cover different
+ground. A series built without this says so when it notices, and
+``ts.deduplicate()`` fixes one you have already built.
 
 **Timesteps must line up.** Every scene in a series has to be on the same grid,
 which is normally automatic for one area from one catalog. A wide area can draw
