@@ -1,7 +1,7 @@
 """Construction and ordering of EEOTimeSeries (eeo/timeseries/core.py).
 
 Covers construction: the three paths (datasets, a STAC
-search result, and the folder stub), chronological ordering, the timestamp
+search result, and a folder of rasters), chronological ordering, the timestamp
 requirement, the sequence protocol, and the scene cache.
 
 The STAC metadata is faked and its assets are local GeoTIFFs, following
@@ -19,6 +19,7 @@ from rasterio.transform import from_origin
 from rasterio.warp import transform_bounds
 
 import eeo
+from eeo.core.adapters import RasterioAdapter, XarrayAdapter
 from eeo.core.exceptions import AlignmentError, CRSMismatchError, ValidationError
 from eeo.timeseries.core import EEOTimeSeries
 
@@ -171,21 +172,294 @@ def test_timestamps_entries_must_be_datetimes():
 
 
 # ---------------
-# The folder stub
+# From a folder
 # ---------------
-def test_from_folder_names_its_replacement(tmp_path):
-    with pytest.raises(NotImplementedError, match="not implemented yet"):
-        EEOTimeSeries.from_folder(tmp_path)
+def write_scene(path, *, value, size=4, crs=SCENE_CRS, origin=SCENE_ORIGIN, band_name="red"):
+    """Write a single-band GeoTIFF, the shape a folder of scenes has on disk."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with rio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=size,
+        width=size,
+        count=1,
+        dtype="uint16",
+        crs=crs,
+        transform=from_origin(origin[0], origin[1], SCENE_RES, SCENE_RES),
+    ) as dst:
+        dst.write(np.full((size, size), value, dtype="uint16"), 1)
+        dst.set_band_description(1, band_name)
+    return path
 
 
-def test_a_path_source_reaches_the_folder_stub(tmp_path):
-    with pytest.raises(NotImplementedError, match="not implemented yet"):
-        eeo.time_series(str(tmp_path))
+@pytest.fixture
+def folder(tmp_path):
+    """Three dated scenes, written out of time order so the sort has work to do."""
+    directory = tmp_path / "scenes"
+    for name, value in (
+        ("ndvi_20230701.tif", 7),
+        ("ndvi_20230301.tif", 3),
+        ("ndvi_20230501.tif", 5),
+    ):
+        write_scene(directory / name, value=value)
+    return directory
 
 
-def test_the_folder_stub_suggests_the_supported_path(tmp_path):
-    with pytest.raises(NotImplementedError, match="stac_search"):
-        eeo.time_series(tmp_path, chunks="auto")
+def test_a_folder_becomes_a_series_in_time_order(folder):
+    ts = eeo.time_series(folder)
+
+    assert len(ts) == 3
+    assert [stamp.date() for stamp in ts.timestamps] == [
+        dt.date(2023, 3, 1),
+        dt.date(2023, 5, 1),
+        dt.date(2023, 7, 1),
+    ]
+    assert [int(ds.to_array().flat[0]) for ds in ts] == [3, 5, 7]
+    ts.close()
+
+
+def test_the_folder_path_is_file_backed(folder):
+    ts = eeo.time_series(folder)
+
+    # The point of the path: one GDAL handle per timestep, no pixels held.
+    assert all(isinstance(ds._adapter, RasterioAdapter) for ds in ts)
+    assert ts.band_names == ["red"]
+    assert [ds.timestamp for ds in ts] == ts.timestamps
+    ts.close()
+
+
+def test_the_classmethod_is_the_same_path(folder):
+    ts = EEOTimeSeries.from_folder(folder)
+
+    assert len(ts) == 3
+    ts.close()
+
+
+def test_a_pattern_selects_which_files(folder):
+    write_scene(folder / "mask_20230401.tif", value=1)
+
+    ts = eeo.time_series(folder, pattern="ndvi_*.tif")
+
+    assert len(ts) == 3
+    assert dt.date(2023, 4, 1) not in [stamp.date() for stamp in ts.timestamps]
+    ts.close()
+
+
+def test_a_recursive_pattern_walks_subdirectories(tmp_path):
+    root = tmp_path / "nested"
+    write_scene(root / "2023-03" / "ndvi_20230301.tif", value=3)
+    write_scene(root / "2023-05" / "ndvi_20230501.tif", value=5)
+
+    ts = eeo.time_series(root, pattern="**/*.tif")
+
+    assert [int(ds.to_array().flat[0]) for ds in ts] == [3, 5]
+    ts.close()
+
+
+def test_a_directory_matching_the_pattern_is_skipped(tmp_path):
+    root = tmp_path / "scenes"
+    write_scene(root / "ndvi_20230301.tif", value=3)
+    (root / "20230401.tif").mkdir()
+
+    ts = eeo.time_series(root, pattern="*")
+
+    assert len(ts) == 1
+    ts.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("20230412.tif", dt.datetime(2023, 4, 12, tzinfo=UTC)),
+        ("2023-04-12.tif", dt.datetime(2023, 4, 12, tzinfo=UTC)),
+        ("ndvi_2023-04-12_clipped.tif", dt.datetime(2023, 4, 12, tzinfo=UTC)),
+        # What a Sentinel-2 asset is called as delivered.
+        ("T33TUL_20230412T100621_B04.tif", dt.datetime(2023, 4, 12, 10, 6, 21, tzinfo=UTC)),
+        ("2023-04-12 10:06:21.tif", dt.datetime(2023, 4, 12, 10, 6, 21, tzinfo=UTC)),
+        ("scene_20230412_100621.tif", dt.datetime(2023, 4, 12, 10, 6, 21, tzinfo=UTC)),
+        # A Landsat product id: the acquisition date comes before the
+        # processing date, and the first date in the name is the one wanted.
+        (
+            "LC09_L2SP_192029_20240910_20240911_02_T1_SR_B4.TIF",
+            dt.datetime(2024, 9, 10, tzinfo=UTC),
+        ),
+    ],
+)
+def test_the_recognised_filename_dates(tmp_path, name, expected):
+    write_scene(tmp_path / name, value=1)
+
+    ts = eeo.time_series(tmp_path, pattern=name)
+
+    assert ts.timestamps == [expected]
+    ts.close()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        # Eight digits of a longer number are not a date.
+        "scene_1234567890.tif",
+        # Nor is a half-punctuated one.
+        "scene_2023-0412.tif",
+        # Nor an impossible one.
+        "scene_20231345.tif",
+        "plain.tif",
+    ],
+)
+def test_a_filename_without_a_date_is_refused(tmp_path, name):
+    write_scene(tmp_path / name, value=1)
+
+    with pytest.raises(ValidationError, match="carries no date in its name"):
+        eeo.time_series(tmp_path, pattern=name)
+
+
+def test_the_undated_refusal_names_the_escape_hatch(tmp_path):
+    write_scene(tmp_path / "plain.tif", value=1)
+
+    with pytest.raises(ValidationError, match="timestamp=lambda"):
+        eeo.time_series(tmp_path)
+
+
+def test_a_date_after_an_impossible_one_is_still_found(tmp_path):
+    # The scan takes the first match that is a real date, not the first that
+    # looks like one: 9999-13-45 is neither, so the real date after it wins.
+    write_scene(tmp_path / "v99991345_20230412.tif", value=1)
+
+    ts = eeo.time_series(tmp_path)
+
+    assert ts.timestamps == [dt.datetime(2023, 4, 12, tzinfo=UTC)]
+    ts.close()
+
+
+def test_no_file_is_opened_when_one_name_has_no_date(tmp_path, monkeypatch):
+    write_scene(tmp_path / "ndvi_20230301.tif", value=3)
+    write_scene(tmp_path / "undated.tif", value=5)
+    opened = []
+    monkeypatch.setattr(
+        "eeo.timeseries.core.load_raster",
+        lambda path, **kwargs: opened.append(path),
+    )
+
+    with pytest.raises(ValidationError, match="carries no date"):
+        eeo.time_series(tmp_path)
+
+    assert opened == [], "files were opened before the dates were known to be readable"
+
+
+def test_a_timestamp_function_overrides_the_filename(folder):
+    dates = {"ndvi_20230301.tif": 1, "ndvi_20230501.tif": 2, "ndvi_20230701.tif": 3}
+
+    ts = eeo.time_series(
+        folder, timestamp=lambda path: dt.datetime(2020, dates[path.name], 15, tzinfo=UTC)
+    )
+
+    assert [stamp.month for stamp in ts.timestamps] == [1, 2, 3]
+    assert all(stamp.year == 2020 for stamp in ts.timestamps)
+    ts.close()
+
+
+def test_a_timestamp_function_can_read_the_parent_directory(tmp_path):
+    # The layout the filename rule deliberately does not guess at: one
+    # directory per acquisition, every file inside called the same thing.
+    root = tmp_path / "nested"
+    write_scene(root / "2023-03-01" / "B04.tif", value=3)
+    write_scene(root / "2023-05-01" / "B04.tif", value=5)
+
+    ts = eeo.time_series(
+        root,
+        pattern="*/B04.tif",
+        timestamp=lambda path: dt.datetime.fromisoformat(path.parent.name),
+    )
+
+    assert [stamp.date() for stamp in ts.timestamps] == [dt.date(2023, 3, 1), dt.date(2023, 5, 1)]
+    ts.close()
+
+
+def test_a_naive_timestamp_from_the_function_is_read_as_utc(folder):
+    ts = eeo.time_series(folder, timestamp=lambda path: dt.datetime(2020, 1, 1))
+
+    assert all(stamp.tzinfo is not None for stamp in ts.timestamps)
+    assert ts.timestamps[0] == dt.datetime(2020, 1, 1, tzinfo=UTC)
+    ts.close()
+
+
+def test_a_timestamp_function_returning_the_wrong_type_names_the_file(folder):
+    with pytest.raises(ValidationError, match="ndvi_20230301.tif"):
+        eeo.time_series(folder, timestamp=lambda path: "2023-03-01")
+
+
+def test_timestamp_must_be_callable(folder):
+    with pytest.raises(ValidationError, match="function taking a path"):
+        eeo.time_series(folder, timestamp=dt.datetime(2023, 3, 1, tzinfo=UTC))
+
+
+def test_an_empty_match_says_what_a_glob_matches(folder):
+    with pytest.raises(ValidationError, match="walks subdirectories"):
+        eeo.time_series(folder, pattern="*.TIF")
+
+
+def test_an_absolute_pattern_is_refused(folder):
+    # Path.glob's own message reads as "still not implemented", which is exactly
+    # the wrong thing for a method that used to raise NotImplementedError.
+    with pytest.raises(ValidationError, match="not a usable glob pattern"):
+        eeo.time_series(folder, pattern="/data/*.tif")
+
+
+def test_a_missing_folder_is_refused(tmp_path):
+    with pytest.raises(ValidationError, match="no such folder"):
+        eeo.time_series(tmp_path / "absent")
+
+
+def test_a_file_is_not_a_folder(folder):
+    with pytest.raises(ValidationError, match="not a folder"):
+        eeo.time_series(folder / "ndvi_20230301.tif")
+
+
+def test_assets_are_refused_for_a_folder(folder):
+    with pytest.raises(ValidationError, match="means nothing for a folder"):
+        eeo.time_series(folder, assets=["B04"])
+
+
+def test_a_folder_of_mismatched_grids_is_refused(folder):
+    write_scene(folder / "ndvi_20230901.tif", value=9, size=8)
+
+    with pytest.raises(AlignmentError):
+        eeo.time_series(folder)
+
+
+def test_a_mismatched_folder_can_be_aligned(folder):
+    write_scene(folder / "ndvi_20230901.tif", value=9, size=8)
+
+    ts = eeo.time_series(folder, auto_align=True)
+
+    assert len(ts) == 4
+    assert ts.shape == (4, 4)
+    ts.close()
+
+
+def test_a_folder_series_reduces_and_extracts(folder):
+    ts = eeo.time_series(folder)
+
+    assert float(ts.median().to_array()[0, 0, 0]) == pytest.approx(5.0)
+    assert list(ts.extract_at((SCENE_ORIGIN[0] + 5, SCENE_ORIGIN[1] - 5))["red"]) == [3.0, 5.0, 7.0]
+    ts.close()
+
+
+def test_a_folder_can_be_opened_on_the_lazy_backend(folder):
+    pytest.importorskip("dask.array")
+    pytest.importorskip("rioxarray")
+
+    ts = eeo.time_series(folder, chunks="auto")
+
+    assert all(isinstance(ds._adapter, XarrayAdapter) for ds in ts)
+    assert float(ts.median().to_array()[0, 0, 0]) == pytest.approx(5.0)
+    ts.close()
+
+
+def test_an_invalid_chunk_spec_is_refused_before_anything_is_opened(folder):
+    with pytest.raises(ValidationError):
+        eeo.time_series(folder, chunks={"rows": 256})
 
 
 # -------------------------
