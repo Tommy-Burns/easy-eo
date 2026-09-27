@@ -444,6 +444,81 @@ class TestSensorProvenance:
         assert "mission" not in attrs
         assert attrs["platform"] == "terra"
 
+    def test_a_sentinel2_item_records_its_processing_baseline(self, scene):
+        # The baseline decides how stored values relate to reflectance: from
+        # 04.00 an L2A product shifts them by BOA_ADD_OFFSET. Recorded under the
+        # name load_sentinel2 uses, so a reader need not know the route.
+        attrs = (
+            eeo.io.STACItem(
+                FakeItem(
+                    scene,
+                    properties={"platform": "Sentinel-2A", "processing:version": "05.11"},
+                )
+            )
+            .load(["B04"])
+            .attrs
+        )
+        assert attrs["processing_baseline"] == "05.11"
+
+    def test_the_deprecated_baseline_field_is_still_read(self, scene):
+        # The STAC Sentinel-2 extension deprecated s2:processing_baseline in
+        # favour of processing:version; catalogs still publishing the old field
+        # should not lose the value.
+        attrs = (
+            eeo.io.STACItem(
+                FakeItem(
+                    scene,
+                    properties={
+                        "platform": "Sentinel-2A",
+                        "s2:processing_baseline": "02.07",
+                    },
+                )
+            )
+            .load(["B04"])
+            .attrs
+        )
+        assert attrs["processing_baseline"] == "02.07"
+
+    def test_the_current_baseline_field_wins_over_the_deprecated_one(self, scene):
+        attrs = (
+            eeo.io.STACItem(
+                FakeItem(
+                    scene,
+                    properties={
+                        "platform": "Sentinel-2A",
+                        "processing:version": "05.11",
+                        "s2:processing_baseline": "02.07",
+                    },
+                )
+            )
+            .load(["B04"])
+            .attrs
+        )
+        assert attrs["processing_baseline"] == "05.11"
+
+    def test_no_baseline_is_recorded_for_another_mission(self, scene):
+        # Landsat has no processing baseline, and its processing version does
+        # not mean the same thing, so recording it under this name would lie.
+        attrs = (
+            eeo.io.STACItem(
+                FakeItem(
+                    scene,
+                    properties={"platform": "landsat-9", "processing:version": "LPGS_15.6.0"},
+                )
+            )
+            .load(["B04"])
+            .attrs
+        )
+        assert "processing_baseline" not in attrs
+
+    def test_a_sentinel2_item_without_a_baseline_records_none(self, scene):
+        attrs = (
+            eeo.io.STACItem(FakeItem(scene, properties={"platform": "Sentinel-2A"}))
+            .load(["B04"])
+            .attrs
+        )
+        assert "processing_baseline" not in attrs
+
     @pytest.mark.parametrize("value", [None, 42, "", "   ", ["landsat-9"]])
     def test_a_missing_or_unusable_platform_is_simply_absent(self, scene, value):
         item = eeo.io.STACItem(FakeItem(scene, properties={"platform": value}))

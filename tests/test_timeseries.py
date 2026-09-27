@@ -19,7 +19,7 @@ from rasterio.transform import from_origin
 from rasterio.warp import transform_bounds
 
 import eeo
-from eeo.core.exceptions import ValidationError
+from eeo.core.exceptions import AlignmentError, CRSMismatchError, ValidationError
 from eeo.timeseries.core import EEOTimeSeries
 
 UTC = dt.timezone.utc
@@ -502,3 +502,272 @@ def test_map_keeps_a_lazy_series_lazy_when_saving(items, tmp_path):
     assert [int(ds.to_array().flat[0]) for ds in result] == [200, 400, 600]
     ts.close()
     result.close()
+
+
+# --------------------------------------------------------------------------
+# Grid, CRS and band validation
+# --------------------------------------------------------------------------
+def shifted_scene(month, *, value=1, offset_pixels=0, size=4, crs=SCENE_CRS, res=SCENE_RES):
+    """A scene whose grid can be moved off the reference's."""
+    origin_x = SCENE_ORIGIN[0] + offset_pixels * res
+    return eeo.load_array(
+        np.full((size, size), value, dtype="uint16"),
+        transform=from_origin(origin_x, SCENE_ORIGIN[1], res, res),
+        crs=crs,
+        timestamp=dt.datetime(2023, month, 1, tzinfo=UTC),
+    ).to_rasterio()
+
+
+def test_a_different_shape_is_refused_without_auto_align():
+    with pytest.raises(AlignmentError, match="auto_align=True"):
+        eeo.time_series([shifted_scene(1), shifted_scene(2, size=6)])
+
+
+def test_a_shifted_grid_of_the_same_shape_is_refused_too():
+    # The shapes match and only the origin differs, which is the case a
+    # shape-only check would wave through — and would average different ground.
+    with pytest.raises(AlignmentError, match="different grid"):
+        eeo.time_series([shifted_scene(1), shifted_scene(2, offset_pixels=2)])
+
+
+def test_auto_align_warps_onto_the_reference_grid():
+    ts = eeo.time_series(
+        [shifted_scene(1, value=5), shifted_scene(2, value=9, size=6)],
+        auto_align=True,
+    )
+
+    assert ts.shape == (4, 4)
+    assert all(ds.get_shape() == (4, 4) for ds in ts)
+    assert all(ds.get_transform() == ts.transform for ds in ts)
+    # Alignment resamples; it does not invent values.
+    assert int(ts[1].to_array().flat[0]) == 9
+
+
+def test_a_shifted_timestep_lands_on_the_reference_grid():
+    ts = eeo.time_series([shifted_scene(1), shifted_scene(2, offset_pixels=2)], auto_align=True)
+
+    assert ts[1].get_transform() == ts[0].get_transform()
+
+
+def test_a_different_crs_is_refused_without_auto_reproject():
+    with pytest.raises(CRSMismatchError, match="auto_reproject=True"):
+        eeo.time_series([shifted_scene(1), shifted_scene(2, crs="EPSG:32634")])
+
+
+def test_auto_align_alone_does_not_permit_a_reprojection():
+    with pytest.raises(CRSMismatchError):
+        eeo.time_series([shifted_scene(1), shifted_scene(2, crs="EPSG:32634")], auto_align=True)
+
+
+def test_auto_reproject_puts_every_timestep_in_one_crs():
+    ts = eeo.time_series(
+        [shifted_scene(1), shifted_scene(2, crs="EPSG:32634")], auto_reproject=True
+    )
+
+    assert {ds.get_crs().to_epsg() for ds in ts} == {32633}
+    assert ts.shape == (4, 4)
+
+
+def test_crs_spellings_of_one_system_are_not_a_mismatch():
+    # A NumPy-backed dataset hands back whatever crs= was given, so an int and a
+    # string for the same system must not read as two different CRSs.
+    ts = eeo.time_series(
+        [
+            eeo.load_array(
+                np.ones((4, 4), dtype="uint16"),
+                transform=transform(),
+                crs=32633,
+                timestamp=dt.datetime(2023, 1, 1, tzinfo=UTC),
+            ),
+            eeo.load_array(
+                np.ones((4, 4), dtype="uint16"),
+                transform=transform(),
+                crs="EPSG:32633",
+                timestamp=dt.datetime(2023, 2, 1, tzinfo=UTC),
+            ),
+        ]
+    )
+
+    assert ts.crs.to_epsg() == 32633
+
+
+def test_a_different_band_count_is_refused_whatever_the_flags():
+    with pytest.raises(ValidationError, match="same bands"):
+        eeo.time_series(
+            [scene(1), two_band_scene(2, red=1, nir=2)],
+            auto_align=True,
+            auto_reproject=True,
+        )
+
+
+def test_bands_that_disagree_about_their_names_are_refused():
+    first = two_band_scene(1, red=1, nir=2)
+    second = two_band_scene(2, red=1, nir=2)
+    second.band_names = ["nir", "red"]
+
+    with pytest.raises(ValidationError, match="must mean the same thing"):
+        eeo.time_series([first, second])
+
+
+def test_an_unnamed_band_does_not_conflict_with_a_named_one():
+    named = two_band_scene(1, red=1, nir=2)
+    unnamed = two_band_scene(2, red=1, nir=2)
+    unnamed.band_names = None
+
+    ts = eeo.time_series([named, unnamed])
+
+    assert ts.band_names == ["red", "nir"]
+
+
+def test_the_reference_timestep_can_be_chosen():
+    ts = eeo.time_series(
+        [shifted_scene(1, size=4), shifted_scene(2, size=6)],
+        reference=-1,
+        auto_align=True,
+    )
+
+    assert ts.shape == (6, 6)
+    assert ts.reference is ts[1]
+
+
+def test_an_out_of_range_reference_is_refused():
+    with pytest.raises(ValidationError, match="not a timestep"):
+        eeo.time_series([scene(1), scene(2)], reference=5)
+
+
+def test_alignment_says_what_it_did(caplog):
+    with caplog.at_level("INFO", logger="eeo.timeseries.core"):
+        eeo.time_series([shifted_scene(1), shifted_scene(2, size=6)], auto_align=True)
+
+    assert "aligned timesteps [1]" in caplog.text
+    assert "method=nearest" in caplog.text
+
+
+# --------------------------------------------------------------------------
+# The Sentinel-2 baseline 04.00 guard
+# --------------------------------------------------------------------------
+def s2_scene(when, *, baseline=None, mission="Sentinel-2"):
+    """A Sentinel-2 scene with the provenance the baseline check reads."""
+    attrs = {"mission": mission}
+    if baseline is not None:
+        attrs["processing_baseline"] = baseline
+    return eeo.load_array(
+        np.ones((4, 4), dtype="uint16"),
+        transform=transform(),
+        crs=SCENE_CRS,
+        timestamp=when,
+        attrs=attrs,
+    )
+
+
+BEFORE_04_00 = dt.datetime(2021, 6, 1, tzinfo=UTC)
+AFTER_04_00 = dt.datetime(2022, 6, 1, tzinfo=UTC)
+
+
+def test_a_series_spanning_baseline_04_00_warns():
+    with pytest.warns(UserWarning, match="baseline 04.00"):
+        eeo.time_series([s2_scene(BEFORE_04_00), s2_scene(AFTER_04_00)])
+
+
+def test_the_baseline_warning_names_the_split_and_the_offset():
+    with pytest.warns(UserWarning) as caught:
+        eeo.time_series([s2_scene(BEFORE_04_00), s2_scene(AFTER_04_00), s2_scene(AFTER_04_00)])
+
+    message = str(caught[0].message)
+    assert "1 timestep(s) sit before it and 2 after" in message
+    assert "BOA_ADD_OFFSET" in message
+    assert "1000 DN" in message
+
+
+def test_a_series_on_one_side_of_the_boundary_is_quiet():
+    # filterwarnings = error, so a stray warning here fails the test outright.
+    ts = eeo.time_series([s2_scene(AFTER_04_00), s2_scene(AFTER_04_00)])
+
+    assert len(ts) == 2
+
+
+def test_the_recorded_baseline_beats_the_acquisition_date():
+    # Reprocessed archive scenes carry 04.00+ on old acquisitions, so a series
+    # of them is consistent even though it straddles the date.
+    ts = eeo.time_series(
+        [
+            s2_scene(BEFORE_04_00, baseline="05.11"),
+            s2_scene(AFTER_04_00, baseline="05.11"),
+        ]
+    )
+
+    assert len(ts) == 2
+
+
+def test_a_recorded_baseline_below_04_00_puts_a_scene_before_the_change():
+    with pytest.warns(UserWarning, match="baseline 04.00"):
+        eeo.time_series(
+            [
+                s2_scene(AFTER_04_00, baseline="03.01"),
+                s2_scene(AFTER_04_00, baseline="05.11"),
+            ]
+        )
+
+
+def test_an_unparsable_recorded_baseline_falls_back_to_the_date():
+    with pytest.warns(UserWarning, match="baseline 04.00"):
+        eeo.time_series([s2_scene(BEFORE_04_00, baseline=""), s2_scene(AFTER_04_00, baseline="")])
+
+
+def test_a_series_of_another_mission_is_never_warned_about():
+    ts = eeo.time_series(
+        [
+            s2_scene(BEFORE_04_00, mission="Landsat 9"),
+            s2_scene(AFTER_04_00, mission="Landsat 9"),
+        ]
+    )
+
+    assert len(ts) == 2
+
+
+def test_scenes_with_no_recorded_mission_are_never_warned_about():
+    ts = eeo.time_series([scene(1), scene(2)])
+
+    assert len(ts) == 2
+
+
+def test_a_stac_series_straddling_the_baseline_warns_end_to_end(tmp_path):
+    # The whole path: the items say which platform took them, the load records
+    # the mission, and the series notices the two radiometric conventions.
+    made = []
+    for year, month in ((2021, 6), (2023, 6)):
+        href = write_asset(tmp_path / f"scene_{year}.tif", fill=100)
+        made.append(
+            eeo.io.STACItem(
+                FakeItem(
+                    {"B04": href},
+                    timestamp=dt.datetime(year, month, 12, tzinfo=UTC),
+                    item_id=f"S2A_{year}",
+                )
+            )
+        )
+
+    with pytest.warns(UserWarning, match="baseline 04.00"):
+        ts = EEOTimeSeries.from_stac(made, ["B04"])
+
+    ts.close()
+
+
+def test_a_stac_series_reads_its_baseline_from_the_items(tmp_path):
+    # With the baseline recorded, the dates no longer decide: both scenes were
+    # reprocessed to 05.11, so the series is consistent and stays quiet.
+    made = []
+    for year in (2021, 2023):
+        href = write_asset(tmp_path / f"reprocessed_{year}.tif", fill=100)
+        item = FakeItem(
+            {"B04": href},
+            timestamp=dt.datetime(year, 6, 12, tzinfo=UTC),
+            item_id=f"S2A_{year}",
+        )
+        item.properties["processing:version"] = "05.11"
+        made.append(eeo.io.STACItem(item))
+
+    ts = EEOTimeSeries.from_stac(made, ["B04"])
+
+    assert [ds.attrs["processing_baseline"] for ds in ts] == ["05.11", "05.11"]
+    ts.close()
