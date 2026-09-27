@@ -37,6 +37,48 @@ stays bounded in memory; :meth:`eeo.EEOTimeSeries.close` removes them. Pass
 cached GeoTIFFs do not — or ``cache=False`` to keep every scene in memory,
 which is faster for a small area.
 
+One grid, one set of bands
+--------------------------
+
+A series is checked when it is built, on metadata alone: every timestep must be
+in the same CRS, on the same pixel grid, and hold the same bands. A mismatch is
+refused rather than papered over — timesteps that do not share a grid cannot be
+compared pixel by pixel, and a band that means "red" at one timestep and "nir"
+at another makes every index computed across them wrong.
+
+Alignment is opt-in, as it is elsewhere in Easy-EO:
+
+.. code-block:: python
+
+    ts = eeo.time_series(results, assets=["B04", "B08"], auto_align=True)
+    ts = eeo.time_series(results, assets=["B04", "B08"], auto_reproject=True)
+
+``auto_align=True`` warps timesteps on a different grid onto the reference's;
+``auto_reproject=True`` does the same across a CRS change — which a search wide
+enough to cross a UTM zone boundary will need. Either way the warp lands on the
+reference grid exactly, not merely on its shape. ``method=`` chooses the
+resampling, and defaults to ``"nearest"`` because a series built for cloud
+masking carries a quality band whose values are class numbers. ``reference=``
+picks which timestep sets the grid, in time order; the earliest by default.
+
+Sentinel-2 and the 2022 baseline change
+---------------------------------------
+
+Easy-EO reads the values a product stores, and does not decode them to
+reflectance. That matters for one date: from processing baseline 04.00, deployed
+on 25 January 2022, a Sentinel-2 Level-2A product shifts its stored values by
+``BOA_ADD_OFFSET`` — in practice −1000 DN for every band — so the same ground
+reads about 1000 DN higher after the change than before it.
+
+A series that spans that boundary therefore mixes two conventions: a composite
+over it is biased by however many scenes fall on each side, and an index
+trajectory shows a step at the boundary that is not in the ground. Easy-EO warns
+when it sees one, reading each scene's recorded baseline where there is one
+(the reprocessed archive carries 04.00 or later on much older acquisitions, so
+the acquisition date alone would misjudge those) and falling back to the date
+otherwise. Keep the series on one side of that date, or use scenes reprocessed
+to a single baseline.
+
 One operation, every timestep
 -----------------------------
 
