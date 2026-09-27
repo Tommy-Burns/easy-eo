@@ -176,6 +176,17 @@ are called out under a **Breaking** heading.
   series no longer silently drops to rasterio mid-chain — only a series from
   `from_stac` used to keep it.
 
+- New tutorial notebook,
+  `examples/04_timeseries/01_cloud_free_composite_and_trends.ipynb`: a season of
+  Sentinel-2 over Dutch polder farmland, from a catalog search to a cloud-free
+  composite and a per-pixel NDVI trajectory. It shows the two things a real
+  catalog does that a tutorial usually hides — 92 items for 51 acquisitions
+  (reprocessed duplicates, which a median would otherwise count twice) and cloud
+  that a scene-level filter cannot see — and measures what masking a series
+  buys: at one field centre the unmasked trajectory scatters with σ = 0.191
+  against σ = 0.047 masked, because 26 of the 51 acquisitions were clouded over
+  that pixel.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that

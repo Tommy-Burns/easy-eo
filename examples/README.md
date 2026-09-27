@@ -34,6 +34,12 @@ directory.
 | [02_data_access/02_stac_search_and_load](02_data_access/02_stac_search_and_load.ipynb) | search a STAC catalog, load assets over HTTP, crop to an AOI ⚠️ | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/02_data_access/02_stac_search_and_load.ipynb) |
 | [02_data_access/03_xarray_interop](02_data_access/03_xarray_interop.ipynb) | `to_xarray()` / `from_xarray()`, and when to use xarray instead | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/02_data_access/03_xarray_interop.ipynb) |
 
+## Time series
+
+| notebook | what it covers | run it |
+| --- | --- | --- |
+| [04_timeseries/01_cloud_free_composite_and_trends](04_timeseries/01_cloud_free_composite_and_trends.ipynb) | a season of Sentinel-2: duplicate scenes, masking across time, median composite, NDVI trajectory ⚠️ | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/04_timeseries/01_cloud_free_composite_and_trends.ipynb) |
+
 ## Real-world analyses
 
 | notebook | what it covers | run it |

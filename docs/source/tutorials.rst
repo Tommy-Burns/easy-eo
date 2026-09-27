@@ -130,6 +130,17 @@ Data access
       :target: https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/02_data_access/03_xarray_interop.ipynb
       :alt: Open xarray interop in Colab
 
+Time series
+-----------
+
+`Cloud-free composites and NDVI trends <https://github.com/Tommy-Burns/easy-eo/blob/main/examples/04_timeseries/01_cloud_free_composite_and_trends.ipynb>`_ |net|
+   A season of Sentinel-2 over one place: duplicate catalog scenes, cloud masking
+   across time, a median composite, and a per-pixel NDVI trajectory.
+
+   .. image:: https://colab.research.google.com/assets/colab-badge.svg
+      :target: https://colab.research.google.com/github/Tommy-Burns/easy-eo/blob/main/examples/04_timeseries/01_cloud_free_composite_and_trends.ipynb
+      :alt: Open Cloud-free composites and NDVI trends in Colab
+
 Real-world analyses
 -------------------
 
