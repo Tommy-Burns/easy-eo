@@ -24,9 +24,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import rasterio as rio
 
+from eeo.common import resolve_band_index
 from eeo.core.adapters import RasterioAdapter
 from eeo.core.blockwise import BlockSource, block_windows, resolve_block_shape
 from eeo.core.core import EEORasterDataset
+from eeo.core.exceptions import ValidationError
 from eeo.core.streaming import valid_mask
 from eeo.core.types import StrPath
 
@@ -97,7 +99,11 @@ def _shared_attrs(datasets: Sequence[EEORasterDataset]) -> dict:
 
 
 def reduce_series(
-    series: EEOTimeSeries, how: str, *, save_path: StrPath | None = None
+    series: EEOTimeSeries,
+    how: str,
+    *,
+    bands: Sequence[int | str] | None = None,
+    save_path: StrPath | None = None,
 ) -> EEORasterDataset:
     """Reduce every pixel of a series across time, one window at a time.
 
@@ -111,6 +117,11 @@ def reduce_series(
         same window be read from each of them and reduced in step.
     how : {"median", "mean", "min", "max"}
         Statistic to take across timesteps, per pixel and per band.
+    bands : sequence of (int or str) or None, default None
+        Which bands to reduce, as 1-based indices or band names; None reduces
+        every band. A subset is what lets a composite leave the quality band
+        out of its output, where a median of scene-class numbers would be
+        meaningless.
     save_path : str or path-like or None, default None
         Write the result to this path instead of holding it in memory, so a
         reduction of a large series never has to fit in RAM twice.
@@ -137,12 +148,17 @@ def reduce_series(
     series. Each timestep's own nodata value is what masks it, and a pixel is
     nodata in the result only when every timestep is missing it.
     """
-    from eeo.core.exceptions import ValidationError
-
     if how not in ("median", "mean", "min", "max"):
         raise ValidationError(f"how must be 'median', 'mean', 'min' or 'max'; got {how!r}")
 
     reference = series.reference
+    if bands is None:
+        positions = list(range(series.band_count))
+    else:
+        positions = [resolve_band_index(reference, band) - 1 for band in bands]
+        if not positions:
+            raise ValidationError("bands is empty; name at least one band to reduce")
+
     sources = [BlockSource.from_dataset(ds) for ds in series]
     nodatas = [source.nodata for source in sources]
     fractional = how in ("median", "mean")
@@ -160,7 +176,7 @@ def reduce_series(
         driver="GTiff",
         dtype=np.dtype(out_dtype).name,
         nodata=out_nodata,
-        count=series.band_count,
+        count=len(positions),
     )
 
     windows = block_windows(series.shape, resolve_block_shape(series.shape))
@@ -174,7 +190,7 @@ def reduce_series(
             dst = rio.open(save_path, "w", **meta)
 
         for window in windows:
-            blocks = [source.read(window) for source in sources]
+            blocks = [source.read(window)[positions] for source in sources]
             reduced, any_valid = _reduce_block(blocks, nodatas, how=how)
             if out_nodata is not None:
                 reduced = np.where(any_valid, reduced, np.array(out_nodata, dtype=out_dtype))
@@ -203,25 +219,45 @@ def reduce_series(
     else:
         result = EEORasterDataset.from_path(save_path)
     result.attrs = attrs
-    result.band_names = series.band_names
+    result.band_names = [series.band_names[position] for position in positions]
     return result
 
 
-def median(series: EEOTimeSeries, *, save_path: StrPath | None = None) -> EEORasterDataset:
+def median(
+    series: EEOTimeSeries,
+    *,
+    bands: Sequence[int | str] | None = None,
+    save_path: StrPath | None = None,
+) -> EEORasterDataset:
     """Median of every pixel across time. See :func:`reduce_series`."""
-    return reduce_series(series, "median", save_path=save_path)
+    return reduce_series(series, "median", bands=bands, save_path=save_path)
 
 
-def mean(series: EEOTimeSeries, *, save_path: StrPath | None = None) -> EEORasterDataset:
+def mean(
+    series: EEOTimeSeries,
+    *,
+    bands: Sequence[int | str] | None = None,
+    save_path: StrPath | None = None,
+) -> EEORasterDataset:
     """Mean of every pixel across time. See :func:`reduce_series`."""
-    return reduce_series(series, "mean", save_path=save_path)
+    return reduce_series(series, "mean", bands=bands, save_path=save_path)
 
 
-def minimum(series: EEOTimeSeries, *, save_path: StrPath | None = None) -> EEORasterDataset:
+def minimum(
+    series: EEOTimeSeries,
+    *,
+    bands: Sequence[int | str] | None = None,
+    save_path: StrPath | None = None,
+) -> EEORasterDataset:
     """Smallest value of every pixel across time. See :func:`reduce_series`."""
-    return reduce_series(series, "min", save_path=save_path)
+    return reduce_series(series, "min", bands=bands, save_path=save_path)
 
 
-def maximum(series: EEOTimeSeries, *, save_path: StrPath | None = None) -> EEORasterDataset:
+def maximum(
+    series: EEOTimeSeries,
+    *,
+    bands: Sequence[int | str] | None = None,
+    save_path: StrPath | None = None,
+) -> EEORasterDataset:
     """Largest value of every pixel across time. See :func:`reduce_series`."""
-    return reduce_series(series, "max", save_path=save_path)
+    return reduce_series(series, "max", bands=bands, save_path=save_path)

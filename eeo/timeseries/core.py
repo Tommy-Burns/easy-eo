@@ -24,7 +24,7 @@ from rasterio import CRS
 from rasterio.transform import Affine
 from rasterio.warp import reproject
 
-from eeo.common import get_nodata, normalize_resampling_method
+from eeo.common import get_nodata, normalize_resampling_method, resolve_band_index
 from eeo.core.adapters import RasterioAdapter
 from eeo.core.adapters.xarray import validate_chunks
 from eeo.core.core import EEORasterDataset
@@ -32,6 +32,8 @@ from eeo.core.exceptions import AlignmentError, CRSMismatchError, ValidationErro
 from eeo.core.loader import load_raster
 from eeo.core.types import ChunkSpec, ResamplingMethod, StrPath
 from eeo.io.stac import STACItem, STACSearchResult
+from eeo.preprocessing.masking import _find_quality_band, mask_clouds
+from eeo.preprocessing.quality import QA_PIXEL_DEFAULT_MIN_CLOUD_CONFIDENCE
 from eeo.timeseries import reducers
 
 _UTC = dt.timezone.utc
@@ -1157,6 +1159,138 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         >>> peak_greenness = ts.map(eeo.ndvi, red="red", nir="nir").max()  # doctest: +SKIP
         """
         return reducers.maximum(self, save_path=save_path)
+
+    def composite(
+        self,
+        *,
+        how: str = "median",
+        mask_band: int | str | None = None,
+        classes: Iterable[Any] | None = None,
+        flags: Iterable[Any] | None = None,
+        min_cloud_confidence: Any = QA_PIXEL_DEFAULT_MIN_CLOUD_CONFIDENCE,
+        mission: int | None = None,
+        nodata: int | float | None = None,
+        mask_dir: StrPath | None = None,
+        save_path: StrPath | None = None,
+    ) -> EEORasterDataset:
+        """Build one cloud-free raster from the series: mask, then reduce.
+
+        The reason a time series is worth having. Each timestep is masked with
+        its own quality band — Sentinel-2's ``SCL`` or Landsat's ``QA_PIXEL``,
+        whichever it carries — and the masked timesteps are then reduced pixel
+        by pixel across time. Where one scene was clouded another usually was
+        not, so the result is a view of the ground assembled from whichever
+        timestep saw it, rather than any single acquisition.
+
+        The quality band is **not** in the result. It has done its work, and a
+        median of scene-class numbers would be a number no classifier ever
+        assigned.
+
+        Parameters
+        ----------
+        how : {"median", "mean", "min", "max"}, default "median"
+            Statistic taken across the masked timesteps. Median by default:
+            a cloud edge or a missed cloud at one timestep is an outlier among
+            the others, which a median discards and a mean averages in.
+        mask_band : int or str, optional
+            Which band holds the quality layer, as a 1-based index or a band
+            name. Defaults to the one band named ``"scl"`` or ``"qa_pixel"``;
+            having none, or more than one, is an error rather than a guess, and
+            is raised before any pixel is read.
+        classes : iterable of SCLClass or int or str, optional
+            For an ``SCL`` band: which scene classes to mask, defaulting to
+            :data:`~eeo.preprocessing.quality.SCL_DEFAULT_MASKED`.
+        flags : iterable of QAPixelFlag or int or str, optional
+            For a ``QA_PIXEL`` band: which flags to mask on, defaulting to
+            :data:`~eeo.preprocessing.quality.QA_PIXEL_DEFAULT_MASKED`.
+        min_cloud_confidence : QAConfidence or int or None, optional
+            For a ``QA_PIXEL`` band: also mask pixels whose cloud confidence
+            reaches this level, Medium by default.
+        mission : int, optional
+            For a ``QA_PIXEL`` band: which Landsat took the scenes, when the
+            loaders did not record it.
+        nodata : int or float, optional
+            Value a masked pixel is set to in each timestep, defaulting to the
+            raster's own. It marks pixels as absent, so it never reaches the
+            result: what the result records is the reducer's own nodata.
+        mask_dir : str or path-like or None, default None
+            Write the masked timesteps to this directory instead of holding
+            them in memory. Masking reads a whole scene, so without this the
+            series' worth of masked scenes is held at once; with it, one is.
+        save_path : str or path-like or None, default None
+            Write the composite to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single raster on the series' grid holding every band except the
+            quality band, named as the series names them. float32 with NaN
+            where no timestep saw the ground clear for ``"median"`` and
+            ``"mean"``; the timesteps' own dtype, with their nodata value
+            there, for ``"min"`` and ``"max"``. Carries no timestamp, and
+            records the reduction and the time span it covers in ``attrs``.
+
+        Raises
+        ------
+        ValidationError
+            If no quality band can be found or more than one is present; if the
+            series holds nothing but a quality band; if ``classes`` is given
+            for a ``QA_PIXEL`` band or ``flags`` for an ``SCL`` band; if a
+            ``QA_PIXEL`` series records no mission and none is given; or if the
+            timesteps are an integer type declaring no nodata, leaving no value
+            a masked pixel could take.
+
+        Notes
+        -----
+        Equivalent to ``ts.map(eeo.mask_clouds, ...)`` followed by the reducer,
+        minus the quality band — spelled as one call because it is the workflow
+        a series exists for. Do it by hand when a timestep's mask lives in a
+        separate raster, which this does not cover.
+
+        A pixel clouded at every timestep is the one the composite cannot fill;
+        it comes back as nodata rather than as whatever the cloud looked like.
+
+        Examples
+        --------
+        >>> results = eeo.stac_search(  # doctest: +SKIP
+        ...     "sentinel-2-l2a", bbox=AOI, datetime="2023-04-01/2023-09-30"
+        ... )
+        >>> ts = eeo.time_series(results, assets=["B04", "B08", "SCL"])  # doctest: +SKIP
+        >>> clear = ts.composite()  # doctest: +SKIP
+        >>> clear.band_names  # doctest: +SKIP
+        ['B04', 'B08']
+        >>> ndvi = clear.ndvi(red="B04", nir="B08")  # doctest: +SKIP
+        """
+        quality = (
+            _find_quality_band(self.reference)[0]
+            if mask_band is None
+            else resolve_band_index(self.reference, mask_band)
+        )
+        data_bands = [band for band in range(1, self.band_count + 1) if band != quality]
+        if not data_bands:
+            raise ValidationError(
+                f"this series holds only its quality band (band {quality}), so there "
+                f"is nothing to composite. Load the spectral bands alongside it, e.g. "
+                f"assets=['B04', 'B08', 'SCL']"
+            )
+
+        masked = self.map(
+            mask_clouds,
+            mask_band=quality,
+            classes=classes,
+            flags=flags,
+            min_cloud_confidence=min_cloud_confidence,
+            mission=mission,
+            nodata=nodata,
+            save_dir=mask_dir,
+        )
+        try:
+            return reducers.reduce_series(masked, how, bands=data_bands, save_path=save_path)
+        finally:
+            # The composite is its own raster, so the masked timesteps have
+            # done their work; closing frees them now rather than at collection.
+            # Files written to mask_dir are the caller's and are left alone.
+            masked.close()
 
     # ========================
     # Lifecycle
