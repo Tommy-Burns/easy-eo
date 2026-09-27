@@ -13,7 +13,7 @@ import contextlib
 import datetime as dt
 import os
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, cast, overload
 
@@ -37,8 +37,9 @@ _NO_TIMESTAMP = (
 )
 
 _FOLDER_NOT_IMPLEMENTED = (
-    "building a time series from a folder is not implemented yet. Load the scenes yourself and hand them over, which is the same "
-    "thing with the timestamps made explicit:\n\n"
+    "building a time series from a folder is not implemented yet. Load the "
+    "scenes yourself and hand them over, which is the same thing with the "
+    "timestamps made explicit:\n\n"
     "    paths = sorted(pathlib.Path({folder!r}).glob({pattern!r}))\n"
     "    ts = eeo.time_series([eeo.load_raster(p, timestamp=...) for p in paths])\n\n"
     "A STAC search needs none of that — every item states its acquisition "
@@ -83,26 +84,48 @@ def _resolve_timestamps(
     return [_as_utc(value, index=index) for index, value in enumerate(given)]
 
 
-def _cache_scene(
-    scene: EEORasterDataset, directory: StrPath, index: int, chunks: ChunkSpec | None
+def _through_file(
+    scene: EEORasterDataset,
+    directory: StrPath,
+    index: int,
+    chunks: ChunkSpec | None,
+    *,
+    timestamp: dt.datetime,
 ) -> EEORasterDataset:
-    """Write one in-memory scene to the cache and reopen it from the file.
+    """Write one in-memory raster into ``directory`` and reopen it from there.
 
     Reopening is what bounds a series' memory: a file-backed dataset reads no
-    pixels until an operation asks for a window, while the in-memory scene a
-    catalog load returns holds its whole window. The timestamp and attrs are
-    carried over explicitly because they live in Python, not in the GeoTIFF;
-    band names survive in the file's band descriptions and are passed anyway so
-    the reopened dataset is identical either way.
+    pixels until an operation asks for a window, while an in-memory one — what a
+    catalog load and every operation produce — holds its whole array. The
+    timestamp and attrs are carried over explicitly because they live in Python,
+    not in the GeoTIFF; band names survive in the file's band descriptions and
+    are passed anyway so the reopened dataset is identical either way.
     """
-    timestamp = scene.timestamp
-    stamp = "undated" if timestamp is None else f"{timestamp:%Y%m%dT%H%M%S}"
-    path = Path(os.fspath(directory)) / f"{index:04d}_{stamp}.tif"
+    path = Path(os.fspath(directory)) / f"{index:04d}_{timestamp:%Y%m%dT%H%M%S}.tif"
     scene.save_raster(path)
     attrs = dict(scene.attrs)
     band_names = scene.band_names
     scene.close()
     return load_raster(path, chunks=chunks, timestamp=timestamp, attrs=attrs, band_names=band_names)
+
+
+def _apply(op: Callable[..., Any], ds: EEORasterDataset, kwargs: dict[str, Any]) -> Any:
+    """Run one operation on one dataset, exactly as calling it on the dataset would.
+
+    An Easy-EO operation is written as a free function and bound onto
+    ``EEORasterDataset`` by ``@eeo_raster_op``, and it is the bound wrapper — not
+    the function — that carries the timestamp, attrs and band names of the input
+    onto the result. Calling the free function directly would quietly drop all
+    three, so a registered operation is invoked through its bound method, found
+    by the identity ``functools.wraps`` records. Anything else, including a
+    user's own function or a lambda, is called directly.
+    """
+    name = getattr(op, "__name__", None)
+    if name is not None:
+        bound = getattr(ds, name, None)
+        if bound is not None and getattr(bound, "__wrapped__", None) is op:
+            return bound(**kwargs)
+    return op(ds, **kwargs)
 
 
 class EEOTimeSeries(Sequence[EEORasterDataset]):
@@ -149,8 +172,7 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
     is why :meth:`from_stac` caches scenes to disk by default.
 
     Consistency of CRS, grid and band structure across timesteps is not
-    enforced here yet (work package 19.4); the grid properties describe the
-    earliest timestep.
+    enforced here yet; the grid properties describe the earliest timestep.
 
     Examples
     --------
@@ -198,6 +220,9 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         self._timestamps: list[dt.datetime] = [stamps[index] for index in order]
         # Set by from_stac when it owns a temporary scene cache.
         self._cache: tempfile.TemporaryDirectory | None = None
+        # Set by from_stac when its scenes were opened on the lazy backend, so
+        # that a series which started lazy stays lazy through map(save_dir=).
+        self._chunks: ChunkSpec | None = None
 
     # ========================
     # Constructors
@@ -333,7 +358,6 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         # timestamp alone: two items of one acquisition would otherwise be
         # compared to each other, and a STACItem has no ordering.
         dated.sort(key=lambda pair: pair[0])
-        items = [item for _, item in dated]
 
         holder: tempfile.TemporaryDirectory | None = None
         directory: Path | None = None
@@ -347,10 +371,12 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
 
         scenes: list[EEORasterDataset] = []
         try:
-            for index, item in enumerate(items):
+            # Iterated as the (timestamp, item) pairs built above, so the
+            # timestamp is known to be present rather than rechecked here.
+            for index, (stamp, item) in enumerate(dated):
                 scene = item.load(assets, bbox=bbox, crop=crop, mask=mask, resampling=resampling)
                 if directory is not None:
-                    scene = _cache_scene(scene, directory, index, chunks)
+                    scene = _through_file(scene, directory, index, chunks, timestamp=stamp)
                 scenes.append(scene)
             series = cls(scenes)
         except BaseException:
@@ -363,6 +389,7 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             raise
 
         series._cache = holder
+        series._chunks = chunks
         return series
 
     @classmethod
@@ -375,9 +402,9 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
     ) -> EEOTimeSeries:
         """Build a series from rasters on disk — not implemented yet.
 
-        Reserved for work package 19.6. The signature is here so the shape of
-        the eventual call is fixed and documented, and so this path names its
-        replacement rather than failing as a missing attribute.
+        The signature is here so the shape of the eventual call is fixed and
+        documented, and so this path names the code that does the same thing
+        today rather than failing as a missing attribute.
 
         When it lands, it will glob ``folder`` with ``pattern`` (so
         ``"**/*.tif"`` walks subdirectories), open each hit with
@@ -459,8 +486,7 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             If an int index is out of range.
         """
         if isinstance(index, slice):
-            chosen = self._datasets[index]
-            return type(self)(chosen, timestamps=self._timestamps[index])
+            return self._derive(self._datasets[index], self._timestamps[index])
         return self._datasets[index]
 
     def __repr__(self) -> str:
@@ -478,6 +504,137 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         except Exception:
             grid = ""
         return f"<EEOTimeSeries: {count} timesteps from {span}{grid}>"
+
+    # ========================
+    # Derivation
+    # ========================
+    def _derive(
+        self, datasets: Sequence[EEORasterDataset], timestamps: Sequence[dt.datetime]
+    ) -> EEOTimeSeries:
+        """Build a series from this one's timesteps, keeping its backend choice.
+
+        The scene cache is deliberately not carried over: the series that opened
+        it owns it, and two owners would delete it twice.
+        """
+        derived = type(self)(datasets, timestamps=timestamps)
+        derived._chunks = self._chunks
+        return derived
+
+    def map(
+        self,
+        op: Callable[..., EEORasterDataset],
+        /,
+        *,
+        save_dir: StrPath | None = None,
+        **kwargs: Any,
+    ) -> EEOTimeSeries:
+        """Apply one operation to every timestep, returning a new series.
+
+        Any operation that takes a dataset first and returns a dataset works,
+        unchanged — the spectral indices, the algebra, clipping, resampling,
+        masking, or a function of your own. The same keyword arguments go to
+        every timestep, which is what makes a trajectory comparable across
+        time: one recipe, applied identically.
+
+        Parameters
+        ----------
+        op : callable
+            The operation itself, not its name: ``eeo.ndvi``, not ``"ndvi"``.
+            Called as ``op(dataset, **kwargs)`` once per timestep, and must
+            return an ``EEORasterDataset``.
+        save_dir : str or path-like or None, default None
+            Write each result to this directory and return a series reading
+            those files, instead of holding every result in memory. Peak memory
+            is then one result rather than all of them, which is what makes a
+            long series mappable. Files are named by position and acquisition
+            time, and an existing file of the same name is overwritten, as
+            :meth:`~eeo.core.core.EEORasterDataset.save_raster` does. The
+            directory is created if it does not exist.
+        **kwargs
+            Passed to ``op`` unchanged, for every timestep.
+
+        Returns
+        -------
+        EEOTimeSeries
+            New series with one result per timestep, in the same order and
+            carrying this series' timestamps — including any that were supplied
+            with ``timestamps=`` rather than read from the datasets.
+
+        Raises
+        ------
+        ValidationError
+            If ``op`` is a string (pass the function), is not callable, or
+            returns anything other than an ``EEORasterDataset`` for some
+            timestep.
+
+        Notes
+        -----
+        Applies the operation immediately, timestep by timestep. Without
+        ``save_dir`` the results are held in memory, so peak memory is the
+        whole series' worth of results — fine for an area of interest, not for
+        whole scenes. ``save_dir`` bounds it to one result, and a series opened
+        on the lazy backend reopens its saved results there too, so the backend
+        survives a chain.
+
+        This series is left untouched: its datasets are the operation's inputs,
+        never its outputs.
+
+        Examples
+        --------
+        >>> ndvi_series = ts.map(eeo.ndvi, red="B04", nir="B08")  # doctest: +SKIP
+        >>> masked = ts.map(eeo.mask_clouds).map(  # doctest: +SKIP
+        ...     eeo.ndvi, red="B04", nir="B08", save_dir="ndvi/"
+        ... )
+
+        A function of your own is just as welcome:
+
+        >>> doubled = ts.map(lambda ds: ds.multiply(2))  # doctest: +SKIP
+        """
+        if isinstance(op, str):
+            raise ValidationError(
+                f"map takes the operation itself, not its name: pass eeo.{op} rather "
+                f"than {op!r} (or any function taking a dataset and returning one)"
+            )
+        if not callable(op):
+            raise ValidationError(
+                f"map needs a callable taking a dataset first and returning one; got "
+                f"{type(op).__name__}"
+            )
+
+        directory: Path | None = None
+        if save_dir is not None:
+            directory = Path(os.fspath(save_dir))
+            directory.mkdir(parents=True, exist_ok=True)
+
+        results: list[EEORasterDataset] = []
+        try:
+            for index, ds in enumerate(self._datasets):
+                result = _apply(op, ds, kwargs)
+                if not isinstance(result, EEORasterDataset):
+                    raise ValidationError(
+                        f"map builds a series, so every result must be an "
+                        f"EEORasterDataset; {getattr(op, '__name__', op)!r} returned "
+                        f"{type(result).__name__} for timestep {index}. For an "
+                        f"operation that returns a value rather than a raster, read "
+                        f"the timesteps directly: [{getattr(op, '__name__', 'f')}(ds) "
+                        f"for ds in ts]"
+                    )
+                if directory is not None:
+                    result = _through_file(
+                        result,
+                        directory,
+                        index,
+                        self._chunks,
+                        timestamp=self._timestamps[index],
+                    )
+                results.append(result)
+        except BaseException:
+            for result in results:
+                with contextlib.suppress(Exception):
+                    result.close()
+            raise
+
+        return self._derive(results, self._timestamps)
 
     # ========================
     # Series metadata
@@ -620,7 +777,8 @@ def time_series(
         and datasets, or is a STAC source without ``assets`` (or datasets
         with them). Also whatever the selected constructor rejects.
     NotImplementedError
-        If ``source`` is a path, until work package 19.6 lands.
+        If ``source`` is a path: building a series from a folder is not
+            implemented yet.
 
     Examples
     --------
