@@ -187,6 +187,13 @@ are called out under a **Breaking** heading.
   against σ = 0.047 masked, because 26 of the 51 acquisitions were clouded over
   that pixel.
 
+- New user-guide page, "Time Series Analysis": what a time series is for,
+  building one, `map`, the reducers and `composite`, following one place with
+  `extract_at`, and the handful of things worth knowing in practice — not
+  filtering clouds out of a search, catalogs listing scenes twice, timesteps
+  having to line up, and writing large results to disk. The module reference now
+  points at it, and covers the arguments.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that

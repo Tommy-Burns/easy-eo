@@ -1,0 +1,216 @@
+Time Series Analysis
+====================
+
+One satellite image tells you what a place looked like on one morning. Most
+questions are not about one morning: *when did this field green up?* *what does
+this valley normally look like in August?* *where was the flood a week later?*
+
+Those need the same place seen many times. A satellite has seen it many times —
+Sentinel-2 passes every few days — so the data exists; the work is in handling
+fifty scenes as one thing instead of fifty.
+
+That is what a time series is for.
+
+.. seealso::
+
+   :doc:`loading_satellite_data` for finding scenes in a catalog,
+   :doc:`masking_clouds` for what masking does to a single scene, and the
+   `time-series tutorial notebook
+   <https://github.com/Tommy-Burns/easy-eo/blob/main/examples/04_timeseries/01_cloud_free_composite_and_trends.ipynb>`_
+   for a complete worked example.
+
+-----
+
+The short version
+-----------------
+
+Search a catalog, hand the results over, and ask for a cloud-free image:
+
+.. code-block:: python
+
+   import eeo
+
+   results = eeo.stac_search(
+       "sentinel-2-l2a",
+       bbox=(5.60, 52.05, 5.65, 52.085),
+       datetime="2023-04-01/2023-09-30",
+   )
+
+   ts = eeo.time_series(results, assets=["B04", "B08", "SCL"])
+   clear = ts.composite()
+
+   ndvi = clear.ndvi(red="B04", nir="B08")
+
+``clear`` is one ordinary raster, built from whichever acquisition saw each
+pixel through the clouds. Everything else on this page is variations on those
+four lines.
+
+-----
+
+Building a series
+-----------------
+
+:func:`eeo.time_series` reads whatever holds your scenes:
+
+.. code-block:: python
+
+   ts = eeo.time_series(results, assets=["B04", "B08", "SCL"])   # a catalog search
+   ts = eeo.time_series([scene_may, scene_june, scene_july])     # scenes you loaded
+
+Every timestep needs to know when it was taken. Catalog results and the
+Sentinel-2 and Landsat loaders record that for you, so this only comes up if you
+built the scenes by hand — then pass the dates yourself:
+
+.. code-block:: python
+
+   ts = eeo.time_series(scenes, timestamps=[date_one, date_two, date_three])
+
+The series sorts itself oldest-first, and behaves like a list: ``len(ts)``,
+``ts[0]``, ``ts[2:5]``, and ``for scene in ts``. Each timestep is a normal
+dataset with every operation available on it.
+
+Include the quality band (``"SCL"`` for Sentinel-2, ``"qa_pixel"`` for Landsat)
+if you want cloud handled for you later.
+
+.. note::
+
+   Loading from a catalog reads only your area of interest, not whole tiles, and
+   keeps each scene in a temporary cache so the series holds files rather than
+   pixels. Pass ``cache="scenes/"`` to keep those files: catalog download links
+   expire, but files on your disk do not.
+
+-----
+
+One operation, every timestep
+-----------------------------
+
+:meth:`~eeo.EEOTimeSeries.map` applies any Easy-EO operation to every timestep
+and gives you a new series back. It is the same function you would call on one
+scene:
+
+.. code-block:: python
+
+   ndvi_series = ts.map(eeo.ndvi, red="B04", nir="B08", name="ndvi")
+   clipped = ts.map(eeo.clip_raster_with_vector, geometry=boundary)
+   masked = ts.map(eeo.mask_clouds)
+
+Your own functions work too — anything that takes a dataset and returns one:
+
+.. code-block:: python
+
+   brightened = ts.map(lambda scene: scene.multiply(2))
+
+The original series is untouched; ``map`` builds a new one.
+
+-----
+
+Collapsing a series into one raster
+-----------------------------------
+
+Four methods turn a series back into a single dataset:
+
+.. code-block:: python
+
+   typical = ts.median()      # the usual value at each pixel
+   average = ts.mean()
+   peak = ndvi_series.max()   # how green each pixel ever got
+   lowest = ts.min()
+
+Reach for ``median()`` over ``mean()`` on real imagery: a cloud missed by the
+mask is an odd value among the others, which a median ignores and an average
+does not.
+
+Cloudy timesteps are not a problem — they are simply absent. If a pixel was
+under cloud on two dates out of five, its median comes from the three dates that
+saw it. Only a pixel that was never seen at all comes back empty.
+
+And ``composite()`` is the one to reach for on satellite imagery, because it
+handles the cloud first:
+
+.. code-block:: python
+
+   clear = ts.composite()
+
+   clear.band_names
+   # ['B04', 'B08']
+
+That is :meth:`~eeo.EEOTimeSeries.map` with :func:`eeo.mask_clouds` followed by
+``median()``, in one call — with the quality band left out of the result, since
+an average of scene-class numbers would not mean anything.
+
+-----
+
+Following one place through time
+--------------------------------
+
+The other direction: instead of collapsing time, collapse space.
+:meth:`~eeo.EEOTimeSeries.extract_at` samples one location at every timestep:
+
+.. code-block:: python
+
+   trend = ndvi_series.extract_at((5.625, 52.0675), crs="EPSG:4326")
+
+   trend.plot()                  # a chart of the season
+   trend["ndvi"].idxmax()        # the date it peaked
+   trend["ndvi"].mean()
+
+What comes back is a pandas ``DataFrame``, indexed by acquisition date with one
+column per band — so anything you already do with pandas works here. Dates when
+the pixel was under cloud show as ``NaN``: a gap reads as a gap rather than as a
+sudden dip.
+
+Give the coordinates in longitude and latitude with ``crs="EPSG:4326"``, or in
+the imagery's own units without it.
+
+-----
+
+Things worth knowing
+--------------------
+
+**Do not filter the clouds out of your search.** It is tempting to ask only for
+clear scenes, but a cloudy scene still sees the ground somewhere, and that
+somewhere may be the only look you get at it. Let the cloudy ones in and let
+``composite()`` sort out which pixels to use.
+
+**Catalogs list some scenes twice.** The same overpass is often published more
+than once, and both copies match a search — which would count that day twice.
+Keeping one scene per date is enough:
+
+.. code-block:: python
+
+   one_per_date = {}
+   for item in results:
+       one_per_date.setdefault(item.timestamp.date(), item)
+
+   ts = eeo.time_series(list(one_per_date.values()), assets=["B04", "B08", "SCL"])
+
+**Timesteps must line up.** Every scene in a series has to be on the same grid,
+which is normally automatic for one area from one catalog. A wide area can draw
+scenes that were tiled differently; the series will say so, and
+``auto_align=True`` (or ``auto_reproject=True`` across a change of projection)
+puts them on the first scene's grid for you.
+
+**Large areas.** A composite of many full scenes does not have to fit in memory:
+``save_path=`` writes the result straight to disk, and ``mask_dir=`` does the
+same for the masked scenes along the way.
+
+.. code-block:: python
+
+   ts.composite(mask_dir="masked/", save_path="composite.tif")
+
+**Sentinel-2 and January 2022.** The mission changed how it stores its numbers
+on 25 January 2022. Easy-EO gives you the stored numbers, so a series that spans
+that date mixes two conventions and will warn you. Keep a series on one side of
+it.
+
+-----
+
+Where to look next
+------------------
+
+- The `tutorial notebook
+  <https://github.com/Tommy-Burns/easy-eo/blob/main/examples/04_timeseries/01_cloud_free_composite_and_trends.ipynb>`_
+  works a full season end to end, with figures.
+- :doc:`../modules/timeseries` documents every argument these calls take.
+- :doc:`masking_clouds` covers choosing what counts as cloud.
+- :doc:`large_rasters` covers memory in general.

@@ -1,6 +1,11 @@
 Time Series Module
 ==================
 
+.. seealso::
+
+   :doc:`../user_guide/time_series` introduces these calls with a worked
+   workflow; this page is the argument-by-argument reference.
+
 An ordered, timestamped collection of rasters covering one area:
 :class:`eeo.EEOTimeSeries`. Timesteps are kept deliberately distinct from
 bands — bands are what a sensor measured at one moment, timesteps are the same
@@ -140,9 +145,8 @@ median.
 an even number of timesteps averages the two middle values. ``min()`` and
 ``max()`` keep the timesteps' own dtype, because they select a value that was
 measured rather than computing a new one, and mark a missing pixel with the
-timesteps' nodata value. All four stream window by window, so peak memory is one
-block per timestep rather than the series, and all four return a plain dataset
-that chains like any other.
+timesteps' nodata value. All four return a plain dataset that chains like any
+other.
 
 The result carries no timestamp — a composite was not acquired at any one moment
 — and records what it reduced in ``attrs``.
