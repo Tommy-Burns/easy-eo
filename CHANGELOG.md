@@ -154,6 +154,28 @@ are called out under a **Breaking** heading.
   rather than only importing pandas through geopandas, and `eeo.show_versions()`
   reports its version alongside the rest of the stack.
 
+- A reduction's peak memory no longer grows with the number of timesteps. It
+  holds one block of every timestep at once, so the per-block budget is now
+  divided by their number: a longer series reads more, smaller blocks instead of
+  holding more memory. The budget has to cover the reduction's own working set
+  too, which for a median is several times the stacked block — `numpy.nanmedian`
+  sorts through a masked array, and its int64 index array alone is four times the
+  width of the uint16 pixels it indexes. Measured on 8000x8000 two-band scenes
+  under a hard 1400 MiB cap: about 550 MiB for five timesteps and the same for
+  twelve, on both backends; before the change, five timesteps could not allocate
+  inside that cap at all.
+- The temporal layer is verified on the lazy backend: the reducers, `map` and
+  `extract_at` produce exactly what the rasterio backend produces, and get there
+  without reading a raster whole — promotion reopens the files, so a reduction
+  streams by window and no dask graph runs. `extract_at` reads one 1x1 window per
+  timestep and band there too.
+- A series built on the lazy backend now stays on it through
+  `map(save_dir=...)`, whichever way the series was assembled. The chunking is
+  read back from the timesteps themselves (new `XarrayAdapter.chunk_sizes`)
+  rather than remembered from the call that built them, so a hand-built lazy
+  series no longer silently drops to rasterio mid-chain — only a series from
+  `from_stac` used to keep it.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that
