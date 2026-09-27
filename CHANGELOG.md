@@ -23,6 +23,25 @@ are called out under a **Breaking** heading.
   delegates: a `STACSearchResult` or its items to
   `EEOTimeSeries.from_stac`, loaded datasets to the constructor, a directory
   path to `EEOTimeSeries.from_folder`. The classmethods remain public.
+- `STACSearchResult.deduplicate()` keeps one item per acquisition, dropping the
+  reprocessings a catalog publishes alongside the original — every copy matches
+  a search, and a repeated date is weighted twice in a median composite. It
+  compares metadata the search already returned, so a duplicate never costs a
+  read. Two items are the same acquisition when they share a collection, an
+  acquisition time to the second, and the ground they cover (`grid:code`, or
+  the footprint where the catalog declares no grid); of the copies, the winner
+  is the highest `processing:version` — for Sentinel-2 the processing baseline
+  — then the most recently processed (`processing:datetime`, else `updated` or
+  `created`), then whichever the catalog listed first. Version outranks time
+  because `created` and `updated` describe the STAC record rather than the
+  data, so a metadata-only fix must not promote an older processing.
+- `EEOTimeSeries.deduplicate()` applies the same rule to a series already built,
+  which is what the folder and hand-assembled paths have.
+- A series holding two timesteps at one acquisition time now warns, naming both
+  causes and both fixes. Nothing is dropped automatically, because the two
+  causes want opposite fixes: a catalog's reprocessing should have a copy
+  dropped, while two tiles of one overpass each hold part of a wide area and
+  want `mosaic` — dropping one would throw that part away.
 - `EEOTimeSeries.from_folder(folder, pattern="*.tif", ...)` builds a series
   from rasters on disk, one file per timestep, opened rather than read so the
   series is file-backed from the start. `pattern` is a `pathlib` glob, so
