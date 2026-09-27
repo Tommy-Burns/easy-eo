@@ -9,6 +9,45 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+### Added
+
+- A time-series type: `eeo.EEOTimeSeries`, an ordered, timestamped collection
+  of datasets covering one area, built with `eeo.time_series(...)`. It behaves
+  like a list sorted oldest-first — `len()`, indexing, slicing (which returns
+  another series) and iteration — and exposes `.timestamps` plus the grid of
+  its earliest timestep (`.crs`, `.transform`, `.shape`,
+  `.band_count`, `.band_names`). Temporal stacking stays deliberately distinct from spectral
+  `stack()`: timesteps are repeats of one measurement, bands are different
+  measurements, and neither call can be mistaken for the other.
+- `eeo.time_series(source, assets=None, ...)` reads what it is handed and
+  delegates: a `STACSearchResult` or its items to
+  `EEOTimeSeries.from_stac`, loaded datasets to the constructor, a directory
+  path to `EEOTimeSeries.from_folder`. The classmethods remain public.
+- `EEOTimeSeries.from_stac(result, assets, ...)` reads the same assets from
+  every item of a search, cropping to the search area as
+  `STACItem.load` does. Each scene is written to a temporary cache and
+  reopened from the file, so the series holds one GDAL handle per timestep
+  instead of every window in memory, and `close()` removes the files.
+  `cache=<dir>` keeps them instead — a signed catalog URL expires, a cached
+  GeoTIFF does not — and `cache=False` keeps the scenes in memory.
+  `chunks=` additionally reopens the cached scenes on the lazy, dask-chunked
+  backend (the `lazy` extra); it cannot be combined with `cache=False`,
+  because an in-memory scene has no file to open lazily.
+- Every timestep must carry a timestamp, since the ordering is the point of
+  the type: the STAC, Sentinel-2 and Landsat loaders all record one, and
+  `timestamps=` supplies or overrides them for a hand-assembled series without
+  mutating the datasets. A naive datetime is read as UTC, matching the product
+  metadata parsers, so a series mixing aware and naive times still sorts.
+  Items are read oldest-first whatever order they arrive in, and reprocessed
+  duplicates of one acquisition keep their arrival order.
+
+### Notes
+
+- `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that
+  does the same thing today; the STAC path is the supported one for now.
+  Consistency of CRS, grid and band structure across timesteps is not enforced
+  yet, and `.map` is not implemented yet.
+
 ## [0.5.0] - 2026-09-18
 
 ### Added
