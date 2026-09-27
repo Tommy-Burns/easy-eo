@@ -62,11 +62,20 @@ Every timestep needs to know when it was taken. Catalog results and the
 Sentinel-2 and Landsat loaders record that for you. A folder has to be read from
 the filenames, which works as long as they carry a date — ``20230412``,
 ``2023-04-12``, or either with a time after it, which is how Sentinel-2 and
-Landsat files arrive. Where they do not, say where the date is:
+Landsat files arrive. Where they do not, say where the date is instead — the
+function is handed each file's path, so it can read the date from anywhere. Here
+the files are named ``B04.tif`` and it is the folder around each one that carries
+the date:
 
 .. code-block:: python
 
-   ts = eeo.time_series("scenes/", timestamp=lambda path: read_the_date(path))
+   import datetime as dt
+
+   ts = eeo.time_series(
+       "scenes/",                    # scenes/2023-04-12/B04.tif
+       pattern="*/B04.tif",
+       timestamp=lambda path: dt.datetime.fromisoformat(path.parent.name),
+   )
 
 And if you built the scenes by hand, pass the dates yourself:
 
