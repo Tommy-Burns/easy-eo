@@ -45,6 +45,7 @@ from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import ValidationError
 from eeo.core.loader import load_array
 from eeo.core.types import ResamplingMethod
+from eeo.io._dedupe import deduplicate_items, processed_at
 from eeo.io._stacking import read_onto_common_grid
 
 #: Microsoft Planetary Computer's STAC API — the default ``catalog`` for
@@ -269,6 +270,13 @@ def _sensor_attrs(properties: Mapping[str, Any]) -> dict[str, Any]:
         baseline = _processing_baseline(properties)
         if baseline is not None:
             attrs["processing_baseline"] = baseline
+    # When this copy of the data was produced. Recorded for every mission,
+    # because it is what tells two processings of one acquisition apart once the
+    # items are gone — and it is the only such signal for a mission that
+    # publishes no baseline.
+    stamp = processed_at(properties)
+    if stamp is not None:
+        attrs["processed_at"] = stamp
     return attrs
 
 
@@ -767,6 +775,72 @@ class STACSearchResult(Sequence[STACItem]):
             One timestamp per item, oldest first; None for an undated item.
         """
         return [item.timestamp for item in self._items]
+
+    def deduplicate(self) -> STACSearchResult:
+        """Keep one item per acquisition, dropping the catalog's reprocessings.
+
+        A catalog publishes a scene more than once — the original processing,
+        then whatever reprocessing campaigns have swept the archive since — and
+        every copy matches a search. That is correct of the catalog and wrong for
+        anything that treats the result as a time series: two copies of one
+        morning weight that morning twice in a median composite, which biases it
+        toward whichever dates happen to be duplicated.
+
+        Two items are the same acquisition when they share a collection, an
+        acquisition time to the second, and the ground they cover — read from
+        ``grid:code`` (``"MGRS-33TUL"`` for Sentinel-2, ``"WRS2-192029"`` for
+        Landsat), or from the footprint where the catalog declares no grid. Two
+        tiles of one overpass are therefore *not* duplicates, and are both kept:
+        for an area straddling a tile boundary they hold different halves of it.
+
+        Of the copies of one acquisition, the winner is:
+
+        1. the highest processing version — for Sentinel-2 the processing
+           baseline, which is the one field that describes the pixels rather than
+           the record;
+        2. failing that, the most recently processed, from
+           ``processing:datetime``, or ``updated`` or ``created`` where the
+           catalog states no processing time;
+        3. failing that, whichever the catalog listed first.
+
+        Returns
+        -------
+        STACSearchResult
+            A new result holding the surviving items and the same collection,
+            catalog and area-of-interest metadata, so it loads and crops exactly
+            as this one does. An item with no acquisition time is always kept: it
+            cannot be shown to duplicate anything.
+
+        Notes
+        -----
+        Reads nothing and fetches nothing — the decision is made on metadata the
+        search already returned, which is the point of making it here rather
+        than after the scenes have been read.
+
+        Examples
+        --------
+        >>> import eeo
+        >>> results = eeo.stac_search(
+        ...     "sentinel-2-l2a",
+        ...     bbox=(11.0, 46.5, 11.2, 46.7),
+        ...     datetime="2023-04-01/2023-09-30",
+        ... )  # doctest: +SKIP
+        >>> len(results), len(results.deduplicate())  # doctest: +SKIP
+        (41, 38)
+
+        One line before a time series, which is where it matters:
+
+        >>> ts = eeo.time_series(  # doctest: +SKIP
+        ...     results.deduplicate(), assets=["B04", "B08", "SCL"]
+        ... )
+        """
+        return STACSearchResult(
+            deduplicate_items(self._items),
+            collections=self._collections,
+            catalog=self._catalog,
+            bbox=self._bbox,
+            intersects=self._intersects,
+        )
 
     def __len__(self) -> int:
         """Return the number of items in the result.

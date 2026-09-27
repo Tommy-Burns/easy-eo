@@ -32,6 +32,7 @@ from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import AlignmentError, CRSMismatchError, ValidationError
 from eeo.core.loader import load_raster
 from eeo.core.types import ChunkSpec, ResamplingMethod, StrPath
+from eeo.io._dedupe import processing_rank
 from eeo.io.stac import STACItem, STACSearchResult
 from eeo.preprocessing.masking import _find_quality_band, mask_clouds
 from eeo.preprocessing.quality import QA_PIXEL_DEFAULT_MIN_CLOUD_CONFIDENCE
@@ -419,6 +420,41 @@ def _warn_on_mixed_baseline(
     )
 
 
+def _warn_on_duplicate_acquisitions(timestamps: Sequence[dt.datetime]) -> None:
+    """Warn when two timesteps claim the same acquisition time.
+
+    Not fixed automatically, because the two things it can mean want opposite
+    fixes: a catalog listing one scene twice should have one copy dropped, and
+    two tiles of one overpass over an area that straddles a tile boundary should
+    be mosaicked, since each holds only part of the ground. Dropping one of
+    those would throw away half the area.
+    """
+    counts: dict[dt.datetime, int] = {}
+    for stamp in timestamps:
+        counts[stamp] = counts.get(stamp, 0) + 1
+    repeated = sorted(stamp for stamp, count in counts.items() if count > 1)
+    if not repeated:
+        return
+    extra = len(timestamps) - len(counts)
+    shown = ", ".join(str(stamp) for stamp in repeated[:3])
+    if len(repeated) > 3:
+        shown += f", and {len(repeated) - 3} more"
+    warnings.warn(
+        f"{len(repeated)} acquisition time(s) appear more than once in this series "
+        f"({shown}), so {extra} timestep(s) repeat a moment another already covers. "
+        f"A statistic across time counts each timestep once, so a repeated moment is "
+        f"weighted twice in a median or mean composite. Two things cause this. A "
+        f"catalog publishes reprocessings of one scene and every copy matches a "
+        f"search: deduplicate the search before reading it, with "
+        f"eeo.stac_search(...).deduplicate(), or an existing series with "
+        f"EEOTimeSeries.deduplicate(). Or two tiles of one overpass both cover your "
+        f"area, in which case each holds only part of it and they want mosaicking "
+        f"rather than dropping.",
+        UserWarning,
+        stacklevel=4,
+    )
+
+
 def _chunks_of(datasets: Sequence[EEORasterDataset]) -> ChunkSpec | None:
     """Return the chunking a series' timesteps are already split into, if any.
 
@@ -609,6 +645,7 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             method=method,
         )
         _warn_on_mixed_baseline(self._datasets, self._timestamps)
+        _warn_on_duplicate_acquisitions(self._timestamps)
         # Set by from_stac when it owns a temporary scene cache.
         self._cache: tempfile.TemporaryDirectory | None = None
         # A series on the lazy backend stays there through map(save_dir=),
@@ -1037,6 +1074,72 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         derived = type(self)(datasets, timestamps=timestamps)
         derived._chunks = self._chunks
         return derived
+
+    def deduplicate(self) -> EEOTimeSeries:
+        """Keep one timestep per acquisition time.
+
+        The fix for a series that already holds two copies of one moment, which
+        a catalog produces by publishing reprocessings of a scene: every copy
+        matches a search, and a statistic across time counts each timestep once,
+        so the repeated moment is weighted twice in a composite.
+
+        Of the timesteps sharing a moment, the one carrying the highest
+        processing version wins — for Sentinel-2 the processing baseline, the one
+        recorded value that describes the pixels rather than the record — then
+        the most recently processed, then whichever came first.
+
+        Returns
+        -------
+        EEOTimeSeries
+            A new series holding the surviving timesteps, or this series itself
+            where no two timesteps share a moment. The new series shares its
+            datasets with this one rather than copying them, and does not own the
+            scene cache, so closing either one affects both — as a slice does.
+
+        Warns
+        -----
+        UserWarning
+            A series holding duplicates warns when it is *built*, naming this
+            method. Nothing warns here.
+
+        See Also
+        --------
+        eeo.io.STACSearchResult.deduplicate : The same rule applied to a search
+            before its scenes are read, which is cheaper and has more metadata
+            to decide on — a catalog item states the ground it covers and when
+            it was processed, where a scene read from it keeps only the
+            baseline. Prefer it when the scenes come from a catalog.
+
+        Notes
+        -----
+        Reads no pixels: the decision is made on timestamps and ``attrs``.
+
+        Two tiles of one overpass also share an acquisition time, and this drops
+        one of them — which for an area straddling a tile boundary throws away
+        the half the other tile held. That case wants
+        :func:`eeo.mosaic` across the pair, not this.
+
+        Examples
+        --------
+        >>> import eeo
+        >>> ts = eeo.time_series(results, assets=["B04", "B08"])  # doctest: +SKIP
+        >>> len(ts), len(ts.deduplicate())  # doctest: +SKIP
+        (41, 38)
+        """
+        winners: dict[dt.datetime, tuple[tuple[Any, ...], int]] = {}
+        for index, (ds, stamp) in enumerate(zip(self._datasets, self._timestamps, strict=True)):
+            rank = processing_rank(ds.attrs, index)
+            standing = winners.get(stamp)
+            if standing is None or rank > standing[0]:
+                winners[stamp] = (rank, index)
+
+        keep = sorted(index for _, index in winners.values())
+        if len(keep) == len(self._datasets):
+            return self
+        return self._derive(
+            [self._datasets[index] for index in keep],
+            [self._timestamps[index] for index in keep],
+        )
 
     def map(
         self,
