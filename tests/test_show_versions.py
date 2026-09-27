@@ -13,7 +13,17 @@ def test_get_versions_reports_core_stack():
     info = _get_versions()
 
     # Required components per the bug-report template.
-    for key in ("easy-eo", "python", "OS", "rasterio", "GDAL", "numpy", "geopandas", "matplotlib"):
+    for key in (
+        "easy-eo",
+        "python",
+        "OS",
+        "rasterio",
+        "GDAL",
+        "numpy",
+        "pandas",
+        "geopandas",
+        "matplotlib",
+    ):
         assert key in info
         assert info[key], f"{key} version should be non-empty"
 
@@ -33,7 +43,16 @@ def test_show_versions_prints_report(capsys):
     out = capsys.readouterr().out
 
     assert "Easy-EO version information" in out
-    for label in ("easy-eo", "python", "rasterio", "GDAL", "numpy", "geopandas", "matplotlib"):
+    for label in (
+        "easy-eo",
+        "python",
+        "rasterio",
+        "GDAL",
+        "numpy",
+        "pandas",
+        "geopandas",
+        "matplotlib",
+    ):
         assert label in out
 
 
