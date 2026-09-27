@@ -32,6 +32,7 @@ from eeo.core.exceptions import AlignmentError, CRSMismatchError, ValidationErro
 from eeo.core.loader import load_raster
 from eeo.core.types import ChunkSpec, ResamplingMethod, StrPath
 from eeo.io.stac import STACItem, STACSearchResult
+from eeo.timeseries import reducers
 
 _UTC = dt.timezone.utc
 
@@ -1031,6 +1032,131 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             describe the series.
         """
         return self.reference.band_names
+
+    # ========================
+    # Temporal reducers
+    # ========================
+    def median(self, *, save_path: StrPath | None = None) -> EEORasterDataset:
+        """Collapse the series to the median of every pixel across time.
+
+        The reducer to reach for on a stack of scenes: a median over time is
+        what turns repeat coverage into one clean image, because a cloud, a
+        shadow or a sensor artefact at one timestep is an outlier among the
+        others rather than a vote.
+
+        Parameters
+        ----------
+        save_path : str or path-like or None, default None
+            Write the result to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single float32 raster on the series' grid, with its bands and band
+            names, holding each pixel's median over time. A pixel that no
+            timestep saw is NaN, which is the result's recorded nodata value.
+
+        Notes
+        -----
+        Streams window by window: peak memory is one block per timestep, not
+        the series. Each timestep's nodata pixels are absent from the median
+        rather than counted, so a pixel missing at two of five timesteps is the
+        median of the other three; only a pixel missing everywhere is nodata.
+        float32 because a median over an even number of timesteps averages the
+        two middle values.
+
+        Examples
+        --------
+        >>> composite = ts.median()  # doctest: +SKIP
+        >>> ts.map(eeo.mask_clouds).median(save_path="composite.tif")  # doctest: +SKIP
+        """
+        return reducers.median(self, save_path=save_path)
+
+    def mean(self, *, save_path: StrPath | None = None) -> EEORasterDataset:
+        """Collapse the series to the mean of every pixel across time.
+
+        Parameters
+        ----------
+        save_path : str or path-like or None, default None
+            Write the result to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single float32 raster on the series' grid, with its bands and band
+            names, holding each pixel's mean over time. A pixel that no timestep
+            saw is NaN, the result's recorded nodata value.
+
+        Notes
+        -----
+        Streams window by window: peak memory is one block per timestep. Nodata
+        pixels are absent from the mean rather than counted as zero, so each
+        pixel is averaged over however many timesteps actually saw it. Prefer
+        :meth:`median` over a series that may hold cloud: a mean is pulled by
+        outliers, a median is not.
+
+        Examples
+        --------
+        >>> average = ts.mean()  # doctest: +SKIP
+        """
+        return reducers.mean(self, save_path=save_path)
+
+    def min(self, *, save_path: StrPath | None = None) -> EEORasterDataset:
+        """Collapse the series to the smallest value of every pixel across time.
+
+        Parameters
+        ----------
+        save_path : str or path-like or None, default None
+            Write the result to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single raster on the series' grid, with its bands and band names, in
+            the timesteps' own dtype — a minimum selects a value that was
+            measured rather than computing a new one. A pixel that no timestep
+            saw takes the timesteps' nodata value, or none if they declare none,
+            in which case no pixel can be missing.
+
+        Notes
+        -----
+        Streams window by window: peak memory is one block per timestep. Nodata
+        pixels are absent from the comparison, so a fill value can never win it.
+
+        Examples
+        --------
+        >>> darkest = ts.min()  # doctest: +SKIP
+        """
+        return reducers.minimum(self, save_path=save_path)
+
+    def max(self, *, save_path: StrPath | None = None) -> EEORasterDataset:
+        """Collapse the series to the largest value of every pixel across time.
+
+        Parameters
+        ----------
+        save_path : str or path-like or None, default None
+            Write the result to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single raster on the series' grid, with its bands and band names, in
+            the timesteps' own dtype — a maximum selects a value that was
+            measured rather than computing a new one. A pixel that no timestep
+            saw takes the timesteps' nodata value, or none if they declare none.
+
+        Notes
+        -----
+        Streams window by window: peak memory is one block per timestep. Nodata
+        pixels are absent from the comparison. A maximum over an index series is
+        the usual way to ask "how green did this ever get", one reason the
+        reducers return a plain dataset that the rest of the library can chain.
+
+        Examples
+        --------
+        >>> peak_greenness = ts.map(eeo.ndvi, red="red", nir="nir").max()  # doctest: +SKIP
+        """
+        return reducers.maximum(self, save_path=save_path)
 
     # ========================
     # Lifecycle
