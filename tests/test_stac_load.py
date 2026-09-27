@@ -519,6 +519,42 @@ class TestSensorProvenance:
         )
         assert "processing_baseline" not in attrs
 
+    def test_the_processing_time_is_recorded_for_every_mission(self, scene):
+        # What tells two processings of one acquisition apart once the items are
+        # gone, and the only such signal for a mission with no baseline.
+        attrs = (
+            eeo.io.STACItem(
+                FakeItem(
+                    scene,
+                    properties={
+                        "platform": "landsat-9",
+                        "processing:datetime": "2024-09-11T00:00:00Z",
+                    },
+                )
+            )
+            .load(["B04"])
+            .attrs
+        )
+        assert attrs["processed_at"] == dt.datetime(2024, 9, 11, tzinfo=dt.timezone.utc)
+
+    def test_the_metadata_dates_stand_in_for_a_missing_processing_time(self, scene):
+        attrs = (
+            eeo.io.STACItem(
+                FakeItem(scene, properties={"platform": "Sentinel-2A", "updated": "2026-01-02"})
+            )
+            .load(["B04"])
+            .attrs
+        )
+        assert attrs["processed_at"].year == 2026
+
+    def test_no_processing_time_is_recorded_when_the_item_states_none(self, scene):
+        attrs = (
+            eeo.io.STACItem(FakeItem(scene, properties={"platform": "Sentinel-2A"}))
+            .load(["B04"])
+            .attrs
+        )
+        assert "processed_at" not in attrs
+
     @pytest.mark.parametrize("value", [None, 42, "", "   ", ["landsat-9"]])
     def test_a_missing_or_unusable_platform_is_simply_absent(self, scene, value):
         item = eeo.io.STACItem(FakeItem(scene, properties={"platform": value}))
