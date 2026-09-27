@@ -56,6 +56,42 @@ are called out under a **Breaking** heading.
   is one result instead of the whole series. A series opened on the lazy backend
   reopens its saved results there too, so the backend survives a chain.
 
+- Series validation at construction, on metadata only: every timestep must be
+  in the same CRS, on the same pixel grid, and hold the same number of bands,
+  with no two timesteps disagreeing about what a band is called (band names are
+  how bands are addressed, so a "red" that is band 1 in one timestep and band 3
+  in another would silently mis-compute every index). A band-count mismatch is
+  never fixed automatically — a different number of bands is a different
+  measurement, not a misalignment.
+- `auto_align=True` resamples timesteps onto the reference timestep's grid and
+  `auto_reproject=True` warps them across a CRS change, both off by default, as
+  `mosaic` spells the latter; without them a mismatch raises `AlignmentError` or
+  `CRSMismatchError` naming the flag that would fix it. Alignment lands on the
+  reference grid *exactly* (CRS, transform and shape), not merely on its shape:
+  timesteps of one area differ in origin, and rasters that merely share a shape
+  cover different ground. `method=` chooses the resampling and defaults to
+  `"nearest"`, since a series built for masking carries a quality band whose
+  values are class numbers. `reference=` picks the timestep that sets the grid,
+  indexed in time order, and `.reference` returns it. An automatic alignment
+  logs what it aligned and with which method.
+- `.crs` now always returns a `rasterio.crs.CRS`, and CRS comparison across
+  timesteps normalizes first, so an EPSG code and a string naming the same
+  system are not mistaken for two CRSs.
+- Sentinel-2 series spanning processing baseline 04.00 (deployed 25 January
+  2022) now warn: from that baseline an L2A product shifts its stored values by
+  `BOA_ADD_OFFSET`, −1000 DN for every band, so the same ground reads about
+  1000 DN apart across the boundary. Easy-EO reads stored values rather than
+  decoding reflectance, so a composite over such a series is biased by the split
+  and an index trajectory steps at the boundary. The warning uses each scene's
+  recorded baseline where there is one and the acquisition date otherwise — the
+  reprocessed archive carries 04.00 or later on far older acquisitions, which a
+  date-only test would place on the wrong side.
+- A STAC load now records a Sentinel-2 item's processing baseline in
+  `attrs["processing_baseline"]`, the name `load_sentinel2` already uses, read
+  from `processing:version` (or the deprecated `s2:processing_baseline`). Before
+  this, a catalog-built series could only infer the baseline from the
+  acquisition date.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that
