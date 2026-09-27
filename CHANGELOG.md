@@ -23,6 +23,20 @@ are called out under a **Breaking** heading.
   delegates: a `STACSearchResult` or its items to
   `EEOTimeSeries.from_stac`, loaded datasets to the constructor, a directory
   path to `EEOTimeSeries.from_folder`. The classmethods remain public.
+- `EEOTimeSeries.from_folder(folder, pattern="*.tif", ...)` builds a series
+  from rasters on disk, one file per timestep, opened rather than read so the
+  series is file-backed from the start. `pattern` is a `pathlib` glob, so
+  `"**/*.tif"` walks subdirectories. A file does not state when it was
+  acquired the way a catalog item does, so the date is read from its name —
+  `20230412`, `2023-04-12`, or either followed by a time
+  (`20230412T100621`), which covers Sentinel-2 and Landsat filenames as
+  delivered; the first real date in the name wins, so a Landsat product id
+  gives its acquisition date rather than its processing date. Only the
+  filename is read, never the directories above it. `timestamp=` takes a
+  function of the path for a date that lives elsewhere — the parent
+  directory, a sidecar, the file's own `TIFFTAG_DATETIME`. Dates are resolved
+  for every file before any is opened, so one undated name costs no opens.
+  This replaces the `NotImplementedError` the method shipped with.
 - `EEOTimeSeries.from_stac(result, assets, ...)` reads the same assets from
   every item of a search, cropping to the search area as
   `STACItem.load` does. Each scene is written to a temporary cache and
