@@ -110,4 +110,5 @@ runnable notebooks — each one openable in Colab with nothing to install.
    modules/io
    modules/ops
    modules/preprocessing
+   modules/timeseries
    modules/viz
