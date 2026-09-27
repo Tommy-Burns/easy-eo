@@ -1,6 +1,6 @@
 """Construction and ordering of EEOTimeSeries (eeo/timeseries/core.py).
 
-Covers what task 19.2 ships: the three construction paths (datasets, a STAC
+Covers construction: the three paths (datasets, a STAC
 search result, and the folder stub), chronological ordering, the timestamp
 requirement, the sequence protocol, and the scene cache.
 
@@ -174,7 +174,7 @@ def test_timestamps_entries_must_be_datetimes():
 # The folder stub
 # ---------------
 def test_from_folder_names_its_replacement(tmp_path):
-    with pytest.raises(NotImplementedError, match="19.6"):
+    with pytest.raises(NotImplementedError, match="not implemented yet"):
         EEOTimeSeries.from_folder(tmp_path)
 
 
@@ -356,3 +356,149 @@ def test_lazy_chunks_open_cached_scenes_on_the_lazy_backend(items):
     assert all(isinstance(ds._adapter, XarrayAdapter) for ds in ts)
     assert [int(ds.to_array().flat[0]) for ds in ts] == [100, 200, 300]
     ts.close()
+
+
+# ---
+# map
+# ---
+def two_band_scene(month, *, red, nir):
+    """A two-band named scene, so the indices can be addressed by name."""
+    array = np.stack(
+        [
+            np.full((4, 4), red, dtype="uint16"),
+            np.full((4, 4), nir, dtype="uint16"),
+        ]
+    )
+    return eeo.load_array(
+        array,
+        transform=transform(),
+        crs=SCENE_CRS,
+        timestamp=dt.datetime(2023, month, 1, tzinfo=UTC),
+        band_names=["red", "nir"],
+    )
+
+
+def test_map_applies_an_index_to_every_timestep():
+    ts = eeo.time_series(
+        [
+            two_band_scene(1, red=1000, nir=3000),
+            two_band_scene(2, red=2000, nir=2000),
+        ]
+    )
+
+    ndvi = ts.map(eeo.ndvi, red="red", nir="nir")
+
+    assert len(ndvi) == 2
+    assert [stamp.month for stamp in ndvi.timestamps] == [1, 2]
+    assert ndvi.band_count == 1
+    assert pytest.approx(float(ndvi[0].to_array().flat[0]), abs=1e-6) == 0.5
+    assert pytest.approx(float(ndvi[1].to_array().flat[0]), abs=1e-6) == 0.0
+
+
+def test_map_chains_and_leaves_the_source_untouched():
+    ts = eeo.time_series([scene(3, value=10), scene(4, value=20)])
+
+    doubled = ts.map(eeo.multiply, other=2).map(eeo.multiply, other=3)
+
+    assert [int(ds.to_array().flat[0]) for ds in doubled] == [60, 120]
+    # The inputs are the operation's operands, never its outputs.
+    assert [int(ds.to_array().flat[0]) for ds in ts] == [10, 20]
+
+
+def test_map_accepts_a_function_of_your_own():
+    ts = eeo.time_series([scene(5, value=7)])
+
+    result = ts.map(lambda ds: ds.multiply(2))
+
+    assert int(result[0].to_array().flat[0]) == 14
+
+
+def test_map_keeps_overridden_timestamps():
+    stamps = [dt.datetime(2019, 1, 1, tzinfo=UTC), dt.datetime(2019, 2, 1, tzinfo=UTC)]
+    ts = eeo.time_series([scene(8), scene(9)], timestamps=stamps)
+
+    assert ts.map(eeo.multiply, other=2).timestamps == stamps
+
+
+def test_map_rejects_the_name_of_an_operation():
+    ts = eeo.time_series([scene(1)])
+
+    with pytest.raises(ValidationError, match="not its name"):
+        ts.map("ndvi", red="red", nir="nir")
+
+
+def test_map_rejects_something_uncallable():
+    ts = eeo.time_series([scene(1)])
+
+    with pytest.raises(ValidationError, match="needs a callable"):
+        ts.map(42)
+
+
+def test_map_rejects_an_operation_that_returns_a_value():
+    ts = eeo.time_series([scene(1)])
+
+    with pytest.raises(ValidationError, match="every result must be an"):
+        ts.map(lambda ds: float(ds.to_array().mean()))
+
+
+def test_map_save_dir_writes_files_and_returns_a_file_backed_series(tmp_path):
+    ts = eeo.time_series([scene(6, value=4), scene(7, value=8)])
+    out = tmp_path / "doubled"
+
+    result = ts.map(eeo.multiply, other=2, save_dir=out)
+
+    written = sorted(out.glob("*.tif"))
+    assert [path.name for path in written] == [
+        "0000_20230601T000000.tif",
+        "0001_20230701T000000.tif",
+    ]
+    assert [Path(ds.path) for ds in result] == written
+    assert [int(ds.to_array().flat[0]) for ds in result] == [8, 16]
+
+
+def test_map_save_dir_creates_the_directory_and_overwrites_a_rerun(tmp_path):
+    ts = eeo.time_series([scene(6, value=4)])
+    out = tmp_path / "nested" / "out"
+
+    first = ts.map(eeo.multiply, other=2, save_dir=out)
+    first.close()
+    second = ts.map(eeo.multiply, other=3, save_dir=out)
+
+    assert len(sorted(out.glob("*.tif"))) == 1
+    assert int(second[0].to_array().flat[0]) == 12
+
+
+def test_map_preserves_band_names_through_a_saved_round_trip(tmp_path):
+    ts = eeo.time_series([two_band_scene(4, red=1000, nir=3000)])
+
+    result = ts.map(eeo.ndvi, red="red", nir="nir", name="greenness", save_dir=tmp_path / "ndvi")
+
+    assert result.band_names == ["greenness"]
+
+
+def test_map_carries_provenance_as_the_bound_operation_does():
+    # An operation called as a bare function skips the decorator that copies
+    # timestamp, attrs and band names onto its result; map must not.
+    scene = two_band_scene(4, red=1000, nir=3000)
+    scene.attrs["mission"] = "Sentinel-2"
+
+    result = eeo.time_series([scene]).map(eeo.multiply, other=2)
+
+    assert result[0].band_names == ["red", "nir"]
+    assert result[0].attrs["mission"] == "Sentinel-2"
+    assert result[0].timestamp == scene.timestamp
+
+
+def test_map_keeps_a_lazy_series_lazy_when_saving(items, tmp_path):
+    pytest.importorskip("dask.array")
+    pytest.importorskip("rioxarray")
+    from eeo.core.adapters import XarrayAdapter
+
+    ts = EEOTimeSeries.from_stac(items, ["B04"], chunks="auto")
+
+    result = ts.map(eeo.multiply, other=2, save_dir=tmp_path / "lazy")
+
+    assert all(isinstance(ds._adapter, XarrayAdapter) for ds in result)
+    assert [int(ds.to_array().flat[0]) for ds in result] == [200, 400, 600]
+    ts.close()
+    result.close()
