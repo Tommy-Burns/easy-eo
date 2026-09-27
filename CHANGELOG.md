@@ -41,6 +41,21 @@ are called out under a **Breaking** heading.
   Items are read oldest-first whatever order they arrive in, and reprocessed
   duplicates of one acquisition keep their arrival order.
 
+- `EEOTimeSeries.map(op, **kwargs)` applies one operation to every timestep and
+  returns a new series, leaving the source untouched. Any callable taking a
+  dataset and returning one works, including a function of your own; a
+  registered Easy-EO operation is invoked through its bound method, so it
+  behaves exactly as it does on a single dataset — carrying band names,
+  timestamp and attrs onto each result, which calling the bare function does
+  not do. The series' own timestamps are kept, including ones supplied with
+  `timestamps=`. Passing the *name* of an operation, or an operation that
+  returns a value rather than a raster, is refused with the alternative spelled
+  out.
+- `map(..., save_dir=<dir>)` writes each result to a GeoTIFF named by position
+  and acquisition time and returns a series reading those files, so peak memory
+  is one result instead of the whole series. A series opened on the lazy backend
+  reopens its saved results there too, so the backend survives a chain.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that
