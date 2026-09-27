@@ -123,6 +123,21 @@ are called out under a **Breaking** heading.
   class from growing a statistics library and needs no second decorator
   registry or generated stub.
 
+- `EEOTimeSeries.composite()`: mask every timestep with its own quality band —
+  Sentinel-2 `SCL` or Landsat `QA_PIXEL`, whichever it carries — then reduce
+  across time, so the result is assembled from whichever timestep saw the ground
+  clear. The quality band is deliberately absent from the result: it has done
+  its work, and a median of scene-class numbers would be a class no classifier
+  assigned. A pixel clouded at every timestep comes back as nodata rather than
+  as cloud. `how=` chooses the statistic (median by default); `classes=`,
+  `flags=`, `min_cloud_confidence=`, `mission=` and `nodata=` pass through to
+  `mask_clouds`; `mask_dir=` writes the masked timesteps out instead of holding
+  them all, since masking reads a whole scene; `save_path=` writes the
+  composite. A missing or ambiguous quality band is refused before any pixel is
+  read.
+- The reducers take an internal band subset, which is what lets a composite
+  leave the quality band out of its output while reducing everything else.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that
