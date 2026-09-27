@@ -34,7 +34,7 @@ from eeo.core.types import ChunkSpec, ResamplingMethod, StrPath
 from eeo.io.stac import STACItem, STACSearchResult
 from eeo.preprocessing.masking import _find_quality_band, mask_clouds
 from eeo.preprocessing.quality import QA_PIXEL_DEFAULT_MIN_CLOUD_CONFIDENCE
-from eeo.timeseries import reducers
+from eeo.timeseries import extract, reducers
 
 _UTC = dt.timezone.utc
 
@@ -1291,6 +1291,65 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             # done their work; closing frees them now rather than at collection.
             # Files written to mask_dir are the caller's and are left alone.
             masked.close()
+
+    # ========================
+    # Extraction
+    # ========================
+    def extract_at(
+        self,
+        coordinates: Sequence[float],
+        *,
+        bands: Sequence[int | str] | None = None,
+        crs: Any = None,
+    ) -> Any:
+        """Sample one location at every timestep, as a table indexed by time.
+
+        The counterpart to the reducers: where they collapse time into one
+        raster, this collapses space into one trajectory — what happened *here*,
+        in the shape pandas and matplotlib already understand.
+
+        Parameters
+        ----------
+        coordinates : sequence of float
+            ``(x, y)`` position, in the series' CRS unless ``crs`` says
+            otherwise.
+        bands : sequence of (int or str) or None, default None
+            Which bands to sample, as 1-based indices or band names; None
+            samples every band.
+        crs : optional
+            CRS the coordinates are given in — anything rasterio accepts, such
+            as ``"EPSG:4326"`` — when that is not the series' own. Saves
+            transforming lon/lat by hand after a catalog search.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per timestep, indexed by a ``DatetimeIndex`` named ``time``,
+            with one float column per sampled band named after that band
+            (``band_<n>`` for an unnamed one). A pixel that was nodata at a
+            timestep is ``NaN`` there rather than its fill value, so a gap in
+            the trajectory reads as a gap. ``attrs`` records the point sampled.
+
+        Raises
+        ------
+        ValidationError
+            If ``coordinates`` does not hold exactly two values, if the point
+            falls outside the series' extent, if ``crs`` is given for a series
+            that declares none, or if ``bands`` names a band the series does not
+            have.
+
+        Notes
+        -----
+        Reads one pixel per timestep and band — never a band, never a scene, so
+        a trajectory over a season of full tiles costs a few dozen pixels.
+
+        Examples
+        --------
+        >>> trajectory = ts.extract_at((11.1, 46.6), crs="EPSG:4326")  # doctest: +SKIP
+        >>> ndvi = ts.map(eeo.ndvi, red="B04", nir="B08")  # doctest: +SKIP
+        >>> ndvi.extract_at((11.1, 46.6), crs="EPSG:4326").plot()  # doctest: +SKIP
+        """
+        return extract.extract_at(self, coordinates, bands=bands, crs=crs)
 
     # ========================
     # Lifecycle
