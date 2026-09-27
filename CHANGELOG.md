@@ -99,6 +99,30 @@ are called out under a **Breaking** heading.
   are uniform within a scene and chosen so every reduction over the stack is a
   round number, which is what the temporal reducers will be measured against.
 
+- Temporal reducers on `EEOTimeSeries`: `.median()`, `.mean()`, `.min()` and
+  `.max()` collapse a series into one `EEORasterDataset` on the series' grid,
+  with its bands and band names. Each takes `save_path=` to write the result
+  instead of holding it, and each streams window by window, so peak memory is
+  one block per timestep rather than the series.
+- Reducers are nodata-aware in the sense the contract's first rule means: a
+  statistic treats nodata as *absent*, not contagious. A pixel missing at two of
+  five timesteps is reduced over the three that saw it, a fill value can never
+  win a minimum, and only a pixel missing at every timestep is nodata in the
+  result. `median()` and `mean()` are float32 with NaN there (a median over an
+  even number of timesteps averages two values); `min()` and `max()` keep the
+  timesteps' dtype — they select a measured value rather than computing one —
+  and mark it with the timesteps' nodata value, or leave none where the
+  timesteps declare none.
+- A reduction carries no timestamp, since it was not acquired at one moment, and
+  records `temporal_reduction`, `timesteps`, `time_start` and `time_end` in
+  `attrs`. Provenance all timesteps agree on (the mission) is kept; per-scene
+  provenance (a STAC item id) is dropped, because it no longer describes the
+  result.
+- The reducers are also plain functions in `eeo.timeseries.reducers`, taking a
+  series; the methods on `EEOTimeSeries` are thin delegations, which keeps the
+  class from growing a statistics library and needs no second decorator
+  registry or generated stub.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that
