@@ -147,6 +147,44 @@ that chains like any other.
 The result carries no timestamp — a composite was not acquired at any one moment
 — and records what it reduced in ``attrs``.
 
+A cloud-free composite
+----------------------
+
+``composite()`` is the reason a time series is worth having. Each timestep is
+masked with its own quality band — Sentinel-2's ``SCL`` or Landsat's
+``QA_PIXEL``, whichever it carries — and the masked timesteps are reduced across
+time:
+
+.. code-block:: python
+
+    import eeo
+
+    results = eeo.stac_search(
+        "sentinel-2-l2a",
+        bbox=(11.0, 46.5, 11.2, 46.7),
+        datetime="2023-04-01/2023-09-30",
+    )
+    ts = eeo.time_series(results, assets=["B04", "B08", "SCL"])
+
+    clear = ts.composite()          # ['B04', 'B08'] — no SCL band
+    ndvi = clear.ndvi(red="B04", nir="B08")
+
+The quality band is **not** in the result: it has done its work, and a median of
+scene-class numbers would be a class no classifier ever assigned. A pixel that
+was clouded at *every* timestep is the one a composite cannot fill, and comes
+back as nodata rather than as whatever the cloud looked like.
+
+``how=`` chooses the statistic (median by default — a missed cloud edge at one
+timestep is an outlier a median discards and a mean averages in), and
+``classes=``, ``flags=``, ``min_cloud_confidence=``, ``mission=`` and ``nodata=``
+pass through to :func:`eeo.mask_clouds` unchanged. Masking reads a whole scene,
+so ``mask_dir=`` writes the masked timesteps out instead of holding them all,
+and ``save_path=`` does the same for the composite itself.
+
+It is the same thing as ``ts.map(eeo.mask_clouds).median()`` minus the quality
+band, spelled as one call because it is the workflow the series exists for. Do
+it by hand when a timestep's mask lives in a separate raster.
+
 .. autofunction:: eeo.time_series
 
 .. autoclass:: eeo.EEOTimeSeries
