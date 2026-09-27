@@ -26,7 +26,12 @@ import rasterio as rio
 
 from eeo.common import resolve_band_index
 from eeo.core.adapters import RasterioAdapter
-from eeo.core.blockwise import BlockSource, block_windows, resolve_block_shape
+from eeo.core.blockwise import (
+    DEFAULT_BLOCK_PIXELS,
+    BlockSource,
+    block_windows,
+    resolve_block_shape,
+)
 from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import ValidationError
 from eeo.core.streaming import valid_mask
@@ -144,9 +149,11 @@ def reduce_series(
 
     Notes
     -----
-    Streams window by window: peak memory is one block per timestep, not the
-    series. Each timestep's own nodata value is what masks it, and a pixel is
-    nodata in the result only when every timestep is missing it.
+    Streams window by window, and the block is scaled down by the number of
+    timesteps, so peak memory is about one block's worth in total however long
+    the series is — never a raster, let alone the series. Each timestep's own
+    nodata value is what masks it, and a pixel is nodata in the result only when
+    every timestep is missing it.
     """
     if how not in ("median", "mean", "min", "max"):
         raise ValidationError(f"how must be 'median', 'mean', 'min' or 'max'; got {how!r}")
@@ -179,7 +186,14 @@ def reduce_series(
         count=len(positions),
     )
 
-    windows = block_windows(series.shape, resolve_block_shape(series.shape))
+    # A reduction holds one block of every timestep at once, so the per-block
+    # budget is divided by their number: a longer series then reads more, smaller
+    # blocks rather than holding more memory. It has to cover the reduction's own
+    # working set too, which for a median is several times the stacked block —
+    # `numpy.nanmedian` sorts through a masked array, and its int64 index array
+    # alone is four times the width of the uint16 pixels it is indexing.
+    budget = max(DEFAULT_BLOCK_PIXELS // len(series), 1)
+    windows = block_windows(series.shape, resolve_block_shape(series.shape, target_pixels=budget))
     memfile: rio.io.MemoryFile | None = None
     dst: Any = None
     try:

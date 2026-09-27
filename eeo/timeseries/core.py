@@ -25,7 +25,7 @@ from rasterio.transform import Affine
 from rasterio.warp import reproject
 
 from eeo.common import get_nodata, normalize_resampling_method, resolve_band_index
-from eeo.core.adapters import RasterioAdapter
+from eeo.core.adapters import RasterioAdapter, XarrayAdapter
 from eeo.core.adapters.xarray import validate_chunks
 from eeo.core.core import EEORasterDataset
 from eeo.core.exceptions import AlignmentError, CRSMismatchError, ValidationError
@@ -343,6 +343,30 @@ def _warn_on_mixed_baseline(
     )
 
 
+def _chunks_of(datasets: Sequence[EEORasterDataset]) -> ChunkSpec | None:
+    """Return the chunking a series' timesteps are already split into, if any.
+
+    A series built on the lazy backend should stay there through a chain: when
+    ``map(save_dir=...)`` writes a result out, the file is reopened with these
+    chunk sizes rather than with rasterio, which would silently drop the backend
+    the caller chose. Read from the timesteps rather than remembered from the
+    call that built them, so it is right however the series was assembled.
+    """
+    for ds in datasets:
+        adapter = ds._adapter
+        if isinstance(adapter, XarrayAdapter):
+            sizes = adapter.chunk_sizes
+            if sizes is not None:
+                # dict values are invariant to a type checker, so a
+                # dict[str, int] is not a dict[str, int | Literal["auto"]]
+                # even though every value it holds is valid in one.
+                return cast("ChunkSpec", sizes)
+            # Lazily backed but not chunked: dask still owns the reads, so keep
+            # the backend and let it choose the sizes.
+            return "auto"
+    return None
+
+
 def _apply(op: Callable[..., Any], ds: EEORasterDataset, kwargs: dict[str, Any]) -> Any:
     """Run one operation on one dataset, exactly as calling it on the dataset would.
 
@@ -511,9 +535,9 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         _warn_on_mixed_baseline(self._datasets, self._timestamps)
         # Set by from_stac when it owns a temporary scene cache.
         self._cache: tempfile.TemporaryDirectory | None = None
-        # Set by from_stac when its scenes were opened on the lazy backend, so
-        # that a series which started lazy stays lazy through map(save_dir=).
-        self._chunks: ChunkSpec | None = None
+        # A series on the lazy backend stays there through map(save_dir=),
+        # which reopens each saved result with these chunk sizes.
+        self._chunks: ChunkSpec | None = _chunks_of(self._datasets)
 
     # ========================
     # Constructors
@@ -699,7 +723,6 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             raise
 
         series._cache = holder
-        series._chunks = chunks
         return series
 
     @classmethod
@@ -1060,8 +1083,9 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
 
         Notes
         -----
-        Streams window by window: peak memory is one block per timestep, not
-        the series. Each timestep's nodata pixels are absent from the median
+        Streams window by window, with the block divided by the number of
+        timesteps, so peak memory is about one block's worth in total however
+        long the series is. Each timestep's nodata pixels are absent from the median
         rather than counted, so a pixel missing at two of five timesteps is the
         median of the other three; only a pixel missing everywhere is nodata.
         float32 because a median over an even number of timesteps averages the
@@ -1091,7 +1115,8 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
 
         Notes
         -----
-        Streams window by window: peak memory is one block per timestep. Nodata
+        Streams window by window, with the block divided by the number of
+        timesteps, so peak memory does not grow with the series' length. Nodata
         pixels are absent from the mean rather than counted as zero, so each
         pixel is averaged over however many timesteps actually saw it. Prefer
         :meth:`median` over a series that may hold cloud: a mean is pulled by
@@ -1122,7 +1147,8 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
 
         Notes
         -----
-        Streams window by window: peak memory is one block per timestep. Nodata
+        Streams window by window, with the block divided by the number of
+        timesteps, so peak memory does not grow with the series' length. Nodata
         pixels are absent from the comparison, so a fill value can never win it.
 
         Examples
@@ -1149,7 +1175,8 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
 
         Notes
         -----
-        Streams window by window: peak memory is one block per timestep. Nodata
+        Streams window by window, with the block divided by the number of
+        timesteps, so peak memory does not grow with the series' length. Nodata
         pixels are absent from the comparison. A maximum over an index series is
         the usual way to ask "how green did this ever get", one reason the
         reducers return a plain dataset that the rest of the library can chain.
