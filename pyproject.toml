@@ -35,6 +35,9 @@ dependencies = [
     "geopandas>=1.1,<2",
     "numpy>=1.26,<3",
     "matplotlib>=3.8",
+    # Declared because the time-series extraction returns a DataFrame, not only
+    # because geopandas pulls it in; the floor is geopandas 1.1's own.
+    "pandas>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -182,6 +185,7 @@ module = [
     "rasterio",
     "rasterio.*",
     "geopandas",
+    "pandas",
     "shapely",
     "affine",
     "pyproj",
