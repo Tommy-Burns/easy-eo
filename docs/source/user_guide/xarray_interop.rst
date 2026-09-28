@@ -43,11 +43,11 @@ something xarray is good at, and come back:
 
    import eeo
 
-   ds = eeo.load_raster("scene.tif")            # 4-band scene
+   ds = eeo.load_raster(path="scene.tif")       # 4-band scene
    da = ds.to_xarray()                          # georeferenced DataArray
 
    smoothed = da.rolling(x=5, y=5, center=True).mean()   # xarray's job
-   result = eeo.from_xarray(smoothed).ndvi(red="red", nir="nir")   # back to Easy-EO
+   result = eeo.from_xarray(da=smoothed).ndvi(red="red", nir="nir")   # back to Easy-EO
 
 Nothing needs re-georeferencing on either crossing: the CRS, geotransform, and
 nodata value travel with the array.
@@ -99,7 +99,7 @@ output reads this too:
 
 .. code-block:: python
 
-   >>> da = eeo.load_raster("scene.tif").to_xarray()
+   >>> da = eeo.load_raster(path="scene.tif").to_xarray()
    >>> da.dims
    ('band', 'y', 'x')
    >>> da.band.values
@@ -132,10 +132,10 @@ collapses spare length-1 dimensions (the ones an ``expand_dims`` leaves behind):
 
 .. code-block:: python
 
-   eeo.from_xarray(da)                          # (band, y, x)
-   eeo.from_xarray(da.transpose("y", "x", "band"))
-   eeo.from_xarray(da.sel(band=1))              # (y, x) -> one band
-   eeo.from_xarray(da.expand_dims("time"))      # length-1 dimension collapsed
+   eeo.from_xarray(da=da)                       # (band, y, x)
+   eeo.from_xarray(da=da.transpose("y", "x", "band"))
+   eeo.from_xarray(da=da.sel(band=1))           # (y, x) -> one band
+   eeo.from_xarray(da=da.expand_dims("time"))   # length-1 dimension collapsed
 
 The spatial dimensions are whichever ones rioxarray identifies — ``y`` and ``x``
 by name, or whatever you declare. Data from another source often names them
@@ -143,7 +143,7 @@ differently:
 
 .. code-block:: python
 
-   ds = eeo.from_xarray(da.rio.set_spatial_dims(x_dim="lon", y_dim="lat"))
+   ds = eeo.from_xarray(da=da.rio.set_spatial_dims(x_dim="lon", y_dim="lat"))
 
 The coordinates decide the geotransform
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -157,7 +157,7 @@ coordinates say it does:
 .. code-block:: python
 
    window = da.isel(y=slice(2000, 3000), x=slice(1500, 2500))
-   ds = eeo.from_xarray(window)     # placed at the window's own origin
+   ds = eeo.from_xarray(da=window)  # placed at the window's own origin
 
 The stored affine is used only where the coordinates cannot speak — a rotated
 grid, a single-pixel axis, or a DataArray with no coordinates — and whenever it
@@ -231,7 +231,7 @@ before converting it:
 
 .. code-block:: python
 
-   da = ds.clip_raster_with_bbox(bbox).to_xarray()   # not the whole tile
+   da = ds.clip_raster_with_bbox(bbox=bbox).to_xarray()   # not the whole tile
 
 The returned array never shares memory with the dataset, so writing into it is
 safe. In the other direction, :func:`eeo.from_xarray` adds **no copy** on top of

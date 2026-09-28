@@ -47,7 +47,7 @@ Datasets are typically created using the :func:`load_raster` helper:
 
     from eeo import load_raster
 
-    ds = load_raster("image.tif")
+    ds = load_raster(path="image.tif")
 
 Datasets may also be created from NumPy arrays:
 
@@ -57,7 +57,7 @@ Datasets may also be created from NumPy arrays:
     import numpy as np
 
     array = np.random.rand(512, 512)
-    ds = load_array(array, crs=4326)
+    ds = load_array(array=array, crs=4326)
 
 
 .. note::
@@ -101,7 +101,7 @@ Example:
 
 .. code-block:: python
 
-    band1 = ds.get_band(1)
+    band1 = ds.get_band(idx=1)
 
 For multi-band datasets, ``get_band()`` is preferred to avoid loading
 unnecessary data into memory.
@@ -119,7 +119,7 @@ return new ``EEORasterDataset`` instances, enabling fluent workflows:
 .. code-block:: python
 
     result = (
-        ds.clip_raster_with_bbox((0, 0, 1000, 1000))
+        ds.clip_raster_with_bbox(bbox=(0, 0, 1000, 1000))
         .normalize_percentile(lower_percentile=2, upper_percentile=98)
         .standardize()
     )
@@ -158,7 +158,7 @@ Example:
 
 .. code-block:: python
 
-    ds.normalize_min_max().save_raster("output.tif")
+    ds.normalize_min_max().save_raster(path="output.tif")
 
 Until this method is called, datasets typically remain in memory.
 
@@ -258,12 +258,12 @@ result, so metadata set once follows the data through a whole chain:
    from eeo import load_raster
 
    ds = load_raster(
-       "scene.tif",
+       path="scene.tif",
        timestamp=datetime(2023, 6, 1, 10, 30),
        attrs={"sensor": "Sentinel-2"},
    )
 
-   ndvi = ds.normalized_difference(red).normalize_min_max()
+   ndvi = ds.normalized_difference(other=red).normalize_min_max()
    ndvi.timestamp        # datetime(2023, 6, 1, 10, 30)
    ndvi.attrs["sensor"]  # "Sentinel-2"
 

@@ -47,13 +47,13 @@ Search, load, compute, plot — nothing downloaded but the pixels you asked for:
    import eeo
 
    results = eeo.stac_search(
-       "sentinel-2-l2a",
+       collection="sentinel-2-l2a",
        bbox=(11.0, 46.5, 11.2, 46.7),
        datetime="2023-06-01/2023-08-31",
        cloud_cover=20,
        limit=1,
    )
-   scene = results[0].load(["B04", "B08"])
+   scene = results[0].load(assets=["B04", "B08"])
    ndvi = scene.ndvi(red="B04", nir="B08")
    ndvi.plot_raster()
 
@@ -79,7 +79,7 @@ Searching a catalog
 .. code-block:: python
 
    results = eeo.stac_search(
-       "sentinel-2-l2a",
+       collection="sentinel-2-l2a",
        bbox=(11.0, 46.5, 11.2, 46.7),
        datetime="2023-06-01/2023-08-31",
        cloud_cover=20,
@@ -251,13 +251,13 @@ stacking them needs no resampling:
 .. code-block:: python
 
    results = eeo.stac_search(
-       "landsat-c2-l2",
+       collection="landsat-c2-l2",
        bbox=(11.0, 46.5, 11.2, 46.7),
        datetime="2023-06-01/2023-08-31",
        cloud_cover=20,
        limit=10,
    )
-   scene = results[0].load(["red", "nir08"])
+   scene = results[0].load(assets=["red", "nir08"])
    ndvi = scene.ndvi(red="red", nir="nir08")
 
 **The collection is not only Landsat 8 and 9.** ``landsat-c2-l2`` spans the
@@ -274,7 +274,7 @@ carries scan-line-corrector gaps. Filter by platform when the mission matters:
        for item in results
        if item.properties.get("platform") in ("landsat-8", "landsat-9")
    ]
-   scene = modern[0].load(["red", "nir08"])
+   scene = modern[0].load(assets=["red", "nir08"])
 
 **Landsat on Earth Search needs AWS credentials.** Its assets are ``s3://``
 hrefs into the requester-pays ``usgs-landsat`` bucket, so a load fails with a
@@ -297,7 +297,7 @@ box are never transferred:
 
 .. code-block:: python
 
-   scene = results[0].load(["B04", "B08"])
+   scene = results[0].load(assets=["B04", "B08"])
 
 By default it crops to the ``bbox`` you searched with — the item remembers it as
 ``item.search_bbox``, so you never repeat yourself. Override or opt out per
@@ -306,17 +306,17 @@ load:
 .. code-block:: python
 
    # A different (usually smaller) area
-   field = results[0].load("B04", bbox=(11.05, 46.55, 11.08, 46.58))
+   field = results[0].load(assets="B04", bbox=(11.05, 46.55, 11.08, 46.58))
 
    # The entire scene - a full Sentinel-2 band, so expect hundreds of MB
-   whole_tile = results[0].load("B04", crop=False)
+   whole_tile = results[0].load(assets="B04", crop=False)
 
 Ask for several assets and they come back as one multi-band dataset, each band
 named after the asset it came from, ready to address by name:
 
 .. code-block:: python
 
-   scene = results[0].load(["B04", "B08", "B11"])
+   scene = results[0].load(assets=["B04", "B08", "B11"])
 
    scene.band_names            # ['B04', 'B08', 'B11']
    scene.timestamp             # the scene's acquisition time
@@ -344,11 +344,11 @@ follows:
 
    result = (
        results[0]
-       .load(["B04", "B08"])
+       .load(assets=["B04", "B08"])
        .ndvi(red="B04", nir="B08")
        .normalize_min_max()
    )
-   result.save_raster("ndvi.tif")
+   result.save_raster(path="ndvi.tif")
 
 -----
 
@@ -376,8 +376,8 @@ read. This example runs as-is — it uses the boundary from the bundled
    sd = load_sample_dataset()
    catchment = gpd.read_file(sd.boundary)
 
-   results = eeo.stac_search("sentinel-2-l2a", intersects=catchment, cloud_cover=20)
-   shaped = results[0].load("B04", mask=True)
+   results = eeo.stac_search(collection="sentinel-2-l2a", intersects=catchment, cloud_cover=20)
+   shaped = results[0].load(assets="B04", mask=True)
 
 Scenes whose footprint touches the shape are returned. A path works directly
 too, so the file you clip with is the file you search with — and since the
@@ -385,8 +385,8 @@ sample handles are path-like, they can be passed straight in:
 
 .. code-block:: python
 
-   results = eeo.stac_search("sentinel-2-l2a", intersects="catchment.geojson")
-   results = eeo.stac_search("sentinel-2-l2a", intersects=sd.boundary)
+   results = eeo.stac_search(collection="sentinel-2-l2a", intersects="catchment.geojson")
+   results = eeo.stac_search(collection="sentinel-2-l2a", intersects=sd.boundary)
 
 **Your CRS is handled for you.** STAC expects lon/lat degrees, and a
 GeoDataFrame in a projected CRS submitted as-is matches *nothing* — with no
@@ -410,8 +410,8 @@ nodata, ask for a mask:
 
 .. code-block:: python
 
-   rectangle = results[0].load("B04")              # cropped to the bounds
-   shaped = results[0].load("B04", mask=True)      # ...and outside pixels blanked
+   rectangle = results[0].load(assets="B04")              # cropped to the bounds
+   shaped = results[0].load(assets="B04", mask=True)      # ...and outside pixels blanked
 
 The two steps are separate on purpose: cropping decides what crosses the
 network, masking is an analytical choice about what counts as data. ``mask=True``
@@ -431,14 +431,14 @@ needs no account:
 .. code-block:: python
 
    results = eeo.stac_search(
-       "sentinel-2-l2a",
+       collection="sentinel-2-l2a",
        bbox=(11.0, 46.5, 11.2, 46.7),
        datetime="2023-06-01/2023-08-31",
        cloud_cover=20,
        limit=1,
        catalog="https://earth-search.aws.element84.com/v1",
    )
-   scene = results[0].load(["red", "nir"])
+   scene = results[0].load(assets=["red", "nir"])
    ndvi = scene.ndvi(red="red", nir="nir")
 
 Planetary Computer asset URLs are signed automatically; other catalogs are left

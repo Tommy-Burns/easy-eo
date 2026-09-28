@@ -24,12 +24,12 @@ acquisition time:
     import eeo
 
     results = eeo.stac_search(
-        "sentinel-2-l2a",
+        collection="sentinel-2-l2a",
         bbox=(11.0, 46.5, 11.2, 46.7),
         datetime="2023-04-01/2023-09-30",
         cloud_cover=20,
     )
-    ts = eeo.time_series(results, assets=["B04", "B08"])
+    ts = eeo.time_series(source=results, assets=["B04", "B08"])
 
     len(ts)                 # timesteps, oldest first
     ts.timestamps[0]        # when the first one was acquired
@@ -51,8 +51,8 @@ tool, or written by an earlier step of your own look like:
 
 .. code-block:: python
 
-    ts = eeo.time_series("scenes/")                        # scenes/*.tif
-    ts = eeo.time_series("scenes/", pattern="**/*.tif")    # subdirectories too
+    ts = eeo.time_series(source="scenes/")                        # scenes/*.tif
+    ts = eeo.time_series(source="scenes/", pattern="**/*.tif")    # subdirectories too
 
 The files are opened, not read, so the series is file-backed from the start and
 holds no pixels.
@@ -72,7 +72,7 @@ function of the path, so it can read the date from wherever it actually lives:
 .. code-block:: python
 
     ts = eeo.time_series(
-        "scenes/",
+        source="scenes/",
         pattern="*/B04.tif",
         timestamp=lambda path: dt.datetime.fromisoformat(path.parent.name),
     )
@@ -93,7 +93,7 @@ Drop the extra copies before anything is read:
 
 .. code-block:: python
 
-    ts = eeo.time_series(results.deduplicate(), assets=["B04", "B08", "SCL"])
+    ts = eeo.time_series(source=results.deduplicate(), assets=["B04", "B08", "SCL"])
 
 :meth:`eeo.io.STACSearchResult.deduplicate` decides on metadata the search
 already returned, so a duplicate never costs a read.
@@ -134,8 +134,8 @@ Alignment is opt-in, as it is elsewhere in Easy-EO:
 
 .. code-block:: python
 
-    ts = eeo.time_series(results, assets=["B04", "B08"], auto_align=True)
-    ts = eeo.time_series(results, assets=["B04", "B08"], auto_reproject=True)
+    ts = eeo.time_series(source=results, assets=["B04", "B08"], auto_align=True)
+    ts = eeo.time_series(source=results, assets=["B04", "B08"], auto_reproject=True)
 
 ``auto_align=True`` warps timesteps on a different grid onto the reference's;
 ``auto_reproject=True`` does the same across a CRS change — which a search wide
@@ -177,7 +177,7 @@ onto each result:
 
     ndvi = ts.map(eeo.ndvi, red="B04", nir="B08")
     clear = ts.map(eeo.mask_clouds).map(eeo.ndvi, red="B04", nir="B08")
-    doubled = ts.map(lambda scene: scene.multiply(2))
+    doubled = ts.map(lambda scene: scene.multiply(other=2))
 
 The results are held in memory, which is fine for an area of interest and not
 for whole scenes. ``save_dir=`` writes each result to a GeoTIFF and returns a
@@ -193,10 +193,10 @@ Datasets loaded by hand work the same way, as long as each carries a timestamp:
 .. code-block:: python
 
     scenes = [
-        eeo.load_sentinel2(path, bands=["red", "nir", "scl"])
+        eeo.load_sentinel2(path=path, bands=["red", "nir", "scl"])
         for path in products
     ]
-    ts = eeo.time_series(scenes)
+    ts = eeo.time_series(source=scenes)
 
 Change detection: comparing two series
 --------------------------------------
@@ -207,8 +207,8 @@ combining each pair:
 
 .. code-block:: python
 
-    before = eeo.time_series(scenes_2020, assets=["B04", "B08"])
-    after = eeo.time_series(scenes_2023, assets=["B04", "B08"])
+    before = eeo.time_series(source=scenes_2020, assets=["B04", "B08"])
+    after = eeo.time_series(source=scenes_2023, assets=["B04", "B08"])
 
     change = after.map_with(before, eeo.subtract)
     typical = change.median()
@@ -294,16 +294,16 @@ period instead of across the whole series:
 
 .. code-block:: python
 
-    monthly = ts.resample_time("MS").median()      # one raster per calendar month
-    monthly = ts.resample_time("MS").composite()   # ...cloud-free
-    weekly = ts.resample_time("7D").max()
+    monthly = ts.resample_time(freq="MS").median()      # one raster per calendar month
+    monthly = ts.resample_time(freq="MS").composite()   # ...cloud-free
+    weekly = ts.resample_time(freq="7D").max()
 
 What comes back is a series like any other — one timestep per period — so it can
 be mapped over, sampled, sliced, saved, or reduced again:
 
 .. code-block:: python
 
-    monthly = ts.resample_time("MS").composite()
+    monthly = ts.resample_time(freq="MS").composite()
     greenest = monthly.map(eeo.ndvi, red="B04", nir="B08").max()
 
 Periods are pandas offset aliases, passed to pandas untouched: ``"D"`` a day,
@@ -325,7 +325,7 @@ the grouping is inspectable before you commit to reducing it:
 
 .. code-block:: python
 
-    periods = ts.resample_time("MS")
+    periods = ts.resample_time(freq="MS")
     len(periods)                       # how many months have anything in them
     [len(period) for period in periods]  # how many acquisitions each holds
 
@@ -349,11 +349,11 @@ time:
     import eeo
 
     results = eeo.stac_search(
-        "sentinel-2-l2a",
+        collection="sentinel-2-l2a",
         bbox=(11.0, 46.5, 11.2, 46.7),
         datetime="2023-04-01/2023-09-30",
     )
-    ts = eeo.time_series(results, assets=["B04", "B08", "SCL"])
+    ts = eeo.time_series(source=results, assets=["B04", "B08", "SCL"])
 
     clear = ts.composite()          # ['B04', 'B08'] — no SCL band
     ndvi = clear.ndvi(red="B04", nir="B08")
@@ -384,7 +384,7 @@ what happened at a single location, indexed by time:
 .. code-block:: python
 
     ndvi = ts.map(eeo.ndvi, red="B04", nir="B08", name="ndvi")
-    trajectory = ndvi.extract_at((11.1, 46.6), crs="EPSG:4326")
+    trajectory = ndvi.extract_at(coordinates=(11.1, 46.6), crs="EPSG:4326")
 
     trajectory                      # a pandas DataFrame indexed by acquisition time
     trajectory["ndvi"].idxmax()     # when it was greenest
@@ -405,7 +405,7 @@ Several locations are a concat of several calls:
 
     plots = {"north": (11.10, 46.60), "south": (11.15, 46.55)}
     table = pd.concat(
-        {name: ndvi.extract_at(point, crs="EPSG:4326") for name, point in plots.items()},
+        {name: ndvi.extract_at(coordinates=point, crs="EPSG:4326") for name, point in plots.items()},
         names=["plot"],
     )
 
@@ -419,7 +419,7 @@ Two pictures answer most temporal questions, and both are one call.
 .. code-block:: python
 
     ndvi = ts.map(eeo.ndvi, red="B04", nir="B08", name="ndvi")
-    ndvi.plot_trajectory((11.1, 46.6), crs="EPSG:4326")
+    ndvi.plot_trajectory(coordinates=(11.1, 46.6), crs="EPSG:4326")
 
 One line per band, with a marker at every acquisition. A date the pixel was
 clouded at draws no marker and breaks the line, so a gap reads as a gap rather
@@ -458,7 +458,7 @@ first:
 
 .. code-block:: python
 
-    ts.resample_time("MS").composite().plot_filmstrip()
+    ts.resample_time(freq="MS").composite().plot_filmstrip()
 
 Handing the series to xarray
 ----------------------------
@@ -484,13 +484,13 @@ not merely implied by the coordinates. One slice converts back with
 
 .. code-block:: python
 
-    scene = eeo.from_xarray(da.isel(time=0))
+    scene = eeo.from_xarray(da=da.isel(time=0))
 
 .. warning::
 
    **This reads every timestep.** The whole series ends up in one array, so a
    season of full Sentinel-2 tiles will not fit in memory. Slice the series
-   first, or reduce it — ``ts.resample_time("MS").median().to_xarray()`` is
+   first, or reduce it — ``ts.resample_time(freq="MS").median().to_xarray()`` is
    usually the shape you wanted anyway. A series on the lazy backend is no
    exception: the conversion materialises it.
 

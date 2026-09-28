@@ -20,13 +20,13 @@ transfers a fraction of the band instead of downloading the scene:
     import eeo
 
     results = eeo.stac_search(
-        "sentinel-2-l2a",
+        collection="sentinel-2-l2a",
         bbox=(11.0, 46.5, 11.2, 46.7),
         datetime="2023-06-01/2023-08-31",
         cloud_cover=20,
         limit=1,
     )
-    scene = results[0].load(["B04", "B08"])   # cropped to the search bbox
+    scene = results[0].load(assets=["B04", "B08"])   # cropped to the search bbox
     ndvi = scene.ndvi(red="B04", nir="B08")
 
 STAC search
@@ -78,7 +78,7 @@ so data can cross into the xarray ecosystem and return:
     import eeo
     import rioxarray
 
-    ds = eeo.from_xarray(rioxarray.open_rasterio("scene.tif"))
+    ds = eeo.from_xarray(da=rioxarray.open_rasterio("scene.tif"))
     ndvi = ds.ndvi(red=1, nir=4)
 
     da = ndvi.to_xarray()          # back out, CRS and nodata intact

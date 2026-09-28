@@ -437,7 +437,7 @@ measurement — after masking, the proportion that is neither cloud nor fill:
 
 .. code-block:: python
 
-   scene = eeo.load_landsat(path, ["red", "nir08", "qa_pixel"])
+   scene = eeo.load_landsat(path=path, bands=["red", "nir08", "qa_pixel"])
    scene.mask_clouds().clear_fraction()      # 0.6036
 
 .. warning::
@@ -452,6 +452,6 @@ measurement — after masking, the proportion that is neither cloud nor fill:
 
    .. code-block:: python
 
-      inside = scene.clip_raster_with_bbox(aoi)
+      inside = scene.clip_raster_with_bbox(bbox=aoi)
       inside.clear_fraction()                   # 1.0000 -- no fill here
       inside.mask_clouds().clear_fraction()     # 0.9677 -- cloud only

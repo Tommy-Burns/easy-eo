@@ -32,9 +32,9 @@ autocompletes the available names:
 
    sd = load_sample_dataset()                     # instant — no download
 
-   scene = load_raster(sd.sentinel2_cog_stacked)  # downloads that one file
-   dem = load_raster(sd.copernicus_dem)
-   blue = load_raster(sd.sentinel2_blue)
+   scene = load_raster(path=sd.sentinel2_cog_stacked)  # downloads that one file
+   dem = load_raster(path=sd.copernicus_dem)
+   blue = load_raster(path=sd.sentinel2_blue)
 
    ndvi = scene.ndvi(red="red", nir="nir")
    ndvi.plot_raster()
@@ -52,7 +52,7 @@ The ``boundary`` sample is a vector, so read it with GeoPandas rather than
    import geopandas as gpd
 
    roi = gpd.read_file(sd.boundary)
-   clipped = scene.clip_raster_with_vector(roi)
+   clipped = scene.clip_raster_with_vector(vector_file=roi)
 
 Need the raw cached path (to hand to another library, or to inspect the
 Cloud-Optimized GeoTIFFs directly)? Use ``.path``:
