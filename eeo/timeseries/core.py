@@ -1925,6 +1925,80 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         return extract.extract_at(self, coordinates, bands=bands, crs=crs)
 
     # ========================
+    # Interop
+    # ========================
+    def to_xarray(self) -> Any:
+        """Convert the series to one xarray DataArray with a ``time`` dimension.
+
+        The hand-off to the xarray ecosystem. Time is a native xarray dimension,
+        so a series is a natural thing to express there — and once it is, xarray's
+        own vocabulary applies: ``.sel(time="2023-06")``, ``.resample(time=...)``,
+        ``.groupby("time.season")``, and whatever else you already do with a
+        ``DataArray``.
+
+        Requires the ``xarray`` extra (``pip install "easy-eo[xarray]"``).
+
+        Returns
+        -------
+        xarray.DataArray
+            Dimensions ``("time", "band", "y", "x")``. ``time`` holds the
+            series' acquisition times as ``datetime64``, oldest first, and is a
+            real indexed dimension, so ``.sel(time=...)`` works; ``y`` and ``x``
+            are pixel-centre coordinates; ``band`` is 1-based. The CRS, affine
+            transform and nodata value are written through ``rioxarray``, so the
+            result is georeferenced rather than merely shaped like a raster, and
+            band names are in ``attrs["long_name"]``.
+
+        Raises
+        ------
+        MissingDependencyError
+            If the ``xarray`` extra is not installed.
+
+        See Also
+        --------
+        eeo.from_xarray : Convert one DataArray back to a dataset. A slice of
+            this result converts back with it — ``eeo.from_xarray(da.isel(time=0))``.
+        eeo.EEORasterDataset.to_xarray : The single-raster conversion this builds
+            on, which puts the acquisition time in as a scalar coordinate.
+
+        Notes
+        -----
+        **Memory: this reads every timestep.** The whole series ends up in one
+        array, so a season of full Sentinel-2 tiles will not fit — slice the
+        series, or reduce it first (:meth:`resample_time` into monthly
+        composites is usually the useful shape anyway). A series on the lazy
+        backend is no exception; the conversion materialises it.
+
+        ``attrs`` hold what every timestep agrees on. xarray's own rule when
+        concatenating is that the first array's attrs win, which would put one
+        scene's provenance — a STAC item id, a processing time — on an array
+        describing all of them, so a differing attr is dropped instead. The
+        georeferencing attrs are taken from the first timestep, as the series'
+        own grid and band names are.
+
+        The time values are the **series'** timestamps, which are not always the
+        datasets' own: a series built with ``timestamps=`` carries times its
+        datasets do not. Timezones are dropped in favour of naive UTC, which is
+        the only thing xarray's ``datetime64`` can hold.
+
+        Examples
+        --------
+        >>> import eeo
+        >>> ts = eeo.time_series(results, assets=["B04", "B08"])  # doctest: +SKIP
+        >>> da = ts.to_xarray()  # doctest: +SKIP
+        >>> da.dims  # doctest: +SKIP
+        ('time', 'band', 'y', 'x')
+        >>> da.sel(time="2023-06").mean(dim="time")  # doctest: +SKIP
+
+        Bands as named variables, which is often what xarray users want:
+
+        >>> ts.to_xarray().to_dataset(dim="band")  # doctest: +SKIP
+        """
+        from eeo.io.xarray import series_to_xarray
+
+        return series_to_xarray(self)
+
+    # ========================
     # Lifecycle
     # ========================
     def close(self) -> None:
