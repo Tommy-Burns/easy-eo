@@ -409,6 +409,57 @@ Several locations are a concat of several calls:
         names=["plot"],
     )
 
+Seeing the series
+-----------------
+
+Two pictures answer most temporal questions, and both are one call.
+
+*What happened here?* — a line through time at one place:
+
+.. code-block:: python
+
+    ndvi = ts.map(eeo.ndvi, red="B04", nir="B08", name="ndvi")
+    ndvi.plot_trajectory((11.1, 46.6), crs="EPSG:4326")
+
+One line per band, with a marker at every acquisition. A date the pixel was
+clouded at draws no marker and breaks the line, so a gap reads as a gap rather
+than as a plunge to zero. It costs one pixel per timestep, like
+:meth:`~eeo.EEOTimeSeries.extract_at` underneath it. For anything past a look —
+a rolling mean, two locations on one axes — take the ``extract_at`` table and
+plot it yourself; it is a pandas ``DataFrame``, and this is a shortcut past the
+boilerplate rather than a replacement for it.
+
+*What did each date look like?* — one small map per timestep:
+
+.. code-block:: python
+
+    ts.plot_filmstrip(band="B04")
+    ndvi.plot_filmstrip(cmap="RdYlGn")
+
+The quick way to see which acquisitions are usable before compositing them.
+Panels are titled with their date, oldest first, and laid out near-square by
+default, so twelve timesteps are a 3x4 block rather than a twelve-storey strip;
+``nrows``/``ncols`` override that.
+
+**Every panel shares one colour scale**, taken from the percentiles of the whole
+series. That is what makes the dates comparable — stretched individually, a dark
+date and a bright one render identically and the figure misleads. The single
+colorbar labels that shared scale. ``shared_scale=False`` stretches each panel on
+its own, for reading detail *within* a date rather than comparing dates, and
+draws no colorbar, because one bar cannot honestly describe several scales.
+
+One band, not several: a filmstrip compares dates, and mixing bands into the same
+grid would make it compare two things at once.
+
+Each panel is read decimated to the size it is drawn at — one panel's worth, not
+the whole figure's — so a filmstrip of full Sentinel-2 tiles costs a thumbnail per
+timestep. A long series still makes a crowded figure, so slice it or reduce it
+first:
+
+.. code-block:: python
+
+    ts.resample_time("MS").composite().plot_filmstrip()
+
 Handing the series to xarray
 ----------------------------
 

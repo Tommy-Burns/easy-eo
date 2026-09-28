@@ -224,6 +224,21 @@ sudden dip.
 Give the coordinates in longitude and latitude with ``crs="EPSG:4326"``, or in
 the imagery's own units without it.
 
+Two plots
+---------
+
+A line through time at one place, and a contact sheet of every date:
+
+.. code-block:: python
+
+   ndvi.plot_trajectory((5.625, 52.0675), crs="EPSG:4326")
+   ndvi.plot_filmstrip(cmap="RdYlGn")
+
+The trajectory breaks where the pixel was clouded, so a gap looks like a gap. The
+filmstrip gives every timestep the same colour scale — that is what lets you
+compare the dates, and it is why a cloudy one looks obviously wrong. It is the
+fastest way to see what you actually downloaded.
+
 -----
 
 Things worth knowing
