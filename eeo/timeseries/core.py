@@ -1925,6 +1925,162 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         return extract.extract_at(self, coordinates, bands=bands, crs=crs)
 
     # ========================
+    # Visualization
+    # ========================
+    def plot_trajectory(
+        self,
+        coordinates: Sequence[float],
+        *,
+        bands: Sequence[int | str] | None = None,
+        crs: Any = None,
+        figsize: tuple[int, int] = (10, 4),
+        title: str | None = None,
+        save_path: StrPath | None = None,
+        dpi: int = 300,
+    ) -> None:
+        """Plot what happened at one location, through time.
+
+        One line per band, with a marker at every acquisition, so a date the
+        pixel was clouded at reads as a gap rather than a dip. See
+        :func:`eeo.viz.timeseries.plot_trajectory` for the arguments and for
+        when to plot the :meth:`extract_at` table yourself instead.
+
+        Parameters
+        ----------
+        coordinates : sequence of float
+            ``(x, y)`` position, in the series' CRS unless ``crs`` says
+            otherwise.
+        bands : sequence of (int or str) or None, default None
+            Bands to draw; None draws every band.
+        crs : optional
+            CRS the coordinates are given in, when not the series' own.
+        figsize : tuple of int, default (10, 4)
+            Figure size in inches.
+        title : str or None, default None
+            Figure title; None labels the plot with the sampled point.
+        save_path : str or path-like or None, default None
+            Write the figure here as well as showing it.
+        dpi : int, default 300
+            Resolution for ``save_path``.
+
+        Returns
+        -------
+        None
+            Terminal: shows the figure, and writes it where ``save_path`` says.
+
+        Raises
+        ------
+        ValidationError
+            For anything :meth:`extract_at` rejects.
+
+        Notes
+        -----
+        Reads one pixel per timestep and band.
+
+        Examples
+        --------
+        >>> ndvi = ts.map(eeo.ndvi, red="B04", nir="B08", name="ndvi")  # doctest: +SKIP
+        >>> ndvi.plot_trajectory((11.1, 46.6), crs="EPSG:4326")  # doctest: +SKIP
+        """
+        from eeo.viz.timeseries import plot_trajectory
+
+        plot_trajectory(
+            self,
+            coordinates,
+            bands=bands,
+            crs=crs,
+            figsize=figsize,
+            title=title,
+            save_path=save_path,
+            dpi=dpi,
+        )
+
+    def plot_filmstrip(
+        self,
+        *,
+        band: int | str = 1,
+        nrows: int | None = None,
+        ncols: int | None = None,
+        shared_scale: bool = True,
+        pmin: float = 2,
+        pmax: float = 98,
+        cmap: Any = None,
+        figsize: tuple[int, int] | None = None,
+        title: str | None = None,
+        save_path: StrPath | None = None,
+        dpi: int = 300,
+    ) -> None:
+        """Plot one small map per timestep, laid out as a grid.
+
+        The quick look at a series — which dates are clouded, when the field
+        greened up. Panels are titled with their acquisition date, oldest first,
+        and share one colour scale by default so they can be compared. See
+        :func:`eeo.viz.timeseries.plot_filmstrip` for the full contract.
+
+        Parameters
+        ----------
+        band : int or str, default 1
+            Band each panel shows, as a 1-based index or a name.
+        nrows, ncols : int or None
+            Grid to lay the panels out in; both None chooses a near-square grid.
+        shared_scale : bool, default True
+            Whether every panel uses the same colour limits. True is what makes
+            the dates comparable; False stretches each panel on its own.
+        pmin : float, default 2
+            Lower percentile for the colour limits.
+        pmax : float, default 98
+            Upper percentile for the colour limits.
+        cmap : str or matplotlib.colors.Colormap or None, default None
+            Colormap for the panels.
+        figsize : tuple of int or None, default None
+            Figure size in inches; None derives one from the grid.
+        title : str or None, default None
+            Figure title.
+        save_path : str or path-like or None, default None
+            Write the figure here as well as showing it.
+        dpi : int, default 300
+            Resolution for ``save_path``.
+
+        Returns
+        -------
+        None
+            Terminal: shows the figure, and writes it where ``save_path`` says.
+
+        Raises
+        ------
+        ValidationError
+            If ``band`` is not a band of the series, or a requested grid cannot
+            hold every timestep.
+
+        Notes
+        -----
+        Each panel is read decimated to the size it is drawn at, so the cost is
+        a thumbnail per timestep however large the scenes are.
+
+        Examples
+        --------
+        >>> ts.plot_filmstrip(band="B04")  # doctest: +SKIP
+        >>> monthly = ts.resample_time("MS").composite()  # doctest: +SKIP
+        >>> monthly.plot_filmstrip(cmap="RdYlGn")  # doctest: +SKIP
+        """
+        from eeo.viz.timeseries import plot_filmstrip
+
+        plot_filmstrip(
+            self,
+            band=band,
+            nrows=nrows,
+            ncols=ncols,
+            shared_scale=shared_scale,
+            pmin=pmin,
+            pmax=pmax,
+            cmap=cmap,
+            figsize=figsize,
+            title=title,
+            save_path=save_path,
+            dpi=dpi,
+        )
+
+    # ========================
     # Interop
     # ========================
     def to_xarray(self) -> Any:
