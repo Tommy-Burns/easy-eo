@@ -1,0 +1,499 @@
+/*
+ * Easy-EO documentation theme, layered on pydata-sphinx-theme.
+ * Palette comes from the logo: navy outline, ocean-blue globe, leaf-green
+ * raster. Motif: a pixel grid, as in the logo's raster layers.
+ */
+
+/* -- Brand tokens ---------------------------------------------------------- */
+
+html {
+  --eeo-navy: #173960;
+  --eeo-navy-deep: #0e2440;
+  --eeo-ocean: #0875d2;
+  --eeo-ocean-bright: #3aa0f0;
+  --eeo-leaf: #8cc63f;
+  --eeo-leaf-bright: #a8dc62;
+  --eeo-stripe: linear-gradient(90deg, var(--eeo-ocean) 0%, var(--eeo-leaf) 100%);
+
+  --pst-font-family-base: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --pst-font-family-heading: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --pst-font-family-monospace: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --pst-font-weight-heading: 700;
+}
+
+html[data-theme="light"] {
+  --pst-color-primary: #0a6cc2;
+  --pst-color-secondary: #3f8a1f;
+  --pst-color-accent: #3f8a1f;
+  --pst-color-link: #0a6cc2;
+  --pst-color-link-hover: #084f8f;
+  --pst-color-background: #ffffff;
+  --pst-color-on-background: #ffffff;
+  --pst-color-surface: #f3f6fa;
+  --pst-color-on-surface: #e8eef5;
+  --pst-color-text-base: #1b2a3d;
+  --pst-color-text-muted: #55677e;
+  --pst-color-border: #dbe3ed;
+  --pst-color-inline-code: #2f6f14;
+  --pst-color-inline-code-links: #0a6cc2;
+  --pst-color-target: rgba(140, 198, 63, 0.2);
+  --pst-heading-color: var(--eeo-navy);
+  --eeo-header-bg: var(--eeo-navy);
+  --eeo-code-bg: #f6f8fb;
+  --eeo-card-shadow: 0 14px 30px -18px rgba(23, 57, 96, 0.45);
+  --eeo-icon: #3f8a1f;
+}
+
+html[data-theme="dark"] {
+  --pst-color-primary: #5aaef5;
+  --pst-color-secondary: #a8dc62;
+  --pst-color-accent: #a8dc62;
+  --pst-color-link: #5aaef5;
+  --pst-color-link-hover: #8cc8fa;
+  --pst-color-background: #0b1522;
+  --pst-color-on-background: #0f1c2d;
+  --pst-color-surface: #13233a;
+  --pst-color-on-surface: #1a2e48;
+  --pst-color-text-base: #dbe6f3;
+  --pst-color-text-muted: #93a6bf;
+  --pst-color-border: #22364f;
+  --pst-color-inline-code: #b5e37a;
+  --pst-color-inline-code-links: #5aaef5;
+  --pst-color-target: rgba(168, 220, 98, 0.16);
+  --pst-heading-color: #eef4fb;
+  --eeo-header-bg: #07111f;
+  --eeo-code-bg: #0a1420;
+  --eeo-card-shadow: 0 14px 30px -18px rgba(0, 0, 0, 0.8);
+  --eeo-icon: #a8dc62;
+}
+
+body {
+  background: var(--pst-color-background);
+}
+
+/* JetBrains Mono ligatures would render "->" or "!=" as single glyphs. */
+code,
+pre,
+kbd,
+samp {
+  font-variant-ligatures: none;
+}
+
+/* -- Header: navy bar with the ocean-to-leaf stripe ------------------------- */
+
+.bd-header {
+  background: var(--eeo-header-bg) !important;
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+.bd-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--eeo-stripe);
+}
+
+.bd-header .navbar-brand .logo__title {
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.bd-header .navbar-brand img {
+  height: 34px;
+}
+
+.bd-header ul.navbar-nav > li.nav-item > .nav-link,
+.bd-header ul.navbar-nav > li.nav-item > .dropdown-toggle {
+  color: rgba(255, 255, 255, 0.78);
+  font-weight: 600;
+}
+
+.bd-header ul.navbar-nav > li.nav-item > .nav-link:hover,
+.bd-header ul.navbar-nav > li.nav-item > .dropdown-toggle:hover {
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.bd-header ul.navbar-nav > li.nav-item > .nav-link:hover::before {
+  border-bottom-color: rgba(255, 255, 255, 0.4);
+}
+
+.bd-header ul.navbar-nav > li.nav-item.current > .nav-link {
+  color: #ffffff;
+}
+
+.bd-header ul.navbar-nav > li.nav-item.current > .nav-link::before {
+  border-bottom-color: var(--eeo-leaf);
+}
+
+.bd-header .navbar-icon-links .nav-link,
+.bd-header button.pst-navbar-icon {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.bd-header .navbar-icon-links .nav-link:hover,
+.bd-header button.pst-navbar-icon:hover {
+  color: #ffffff;
+}
+
+/* -- Headings ---------------------------------------------------------------- */
+
+.bd-article h1 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.bd-article h1::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 4px;
+  margin-top: 0.6rem;
+  border-radius: 2px;
+  background: var(--eeo-stripe);
+}
+
+.bd-article h2 {
+  letter-spacing: -0.01em;
+  margin-top: 2.5rem;
+}
+
+/* -- Code -------------------------------------------------------------------- */
+
+.bd-article div.highlight,
+.bd-article div.highlight pre {
+  background: var(--eeo-code-bg);
+}
+
+.bd-article div.highlight {
+  border: 1px solid var(--pst-color-border);
+  border-radius: 12px;
+}
+
+.bd-article div.highlight pre {
+  border: 0;
+  border-radius: 12px;
+  font-size: 0.86em;
+  line-height: 1.6;
+}
+
+code.literal {
+  border: 0;
+  background: var(--pst-color-surface);
+}
+
+/* -- Sidebars ---------------------------------------------------------------- */
+
+.bd-sidebar-primary .caption-text {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pst-color-text-muted);
+}
+
+nav.bd-links li > a {
+  border-radius: 8px;
+  padding-left: 0.6rem;
+}
+
+nav.bd-links li > a:hover {
+  background: var(--pst-color-surface);
+  text-decoration: none;
+}
+
+nav.bd-links li > a.current,
+nav.bd-links .current > a {
+  background: color-mix(in srgb, var(--pst-color-primary) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--eeo-leaf);
+  font-weight: 600;
+}
+
+/* -- Admonitions, footer ----------------------------------------------------- */
+
+.bd-article .admonition,
+.bd-article div.admonition {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bd-footer {
+  background: var(--pst-color-surface);
+  border-top: 1px solid var(--pst-color-border);
+}
+
+/* -- Cards (sphinx-design) --------------------------------------------------- */
+
+.eeo-card.sd-card {
+  border: 1px solid var(--pst-color-border);
+  border-radius: 14px;
+  background: var(--pst-color-on-background);
+  box-shadow: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.eeo-card.sd-card-hover:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--pst-color-primary) 50%, var(--pst-color-border));
+  box-shadow: var(--eeo-card-shadow);
+}
+
+.eeo-card .sd-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 700;
+  color: var(--pst-heading-color);
+}
+
+.eeo-card .sd-card-title .sd-octicon {
+  color: var(--eeo-icon);
+  flex-shrink: 0;
+}
+
+.eeo-card .sd-card-text,
+.eeo-card li {
+  color: var(--pst-color-text-muted);
+}
+
+.eeo-card a:not(.sd-stretched-link) {
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.eeo-card a:not(.sd-stretched-link):hover {
+  text-decoration: underline;
+}
+
+.eeo-card-api .sd-card-title code {
+  background: none;
+  padding: 0;
+  font-size: 0.95em;
+  color: var(--pst-heading-color);
+}
+
+.eeo-card-explore {
+  border-top: 3px solid transparent !important;
+  border-image: var(--eeo-stripe) 1;
+  border-image-width: 3px 0 0 0;
+}
+
+/* -- Landing page ------------------------------------------------------------ */
+
+/* The page title is kept for the browser tab and screen readers; the hero
+   carries the visible heading. */
+section:has(> .eeo-hero) > h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.bd-main:has(.eeo-hero) .bd-article-container {
+  max-width: 74rem;
+  margin-inline: auto;
+}
+
+/* Doubled class: pydata's `.docutils.container` unsets side padding. */
+.eeo-hero.eeo-hero {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  margin: 0.5rem 0 3rem;
+  padding: clamp(1.5rem, 4vw, 3.25rem);
+  border-radius: 22px;
+  color: #e6eff9;
+  background:
+    radial-gradient(55% 75% at 100% 0%, rgba(140, 198, 63, 0.26), transparent 65%),
+    radial-gradient(65% 90% at 0% 100%, rgba(8, 117, 210, 0.5), transparent 60%),
+    linear-gradient(135deg, #0e2440 0%, #173960 55%, #0f4a7c 100%);
+}
+
+/* Raster grid, anchored to the top-right so the lit pixels line up. */
+.eeo-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: right -1px top -1px;
+  -webkit-mask-image: linear-gradient(115deg, transparent 15%, #000 85%);
+  mask-image: linear-gradient(115deg, transparent 15%, #000 85%);
+}
+
+/* A cluster of "NDVI" pixels lighting up in the top-right corner. */
+.eeo-hero::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: -27px;
+  width: 27px;
+  height: 27px;
+  box-shadow:
+    -28px 0 0 rgba(168, 220, 98, 0.55),
+    -56px 0 0 rgba(140, 198, 63, 0.35),
+    -84px 0 0 rgba(140, 198, 63, 0.18),
+    -140px 0 0 rgba(58, 160, 240, 0.22),
+    -28px 28px 0 rgba(140, 198, 63, 0.4),
+    -56px 28px 0 rgba(168, 220, 98, 0.5),
+    -112px 28px 0 rgba(140, 198, 63, 0.14),
+    -28px 56px 0 rgba(140, 198, 63, 0.22),
+    -84px 56px 0 rgba(140, 198, 63, 0.26),
+    -56px 84px 0 rgba(58, 160, 240, 0.2),
+    -28px 112px 0 rgba(140, 198, 63, 0.12);
+}
+
+/* Drop the grid wrapper's own padding and bottom margin so the content inset
+   is exactly the hero padding on every side. */
+.eeo-hero .sd-container-fluid {
+  padding-inline: 0;
+  margin-bottom: 0 !important; /* beats sphinx-design's sd-mb-4 utility */
+}
+
+.eeo-hero-code div[class^="highlight-"] {
+  margin-bottom: 0;
+}
+
+.eeo-hero .sd-row {
+  align-items: center;
+}
+
+.eeo-hero p {
+  margin-bottom: 0;
+}
+
+.eeo-hero .eeo-hero-eyebrow {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--eeo-leaf-bright);
+}
+
+.eeo-hero .eeo-hero-title {
+  margin-top: 0.75rem;
+  font-size: clamp(2rem, 4.2vw, 3rem);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+
+.eeo-hero .eeo-hero-lede {
+  margin-top: 1rem;
+  max-width: 34rem;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: rgba(230, 239, 249, 0.86);
+}
+
+.eeo-hero .eeo-hero-lede code.literal {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--eeo-leaf-bright);
+}
+
+.eeo-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.eeo-hero .eeo-btn.sd-btn {
+  padding: 0.6rem 1.35rem;
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.eeo-hero .eeo-btn.sd-btn:hover {
+  transform: translateY(-1px);
+}
+
+.eeo-hero .eeo-btn-primary.sd-btn {
+  background: var(--eeo-leaf);
+  border: 1px solid var(--eeo-leaf);
+  color: var(--eeo-navy-deep);
+}
+
+.eeo-hero .eeo-btn-primary.sd-btn:hover {
+  background: var(--eeo-leaf-bright);
+  color: var(--eeo-navy-deep);
+}
+
+.eeo-hero .eeo-btn-ghost.sd-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  color: #ffffff;
+}
+
+.eeo-hero .eeo-btn-ghost.sd-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.eeo-hero .eeo-hero-install {
+  margin-top: 1.25rem;
+}
+
+.eeo-hero .eeo-hero-install code.literal {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(4, 12, 24, 0.35);
+  color: #dbe8f6;
+  font-size: 0.85rem;
+}
+
+.eeo-hero .eeo-hero-install code.literal::before {
+  content: "$ ";
+  color: var(--eeo-leaf-bright);
+}
+
+/* The hero's code panel is always dark, whatever the colour mode. */
+.bd-article .eeo-hero-code div.highlight,
+.bd-article .eeo-hero-code div.highlight pre {
+  background: rgba(4, 12, 24, 0.72);
+}
+
+.bd-article .eeo-hero-code div.highlight {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.bd-article .eeo-hero-code div.highlight pre {
+  padding: 1.25rem 1.4rem;
+  color: #dbe7f5;
+}
+
+.bd-article .eeo-hero-code .highlight .n,
+.bd-article .eeo-hero-code .highlight .nb { color: #dbe7f5; }
+.bd-article .eeo-hero-code .highlight .kn,
+.bd-article .eeo-hero-code .highlight .k { color: #7fc0ff; }
+.bd-article .eeo-hero-code .highlight .nn { color: var(--eeo-leaf-bright); }
+.bd-article .eeo-hero-code .highlight .s2,
+.bd-article .eeo-hero-code .highlight .s1 { color: #ffd08a; }
+.bd-article .eeo-hero-code .highlight .mi,
+.bd-article .eeo-hero-code .highlight .kc { color: #f5a8c8; }
+.bd-article .eeo-hero-code .highlight .o,
+.bd-article .eeo-hero-code .highlight .p { color: #93a6bf; }
+
+.eeo-hero-code button.copybtn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
