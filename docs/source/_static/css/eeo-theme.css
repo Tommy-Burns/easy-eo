@@ -299,7 +299,8 @@ section:has(> .eeo-hero) > h1 {
   margin-inline: auto;
 }
 
-.eeo-hero {
+/* Doubled class: pydata's `.docutils.container` unsets side padding. */
+.eeo-hero.eeo-hero {
   position: relative;
   overflow: hidden;
   isolation: isolate;
@@ -349,6 +350,17 @@ section:has(> .eeo-hero) > h1 {
     -84px 56px 0 rgba(140, 198, 63, 0.26),
     -56px 84px 0 rgba(58, 160, 240, 0.2),
     -28px 112px 0 rgba(140, 198, 63, 0.12);
+}
+
+/* Drop the grid wrapper's own padding and bottom margin so the content inset
+   is exactly the hero padding on every side. */
+.eeo-hero .sd-container-fluid {
+  padding-inline: 0;
+  margin-bottom: 0 !important; /* beats sphinx-design's sd-mb-4 utility */
+}
+
+.eeo-hero-code div[class^="highlight-"] {
+  margin-bottom: 0;
 }
 
 .eeo-hero .sd-row {
