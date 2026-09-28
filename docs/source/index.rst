@@ -73,10 +73,16 @@ boilerplate code for simple operations such as raster reprojection, resampling, 
 between rasters, clipping, mosaicking, or plotting. Easy-EO abstracts these routines into
 **high-level, chainable methods**, allowing users to:
 
+- Load satellite imagery of any area of interest **straight into your code** from a STAC
+  catalog, without visiting a download portal or fetching full scenes — only your area
+  is read (see :doc:`user_guide/loading_satellite_data`).
 - Perform multiple operations in a single, readable chain.
 - Persist intermediate results **in memory** without writing to disk unnecessarily.
 - Automatically align rasters with differing shapes or coordinate reference systems.
 - Return a consistent **EEORasterDataset** object from each operation, enabling further chaining.
+- Handle many acquisitions of the same place as **one time series**: build cloud-free
+  composites, group scenes by week, month, or year, and plot how a pixel changes over time
+  (see :doc:`user_guide/time_series`).
 - Use **terminal visualization methods** for plotting bands, composites, and histograms,
   which do not return EEORasterDataset but instead display results.
 
