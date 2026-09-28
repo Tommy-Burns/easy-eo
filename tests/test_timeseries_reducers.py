@@ -9,6 +9,7 @@ import datetime as dt
 
 import numpy as np
 import pytest
+import rasterio as rio
 from rasterio.transform import from_origin
 
 import eeo
@@ -230,6 +231,50 @@ def test_a_single_timestep_series_reduces_to_itself():
 def test_an_unknown_reduction_is_refused(season_series):
     with pytest.raises(ValidationError, match="how must be"):
         reducers.reduce_series(season_series, "mode")
+
+
+def test_an_empty_band_list_is_refused(season_series):
+    with pytest.raises(ValidationError, match="bands is empty"):
+        reducers.median(season_series, bands=[])
+
+
+def outputs_opened(monkeypatch):
+    """Record every raster a reduction opens to write into, and its MemoryFile."""
+    opened = []
+    real_open, real_memfile = rio.open, rio.io.MemoryFile
+
+    def spy_open(path, mode="r", **kwargs):
+        dataset = real_open(path, mode, **kwargs)
+        if mode == "w":
+            opened.append(dataset)
+        return dataset
+
+    def spy_memfile(*args, **kwargs):
+        opened.append(real_memfile(*args, **kwargs))
+        return opened[-1]
+
+    monkeypatch.setattr(rio, "open", spy_open)
+    monkeypatch.setattr(rio.io, "MemoryFile", spy_memfile)
+    return opened
+
+
+def failing_block(*args, **kwargs):
+    raise RuntimeError("out of memory")
+
+
+@pytest.mark.parametrize("to_disk", [False, True], ids=["in-memory", "save_path"])
+def test_a_failed_reduction_closes_its_half_written_output(
+    season_series, tmp_path, monkeypatch, to_disk
+):
+    opened = outputs_opened(monkeypatch)
+    monkeypatch.setattr(reducers, "_reduce_block", failing_block)
+
+    with pytest.raises(RuntimeError, match="out of memory"):
+        season_series.median(save_path=tmp_path / "composite.tif" if to_disk else None)
+
+    # Left open, its dirty blocks would sit in GDAL's cache.
+    assert opened
+    assert all(handle.closed for handle in opened)
 
 
 def test_the_reducers_are_also_plain_functions(season_series):

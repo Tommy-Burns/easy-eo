@@ -152,6 +152,13 @@ def test_something_that_is_not_a_collection_is_refused():
         eeo.time_series(7)
 
 
+def test_the_constructor_names_the_timestep_that_is_not_a_dataset():
+    # eeo.time_series refuses this before the constructor sees it; calling the
+    # class directly is the path that reaches this check.
+    with pytest.raises(ValidationError, match="timestep 1 is a str"):
+        EEOTimeSeries([scene(1), "not a dataset"])
+
+
 def test_assets_are_refused_for_loaded_datasets():
     with pytest.raises(ValidationError, match="already\n?\\s*loaded"):
         eeo.time_series([scene(1)], assets=["B04"])
@@ -208,6 +215,18 @@ def test_the_duplicate_warning_names_both_causes_and_both_fixes():
     assert "mosaic" in message
     # And it says how many, so a long series is diagnosable from the warning.
     assert "1 acquisition time(s)" in message
+
+
+def test_the_duplicate_warning_lists_three_times_and_counts_the_rest():
+    doubled = [scene(month, value=value) for month in (2, 3, 4, 5, 6) for value in (10, 20)]
+
+    with pytest.warns(UserWarning, match="deduplicate") as caught:
+        eeo.time_series(doubled)
+
+    message = easy_eo_warning(caught, "appear more than once")
+    assert "5 acquisition time(s)" in message
+    assert "2023-04-01 00:00:00+00:00, and 2 more" in message
+    assert "2023-05-01" not in message
 
 
 def test_a_series_without_duplicates_is_quiet(recwarn):
@@ -766,6 +785,47 @@ def test_assets_are_required_for_a_stac_source(items):
 def test_a_failed_load_leaves_no_cache_behind(items):
     with pytest.raises(ValidationError):
         EEOTimeSeries.from_stac(items, ["B99"])
+
+
+def with_a_broken_last_item(items, tmp_path):
+    """``items`` plus a December item lacking B04, so it fails after the others load."""
+    broken = FakeItem(
+        {"B08": write_asset(tmp_path / "scene_12.tif", fill=400)},
+        timestamp=dt.datetime(2023, 12, 12, 10, 6, 21, tzinfo=UTC),
+        item_id="S2A_202312",
+    )
+    return [*items, eeo.io.STACItem(broken)]
+
+
+def test_a_load_failing_partway_removes_the_scenes_already_cached(items, tmp_path, monkeypatch):
+    import eeo.timeseries.core as timeseries_core
+
+    made = []
+    real_directory = timeseries_core.tempfile.TemporaryDirectory
+
+    def recorded(**kwargs):
+        made.append(real_directory(**kwargs))
+        return made[-1]
+
+    monkeypatch.setattr(timeseries_core.tempfile, "TemporaryDirectory", recorded)
+
+    with pytest.raises(ValidationError):
+        EEOTimeSeries.from_stac(with_a_broken_last_item(items, tmp_path), ["B04"])
+
+    # Three scenes were read into the cache before the fourth failed.
+    assert len(made) == 1
+    assert not Path(made[0].name).exists()
+
+
+def test_a_load_failing_partway_keeps_a_named_cache(items, tmp_path):
+    kept = tmp_path / "cache"
+
+    with pytest.raises(ValidationError):
+        EEOTimeSeries.from_stac(with_a_broken_last_item(items, tmp_path), ["B04"], cache=kept)
+
+    # A directory the caller named is theirs: the scenes read so far stay, and a
+    # retry can see what was fetched.
+    assert len(list(kept.glob("*.tif"))) == 3
 
 
 def test_lazy_chunks_open_cached_scenes_on_the_lazy_backend(items):

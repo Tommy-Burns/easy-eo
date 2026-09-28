@@ -180,8 +180,8 @@ class TemporalBins:
 
     def __repr__(self) -> str:
         """Return a one-line summary: period count, alias, and time span."""
-        if not self._periods:
-            return f"<TemporalBins: 0 periods of {self.freq!r}>"
+        # Never empty: a series holds at least one timestep, and that timestep
+        # falls in some period.
         labels = self.labels
         sizes = ", ".join(str(len(members)) for _, members in self._periods[:6])
         if len(self._periods) > 6:

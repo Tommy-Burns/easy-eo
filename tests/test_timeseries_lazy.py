@@ -229,3 +229,26 @@ def test_a_reduction_of_a_lazy_series_can_stream_to_disk(lazy, tmp_path):
         assert saved.shape == (SIDE, SIDE)
         assert saved.dtypes == ("float32",)
     result.close()
+
+
+def test_a_lazily_backed_but_unchunked_series_stays_lazy_when_saved(scene_paths, tmp_path):
+    from eeo.core.core import EEORasterDataset
+
+    # An XarrayAdapter over an in-memory DataArray: on the lazy backend, but
+    # with no chunks to carry over, so the saved files are left to dask's own.
+    unchunked = eeo.time_series(
+        [
+            EEORasterDataset(
+                XarrayAdapter(eeo.load_raster(path, chunks="auto").ds.compute()),
+                timestamp=dt.datetime(2023, month, 1, tzinfo=UTC),
+            )
+            for month, path in zip(MONTHS, scene_paths, strict=True)
+        ]
+    )
+
+    result = unchunked.map(eeo.multiply, other=2, save_dir=tmp_path / "doubled")
+
+    assert all(isinstance(ds._adapter, XarrayAdapter) for ds in result)
+    assert all(ds._adapter.chunk_sizes is not None for ds in result)
+    result.close()
+    unchunked.close()

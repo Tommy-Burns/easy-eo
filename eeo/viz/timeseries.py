@@ -120,7 +120,9 @@ def plot_trajectory(
 
     if title is None:
         x, y = table.attrs.get("x"), table.attrs.get("y")
-        title = f"({x:g}, {y:g})" if x is not None and y is not None else None
+        # Ten significant figures: a projected northing has seven digits, which
+        # :g would round into an exponent.
+        title = f"({x:.10g}, {y:.10g})" if x is not None and y is not None else None
     if title:
         ax.set_title(title)
 

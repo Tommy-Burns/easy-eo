@@ -116,6 +116,25 @@ def test_an_unknown_band_is_refused(season_series):
         season_series.extract_at(INSIDE, bands=["swir"])
 
 
+def test_an_empty_band_list_is_refused(season_series):
+    with pytest.raises(ValidationError, match="bands is empty"):
+        season_series.extract_at(INSIDE, bands=[])
+
+
+def test_crs_is_refused_for_a_series_that_declares_none():
+    unplaced = eeo.load_array(
+        np.full((1, 4, 4), 7, dtype="uint16"),
+        transform=from_origin(500_000.0, 4_200_000.0, 10.0, 10.0),
+        crs=None,
+        timestamp=dt.datetime(2023, 5, 1, tzinfo=UTC),
+    )
+    ts = eeo.time_series([unplaced])
+
+    # There is nothing to transform the point onto.
+    with pytest.raises(ValidationError, match="declares none"):
+        ts.extract_at((11.1, 46.6), crs="EPSG:4326")
+
+
 def test_an_index_trajectory_reads_as_a_season(season_series):
     ndvi = season_series.map(eeo.ndvi, red="red", nir="nir", name="ndvi")
 

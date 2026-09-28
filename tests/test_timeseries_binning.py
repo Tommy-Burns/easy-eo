@@ -278,6 +278,28 @@ def test_a_saved_result_keeps_its_period_as_its_timestamp(season, tmp_path):
     monthly.close()
 
 
+def test_a_period_that_fails_releases_the_periods_already_reduced(season, monkeypatch):
+    real_median = EEOTimeSeries.median
+    finished, released = [], []
+
+    def median_failing_on_the_second_period(self, **kwargs):
+        if finished:
+            raise RuntimeError("disk full")
+        result = real_median(self, **kwargs)
+        result.close = lambda: released.append(result)
+        finished.append(result)
+        return result
+
+    monkeypatch.setattr(EEOTimeSeries, "median", median_failing_on_the_second_period)
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        season.resample_time("MS").median()
+
+    # March's result would otherwise hold its raster until it was collected.
+    assert len(released) == 1
+    assert released[0] is finished[0]
+
+
 # --------------------------------------------------------------------------
 # A composite per period
 # --------------------------------------------------------------------------

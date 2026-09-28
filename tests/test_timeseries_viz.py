@@ -190,6 +190,32 @@ def test_the_trajectory_is_also_a_plain_function(series, monkeypatch):
     assert len(lines) == 1
 
 
+def titles_set(monkeypatch):
+    """Record every axes title a plot sets."""
+    titles = []
+    real_set_title = Axes.set_title
+
+    def spy(self, label, *args, **kwargs):
+        titles.append(label)
+        return real_set_title(self, label, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "set_title", spy)
+    return titles
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [(None, ["(500015, 4199985)"]), ("Field 12", ["Field 12"]), ("", [])],
+    ids=["default-is-the-point", "given", "empty-means-none"],
+)
+def test_the_trajectory_title(series, monkeypatch, title, expected):
+    titles = titles_set(monkeypatch)
+
+    series.plot_trajectory(INSIDE, title=title)
+
+    assert titles == expected
+
+
 # --------------------------------------------------------------------------
 # The filmstrip
 # --------------------------------------------------------------------------
@@ -212,14 +238,7 @@ def test_panels_are_in_time_order(series, monkeypatch):
 
 
 def test_panels_are_titled_with_their_acquisition_date(series, monkeypatch):
-    titles = []
-    real_set_title = Axes.set_title
-
-    def spy(self, label, *args, **kwargs):
-        titles.append(label)
-        return real_set_title(self, label, *args, **kwargs)
-
-    monkeypatch.setattr(Axes, "set_title", spy)
+    titles = titles_set(monkeypatch)
 
     series.plot_filmstrip()
 
@@ -254,6 +273,43 @@ def test_a_scale_per_panel_can_be_asked_for(series, monkeypatch):
     # falls back to matplotlib's own autoscaling — which is per panel, and so
     # still differs between them.
     assert len({clim for _, clim in images}) == len(MONTHS)
+
+
+def ramp(month):
+    """A single-band scene whose 16 pixels climb from ``month * 100``."""
+    values = month * 100 + np.arange(16, dtype="uint16").reshape(1, 4, 4)
+    return eeo.load_array(
+        values,
+        transform=TRANSFORM,
+        crs=UTM,
+        band_names=["red"],
+        timestamp=dt.datetime(2023, month, 1, tzinfo=UTC),
+    )
+
+
+def test_a_scale_per_panel_stretches_each_panel_over_its_own_values(monkeypatch):
+    ts = eeo.time_series([ramp(month) for month in MONTHS])
+    images = drawn_images(monkeypatch)
+
+    ts.plot_filmstrip(shared_scale=False)
+
+    for (array, clim), month in zip(images, MONTHS, strict=True):
+        assert clim == pytest.approx(np.percentile(np.ma.compressed(array), (2, 98)))
+        assert month * 100 < clim[0] < clim[1] < month * 100 + 15
+    ts.close()
+
+
+def test_a_shared_scale_with_no_range_leaves_the_scaling_to_matplotlib(monkeypatch):
+    # One value in every pixel of every panel: no percentile range to stretch
+    # over, so no limits are forced and the panels still draw.
+    ts = eeo.time_series([scene(month, value=500) for month in MONTHS])
+    images = drawn_images(monkeypatch)
+
+    ts.plot_filmstrip(band="red")
+
+    assert len(images) == len(MONTHS)
+    assert {clim for _, clim in images} == {(500.0, 500.0)}
+    ts.close()
 
 
 def test_a_colorbar_is_drawn_only_for_a_shared_scale(series, monkeypatch):
@@ -332,6 +388,23 @@ def test_the_filmstrip_can_be_saved(series, tmp_path):
     series.plot_filmstrip(save_path=out)
 
     assert out.exists() and out.stat().st_size > 0
+
+
+def test_the_filmstrip_can_be_titled(series, monkeypatch):
+    from matplotlib.figure import Figure
+
+    titles = []
+    real_suptitle = Figure.suptitle
+
+    def spy(self, text, *args, **kwargs):
+        titles.append(text)
+        return real_suptitle(self, text, *args, **kwargs)
+
+    monkeypatch.setattr(Figure, "suptitle", spy)
+
+    series.plot_filmstrip(title="Spring green-up")
+
+    assert titles == ["Spring green-up"]
 
 
 def test_the_filmstrip_is_also_a_plain_function(series, monkeypatch):
