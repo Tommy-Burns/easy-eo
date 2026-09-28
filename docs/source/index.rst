@@ -94,6 +94,7 @@ runnable notebooks — each one openable in Colab with nothing to install.
    user_guide/nodata_and_dtype
    user_guide/visualization
    user_guide/statistical_locations
+   user_guide/time_series
    user_guide/xarray_interop
    user_guide/large_rasters
    backends
@@ -110,4 +111,5 @@ runnable notebooks — each one openable in Colab with nothing to install.
    modules/io
    modules/ops
    modules/preprocessing
+   modules/timeseries
    modules/viz

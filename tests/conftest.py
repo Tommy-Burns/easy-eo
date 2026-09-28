@@ -17,6 +17,7 @@ import os
 import pathlib
 import socket
 import warnings
+from datetime import datetime, timezone
 
 import matplotlib
 
@@ -31,6 +32,7 @@ from affine import Affine
 from rasterio.crs import CRS
 from rasterio.transform import from_origin
 
+import eeo
 from eeo import load_array
 
 UTM_CRS = CRS.from_epsg(32633)
@@ -288,3 +290,92 @@ def raster_3x3():
         transform=from_origin(0, 3, 1, 1),
         crs=GEO_CRS,
     )
+
+
+# Five monthly acquisitions over one growing season, for the time-series layer.
+# Red dips and near-infrared peaks in midsummer, so an index computed across the
+# stack traces a season rather than noise, and every reduction is a round number.
+SEASON_MONTHS = (3, 4, 5, 6, 7)
+SEASON_RED = (1000, 900, 800, 900, 1000)
+SEASON_NIR = (2000, 3000, 4000, 3000, 2000)
+SEASON_NODATA = 0
+# Pixel (0, 0) is nodata at the third and fourth timesteps only, so a reducer
+# that ignores nodata and one that does not give different answers there.
+SEASON_GAPS = (2, 3)
+
+
+@pytest.fixture
+def season_stack():
+    """Five 4x4 two-band uint16 scenes, one per month of a growing season.
+
+    Rasterio-backed, all on the same UTM grid, bands named ``red`` and ``nir``,
+    each carrying its acquisition time (the first of March through July 2023,
+    UTC) so they can be handed straight to a time series. Values are uniform
+    within a scene and hand-computable across the stack:
+
+    ==========  ====  ====  ====
+    timestep    red   nir   NDVI
+    ==========  ====  ====  ====
+    2023-03-01  1000  2000  1/3
+    2023-04-01   900  3000  0.538…
+    2023-05-01   800  4000  2/3
+    2023-06-01   900  3000  0.538…
+    2023-07-01  1000  2000  1/3
+    ==========  ====  ====  ====
+
+    So over the stack red has median 900, mean 920, min 800, max 1000, and nir
+    has median 3000, mean 2800, min 2000, max 4000.
+
+    Every scene declares ``nodata=0``, and pixel (0, 0) *is* 0 at the third and
+    fourth timesteps, so a nodata-aware reduction over that pixel sees only
+    three values while a naive one averages in two zeros.
+    """
+    scenes = []
+    for index, month in enumerate(SEASON_MONTHS):
+        bands = np.stack(
+            [
+                np.full((4, 4), SEASON_RED[index], dtype=np.uint16),
+                np.full((4, 4), SEASON_NIR[index], dtype=np.uint16),
+            ]
+        )
+        if index in SEASON_GAPS:
+            bands[:, 0, 0] = SEASON_NODATA
+        scenes.append(
+            load_array(
+                bands,
+                transform=_north_up(),
+                crs=UTM_CRS,
+                nodata=SEASON_NODATA,
+                timestamp=datetime(2023, month, 1, tzinfo=timezone.utc),
+                band_names=["red", "nir"],
+            ).to_rasterio()
+        )
+    yield scenes
+    for scene in scenes:
+        scene.close()
+
+
+@pytest.fixture
+def season_series(season_stack):
+    """The :func:`season_stack` scenes as an ``EEOTimeSeries``, oldest first."""
+    series = eeo.time_series(season_stack)
+    yield series
+    series.close()
+
+
+@pytest.fixture
+def season_reference(season_stack):
+    """A single-band constant 1000 raster on the season grid, for two-raster ops.
+
+    The partner for a normalized difference across the stack: with it, band 1 of
+    each result is ``(red - 1000) / (red + 1000)`` and band 2
+    ``(nir - 1000) / (nir + 1000)``, both hand-computable per timestep.
+    """
+    ds = load_array(
+        np.full((4, 4), 1000, dtype=np.uint16),
+        transform=_north_up(),
+        crs=UTM_CRS,
+        nodata=SEASON_NODATA,
+    ).to_rasterio()
+    yield ds
+    ds.close()

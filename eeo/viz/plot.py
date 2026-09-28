@@ -481,7 +481,9 @@ def _add_colorbar(fig, ax, mappable, ds: EEORasterDataset, band: int, label: str
         colorbar.set_label(text)
 
 
-def _display_out_shape(shape: tuple[int, int], figsize: tuple[int, int]) -> tuple[int, int] | None:
+def _display_out_shape(
+    shape: tuple[int, int], figsize: tuple[float, float]
+) -> tuple[int, int] | None:
     """Compute a decimated read shape capped at the figure's display budget.
 
     The budget is the figure size in pixels (``figsize`` times the Matplotlib
@@ -491,7 +493,7 @@ def _display_out_shape(shape: tuple[int, int], figsize: tuple[int, int]) -> tupl
     ----------
     shape : tuple of int
         Native raster shape as ``(height, width)`` in pixels.
-    figsize : tuple of int
+    figsize : tuple of float
         Figure size in inches, as passed to ``matplotlib.pyplot.subplots``.
 
     Returns
@@ -513,7 +515,7 @@ def _display_out_shape(shape: tuple[int, int], figsize: tuple[int, int]) -> tupl
 
 
 def _read_band_for_display(
-    ds: EEORasterDataset, band: int, figsize: tuple[int, int]
+    ds: EEORasterDataset, band: int, figsize: tuple[float, float]
 ) -> tuple[np.ndarray, Affine]:
     """Read one band at display resolution, with a matching transform.
 
@@ -529,8 +531,9 @@ def _read_band_for_display(
         Dataset to read from.
     band : int
         1-based band index.
-    figsize : tuple of int
-        Figure size in inches, used to derive the display budget.
+    figsize : tuple of float
+        Figure size in inches, used to derive the display budget. A grid of
+        panels passes one panel's size, not the whole figure's.
 
     Returns
     -------

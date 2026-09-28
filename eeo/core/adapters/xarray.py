@@ -201,6 +201,23 @@ class XarrayAdapter(BaseRasterAdapter):
         """File this array was opened from, or None if it was not opened from one."""
         return self._source_path
 
+    @property
+    def chunk_sizes(self) -> dict[str, int] | None:
+        """Chunk sizes this array is split into, or None if it is not chunked.
+
+        The first chunk of each dimension, which is the size every chunk but the
+        last one has. It is what reopens a derived raster on this backend with
+        the same chunking as the raster it came from, rather than guessing.
+        """
+        chunks = getattr(self._da.data, "chunks", None)
+        if not chunks:
+            return None
+        return {
+            dimension: int(sizes[0])
+            for dimension, sizes in zip(_DIMS, chunks, strict=True)
+            if sizes
+        }
+
     # ========================
     # Metadata
     # ========================

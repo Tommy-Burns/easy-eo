@@ -7,6 +7,7 @@ from .plot import (
     plot_raster,
     plot_raster_with_histogram,
 )
+from .timeseries import plot_filmstrip, plot_trajectory
 
 __all__ = [
     "plot_raster",
@@ -14,4 +15,6 @@ __all__ = [
     "plot_histogram",
     "plot_composite",
     "plot_raster_with_histogram",
+    "plot_trajectory",
+    "plot_filmstrip",
 ]

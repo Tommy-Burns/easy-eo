@@ -195,6 +195,19 @@ def test_reading_an_in_memory_dataarray_hands_back_a_copy(lazy_extra, stack_path
     np.testing.assert_array_equal(adapter.read(1), load_raster(stack_path).read(1))
 
 
+def test_chunk_sizes_report_the_leading_chunk_of_each_dimension(lazy_extra, stack_path):
+    chunked = load_raster(stack_path, chunks=20)
+
+    # 60 rows and 80 columns split into 20s; the 3 bands fit in one chunk.
+    assert chunked._adapter.chunk_sizes == {"band": 3, "y": 20, "x": 20}
+
+
+def test_an_in_memory_dataarray_reports_no_chunk_sizes(lazy_extra, stack_path):
+    loaded = load_raster(stack_path, chunks=20).ds.compute()  # dask -> in memory
+
+    assert XarrayAdapter(loaded).chunk_sizes is None
+
+
 # -------------------------------------------------------------- metadata
 
 

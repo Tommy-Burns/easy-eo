@@ -25,6 +25,7 @@ This module needs the optional ``xarray`` extra::
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -168,6 +169,74 @@ def _to_dataarray(ds: EEORasterDataset) -> Any:
         da = da.rio.write_nodata(nodata)
 
     return da
+
+
+# --------------------------------------------------------------------------
+# EEOTimeSeries -> DataArray
+# --------------------------------------------------------------------------
+
+
+def _stack_attrs(parts: Sequence[Any]) -> dict[str, Any]:
+    """Attrs for a stacked array: the georeferencing ones, plus what all agree on.
+
+    xarray's own rule when concatenating is that the first array's attrs win,
+    which on a time stack puts one timestep's provenance — a STAC item id, a
+    processing time — onto an array describing all of them. So a free-form attr
+    survives only where every timestep states the same value, which is the rule
+    the temporal reducers already apply to a raster made from many.
+
+    The managed attrs are georeferencing rather than provenance, and are taken
+    from the first timestep: dropping ``_FillValue`` because two timesteps
+    declare different nodata would lose the declaration altogether, and the
+    series already says its grid and band names are the reference timestep's.
+    """
+    first, *rest = [part.attrs for part in parts]
+
+    def survives(key: str, value: Any) -> bool:
+        if key in _MANAGED_ATTRS:
+            return True
+        return all(key in other and other[key] == value for other in rest)
+
+    return {key: value for key, value in first.items() if survives(key, value)}
+
+
+def series_to_xarray(series: Any) -> Any:
+    """Stack a time series into one DataArray with a ``time`` dimension.
+
+    Implements :meth:`eeo.EEOTimeSeries.to_xarray`, which is the documented
+    entry point; see its docstring for the full contract.
+
+    Each timestep is converted as a single raster would be — which already puts
+    its acquisition time in as a scalar ``time`` coordinate — and concatenating
+    along that coordinate promotes it to a real dimension. The time values come
+    from the *series*, not from the datasets: a series can be given timestamps
+    its datasets do not carry, and those are the authoritative ones.
+
+    Parameters
+    ----------
+    series : EEOTimeSeries
+        Series to stack.
+
+    Returns
+    -------
+    xarray.DataArray
+        Dimensions ``("time", "band", "y", "x")``, georeferenced through
+        rioxarray, with the attrs every timestep agrees on.
+
+    Raises
+    ------
+    MissingDependencyError
+        If the ``xarray`` extra is not installed.
+    """
+    xr = _import_xarray()
+
+    parts = [
+        _to_dataarray(ds).assign_coords(time=_as_datetime64(stamp))
+        for ds, stamp in zip(series, series.timestamps, strict=True)
+    ]
+    stacked = xr.concat(parts, dim="time")
+    stacked.attrs = _stack_attrs(parts)
+    return stacked
 
 
 # --------------------------------------------------------------------------

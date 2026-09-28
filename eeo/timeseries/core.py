@@ -1,0 +1,2317 @@
+"""Ordered, timestamped collections of rasters.
+
+Holds :class:`EEOTimeSeries` and the :func:`time_series` entry point that
+builds one. A time series is deliberately a separate type from a multi-band
+dataset: bands are what a sensor measured at one moment, timesteps are the same
+measurement repeated, and collapsing the two would make a spectral stack and a
+temporal stack indistinguishable.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import datetime as dt
+import logging
+import os
+import re
+import tempfile
+import warnings
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
+from typing import Any, cast, overload
+
+import rasterio as rio
+from rasterio import CRS
+from rasterio.transform import Affine
+from rasterio.warp import reproject
+
+from eeo.common import get_nodata, normalize_resampling_method, resolve_band_index
+from eeo.core.adapters import RasterioAdapter, XarrayAdapter
+from eeo.core.adapters.xarray import validate_chunks
+from eeo.core.core import EEORasterDataset
+from eeo.core.exceptions import AlignmentError, CRSMismatchError, ValidationError
+from eeo.core.loader import load_raster
+from eeo.core.types import ChunkSpec, ResamplingMethod, StrPath
+from eeo.io._dedupe import processing_rank
+from eeo.io.stac import STACItem, STACSearchResult
+from eeo.preprocessing.masking import _find_quality_band, mask_clouds
+from eeo.preprocessing.quality import QA_PIXEL_DEFAULT_MIN_CLOUD_CONFIDENCE
+from eeo.timeseries import extract, reducers
+from eeo.timeseries.binning import TemporalBins, resample_time
+
+_UTC = dt.timezone.utc
+
+_LOGGER = logging.getLogger(__name__)
+
+# Sentinel-2 processing baseline 04.00 was deployed on this date, and from it an
+# L2A product carries BOA_ADD_OFFSET (-1000 DN for every band in practice), so
+# the same ground reads about 1000 DN higher after it than before. Until
+# Easy-EO decodes reflectance, a series spanning the date mixes two radiometric
+# conventions, which is worth a warning rather than a silent bias.
+# https://sentinels.copernicus.eu/-/imminent-deployment-of-sentinel-2-processing-baseline-04.00-on-25-january-2022
+_BASELINE_04_00 = dt.datetime(2022, 1, 25, tzinfo=_UTC)
+
+_NO_TIMESTAMP = (
+    "timestep {index} carries no timestamp, and a time series is ordered by "
+    "time. Give every dataset one at load time (load_raster(..., "
+    "timestamp=...); the Sentinel-2, Landsat and STAC loaders do it for you), "
+    "or pass timestamps=[...] with one entry per dataset."
+)
+
+_NO_MATCHES = (
+    "no files in {folder} match {pattern!r}. Check the pattern — it is a glob, "
+    "so {pattern!r} matches only that directory's own files, and '**/*.tif' "
+    "walks subdirectories too — and check the extension: on Linux and macOS a "
+    "glob is case-sensitive, so a folder of '.TIF' files needs '*.TIF' there."
+)
+
+_NO_DATE_IN_NAME = (
+    "{name!r} carries no date in its name, and a time series is ordered by "
+    "time. Recognised forms are an 8-digit or dash-separated date, optionally "
+    "followed by a time: '20230412', '2023-04-12', '20230412T100621' (what a "
+    "Sentinel-2 or Landsat filename holds). For anything else, pass a function "
+    "that reads the date wherever it lives — here, out of the folder around "
+    "each file:\n\n"
+    "    ts = eeo.time_series(\n"
+    "        folder,\n"
+    "        timestamp=lambda path: datetime.fromisoformat(path.parent.name),\n"
+    "    )\n\n"
+    "A STAC search needs none of this — every item states its acquisition "
+    "time — so eeo.time_series(eeo.stac_search(...), assets=[...]) is the "
+    "shorter path where the scenes are in a catalog."
+)
+
+# An ISO-ish date, optionally with a time, anywhere in a filename: '2023-04-12',
+# '20230412', '20230412T100621', '2023-04-12_10:06:21'. The separator is
+# back-referenced so a half-punctuated '2023-0412' is not read as a date, and
+# the digit run is bounded at both ends so an 8-digit stretch of a longer number
+# is not either. Deliberately not a strptime pattern: the formats worth
+# recognising are few, and a format mini-language is a second thing to learn
+# where a callable is already the escape hatch.
+_FILENAME_DATE = re.compile(
+    r"""
+    (?<!\d)
+    (?P<year>\d{4}) (?P<dsep>-?) (?P<month>\d{2}) (?P=dsep) (?P<day>\d{2})
+    (?:
+        [T_ ]
+        (?P<hour>\d{2}) (?P<tsep>:?) (?P<minute>\d{2}) (?P=tsep) (?P<second>\d{2})
+    )?
+    (?!\d)
+    """,
+    re.VERBOSE,
+)
+
+
+def _as_utc(value: object, *, index: int) -> dt.datetime:
+    """Coerce one timestamp to a timezone-aware UTC datetime.
+
+    A naive datetime is read as UTC rather than rejected, matching what the
+    Sentinel-2 and Landsat metadata parsers already do. Without this, a series
+    mixing a loader's aware timestamp with a hand-written naive one could not
+    even be sorted: comparing the two raises ``TypeError``.
+    """
+    if not isinstance(value, dt.datetime):
+        raise ValidationError(
+            f"timestamp {index} must be a datetime.datetime; got {type(value).__name__}"
+        )
+    return value if value.tzinfo is not None else value.replace(tzinfo=_UTC)
+
+
+def _resolve_timestamps(
+    datasets: Sequence[EEORasterDataset], timestamps: Sequence[dt.datetime] | None
+) -> list[dt.datetime]:
+    """Return one UTC timestamp per dataset, from ``timestamps`` or the datasets."""
+    if timestamps is None:
+        resolved = []
+        for index, ds in enumerate(datasets):
+            if ds.timestamp is None:
+                raise ValidationError(_NO_TIMESTAMP.format(index=index))
+            resolved.append(_as_utc(ds.timestamp, index=index))
+        return resolved
+
+    given = list(timestamps)
+    if len(given) != len(datasets):
+        raise ValidationError(
+            f"timestamps has {len(given)} entries but there are {len(datasets)} "
+            f"datasets; give exactly one timestamp per dataset"
+        )
+    return [_as_utc(value, index=index) for index, value in enumerate(given)]
+
+
+def _timestamp_from_name(path: Path) -> dt.datetime:
+    """Read an acquisition time out of a filename, as UTC.
+
+    Scans left to right and takes the first match that is a real date, so a
+    name holding something that merely looks like one — a tile id, a version
+    number — falls through to the date after it. Only the filename is read, not
+    the directories above it: a folder named by date is a convention, and
+    guessing at it would make the timestamp depend on where the file was
+    stored. ``timestamp=`` covers that case.
+    """
+    for match in _FILENAME_DATE.finditer(path.name):
+        parts = match.groupdict()
+        try:
+            return dt.datetime(
+                int(parts["year"]),
+                int(parts["month"]),
+                int(parts["day"]),
+                int(parts["hour"] or 0),
+                int(parts["minute"] or 0),
+                int(parts["second"] or 0),
+                tzinfo=_UTC,
+            )
+        except ValueError:
+            continue
+    raise ValidationError(_NO_DATE_IN_NAME.format(name=path.name))
+
+
+def _timestamp_for(resolve: Callable[[Path], dt.datetime], path: Path) -> dt.datetime:
+    """Apply a timestamp resolver to one path, naming the file if it misbehaves.
+
+    The generic timestamp check reports a position, which says nothing about
+    which file on disk was at fault; a folder's timestamps are per-file, so the
+    filename is the useful thing to report.
+    """
+    value = resolve(path)
+    if not isinstance(value, dt.datetime):
+        raise ValidationError(
+            f"timestamp= returned a {type(value).__name__} for {path.name!r}, but a "
+            f"timestep is placed in time by a datetime.datetime"
+        )
+    return value if value.tzinfo is not None else value.replace(tzinfo=_UTC)
+
+
+def _through_file(
+    scene: EEORasterDataset,
+    directory: StrPath,
+    index: int,
+    chunks: ChunkSpec | None,
+    *,
+    timestamp: dt.datetime,
+) -> EEORasterDataset:
+    """Write one in-memory raster into ``directory`` and reopen it from there.
+
+    Reopening is what bounds a series' memory: a file-backed dataset reads no
+    pixels until an operation asks for a window, while an in-memory one — what a
+    catalog load and every operation produce — holds its whole array. The
+    timestamp and attrs are carried over explicitly because they live in Python,
+    not in the GeoTIFF; band names survive in the file's band descriptions and
+    are passed anyway so the reopened dataset is identical either way.
+    """
+    path = Path(os.fspath(directory)) / f"{index:04d}_{timestamp:%Y%m%dT%H%M%S}.tif"
+    scene.save_raster(path)
+    attrs = dict(scene.attrs)
+    band_names = scene.band_names
+    scene.close()
+    return load_raster(path, chunks=chunks, timestamp=timestamp, attrs=attrs, band_names=band_names)
+
+
+def _crs_of(ds: EEORasterDataset) -> CRS | None:
+    """Return a dataset's CRS as a :class:`rasterio.crs.CRS`, or None if it has none.
+
+    A NumPy-backed dataset hands back whatever was passed to
+    :func:`eeo.load_array` — an EPSG int or a string, not necessarily a ``CRS``
+    — so comparing two datasets' CRSs directly can report a mismatch between
+    two spellings of the same system. Everything here compares this instead.
+    """
+    crs = ds.get_crs()
+    if crs is None or isinstance(crs, CRS):
+        return crs
+    return CRS.from_user_input(crs)
+
+
+def _same_grid(ds: EEORasterDataset, reference: EEORasterDataset) -> bool:
+    """Report whether two datasets share a pixel grid exactly."""
+    return (
+        ds.get_shape() == reference.get_shape() and ds.get_transform() == reference.get_transform()
+    )
+
+
+def _onto_grid(
+    ds: EEORasterDataset, reference: EEORasterDataset, *, method: str
+) -> EEORasterDataset:
+    """Warp one dataset onto another's exact grid: its CRS, transform and shape.
+
+    Alignment across time has to land on the reference grid *exactly* —
+    timesteps of one area differ in origin and extent, not merely in size, and a
+    composite of rasters that merely share a shape would average different
+    ground. So this warps to an explicit destination grid rather than resampling
+    to a shape.
+
+    The dtype and nodata value are the input's; the timestamp, attrs and band
+    names are carried over, since this is called directly rather than through
+    the operation decorator that would otherwise do it.
+    """
+    source = ds.to_rasterio()
+    target_crs = _crs_of(reference)
+    transform = reference.get_transform()
+    height, width = reference.get_shape()
+    nodata = get_nodata(source)
+    resampling = normalize_resampling_method(method)
+
+    meta = source.get_metadata()
+    meta.update(crs=target_crs, transform=transform, width=width, height=height)
+
+    def warp_bands(destination):
+        for band in range(1, source.get_count() + 1):
+            reproject(
+                source=rio.band(source.ds, band),
+                destination=rio.band(destination, band),
+                src_transform=source.get_transform(),
+                src_crs=_crs_of(source),
+                dst_transform=transform,
+                dst_crs=target_crs,
+                src_nodata=nodata,
+                dst_nodata=nodata,
+                resampling=resampling,
+            )
+
+    return EEORasterDataset(
+        adapter=RasterioAdapter.write_in_memory(meta, warp_bands),
+        timestamp=ds.timestamp,
+        attrs=ds.attrs,
+        band_names=ds.band_names,
+    )
+
+
+def _check_bands(datasets: Sequence[EEORasterDataset], reference: int) -> None:
+    """Refuse a series whose timesteps do not hold the same bands.
+
+    Band count is never fixed automatically: a timestep with a different number
+    of bands is a different measurement, not a misaligned one. Names are checked
+    because they are how bands are addressed — if band 1 is "red" in one
+    timestep and "nir" in another, every mapped index would be silently wrong.
+    """
+    ref = datasets[reference]
+    ref_count = ref.get_count()
+    ref_names = ref.band_names
+    for index, ds in enumerate(datasets):
+        if index == reference:
+            continue
+        if ds.get_count() != ref_count:
+            raise ValidationError(
+                f"timestep {index} has {ds.get_count()} bands but timestep {reference} "
+                f"has {ref_count}; every timestep of a series must hold the same bands, "
+                f"so load the same ones for each"
+            )
+        for position, (theirs, ours) in enumerate(
+            zip(ds.band_names, ref_names, strict=True), start=1
+        ):
+            if theirs and ours and theirs != ours:
+                raise ValidationError(
+                    f"band {position} is {ours!r} in timestep {reference} but {theirs!r} "
+                    f"in timestep {index}; a band must mean the same thing at every "
+                    f"timestep, or an index computed across them addresses different "
+                    f"data. Load the bands in the same order, or rename them to agree"
+                )
+
+
+def _on_one_grid(
+    datasets: Sequence[EEORasterDataset],
+    reference: int,
+    *,
+    auto_align: bool,
+    auto_reproject: bool,
+    method: str,
+) -> list[EEORasterDataset]:
+    """Return the timesteps on the reference's grid, aligning them if allowed.
+
+    A CRS mismatch needs ``auto_reproject``, a grid mismatch ``auto_align``;
+    either way the fix is the same warp onto the reference grid, because a
+    reprojection that did not land on that grid would leave the series
+    unaligned. Neither happens silently: without permission the mismatch is an
+    error naming the flag that would fix it.
+    """
+    ref = datasets[reference]
+    ref_crs = _crs_of(ref)
+    aligned = list(datasets)
+    reprojected: list[int] = []
+    resampled: list[int] = []
+
+    for index, ds in enumerate(datasets):
+        if index == reference:
+            continue
+        if _crs_of(ds) != ref_crs:
+            if not auto_reproject:
+                raise CRSMismatchError(
+                    f"timestep {index} is in {_crs_of(ds)} but timestep {reference} is "
+                    f"in {ref_crs}; a series must be in one CRS. Pass "
+                    f"auto_reproject=True to warp the others onto the reference's grid"
+                )
+            aligned[index] = _onto_grid(ds, ref, method=method)
+            reprojected.append(index)
+        elif not _same_grid(ds, ref):
+            if not auto_align:
+                raise AlignmentError(
+                    f"timestep {index} is {ds.get_shape()} pixels on a different grid "
+                    f"from timestep {reference}, which is {ref.get_shape()}; a series "
+                    f"must share one grid so its timesteps can be compared pixel by "
+                    f"pixel. Pass auto_align=True to resample the others onto the "
+                    f"reference's grid"
+                )
+            aligned[index] = _onto_grid(ds, ref, method=method)
+            resampled.append(index)
+
+    # CODE_STYLE: an alignment that happens automatically says so.
+    if reprojected:
+        _LOGGER.info(
+            "reprojected timesteps %s onto timestep %d's grid (%s) with method=%s",
+            reprojected,
+            reference,
+            ref_crs,
+            method,
+        )
+    if resampled:
+        _LOGGER.info(
+            "aligned timesteps %s onto timestep %d's grid with method=%s",
+            resampled,
+            reference,
+            method,
+        )
+    return aligned
+
+
+def _baseline_side(ds: EEORasterDataset, timestamp: dt.datetime) -> str | None:
+    """Say which side of Sentinel-2 baseline 04.00 a timestep sits on.
+
+    The product's own recorded baseline decides it where there is one, because
+    that is a fact rather than an inference: the reprocessed archive carries
+    baseline 04.00 or later on acquisitions from well before the switch, so the
+    date alone would put those on the wrong side. Only when nothing is recorded
+    does the acquisition date stand in. Returns None for anything that is not a
+    Sentinel-2 scene, or whose mission is not recorded.
+    """
+    mission = ds.attrs.get("mission")
+    if not (isinstance(mission, str) and mission.strip().casefold().startswith("sentinel-2")):
+        return None
+
+    recorded = ds.attrs.get("processing_baseline")
+    if recorded is not None:
+        try:
+            value = float(str(recorded).strip())
+        except ValueError:
+            value = float("nan")
+        if value == value:  # not NaN
+            return "post" if value >= 4.0 else "pre"
+
+    return "post" if timestamp >= _BASELINE_04_00 else "pre"
+
+
+def _warn_on_mixed_baseline(
+    datasets: Sequence[EEORasterDataset], timestamps: Sequence[dt.datetime]
+) -> None:
+    """Warn when a Sentinel-2 series straddles the baseline 04.00 change."""
+    sides = [_baseline_side(ds, stamp) for ds, stamp in zip(datasets, timestamps, strict=True)]
+    before = sides.count("pre")
+    after = sides.count("post")
+    if not (before and after):
+        return
+    warnings.warn(
+        f"this series spans the Sentinel-2 processing baseline 04.00 change of "
+        f"{_BASELINE_04_00.date()}: {before} timestep(s) sit before it and {after} "
+        f"after. From baseline 04.00 a Level-2A product shifts its stored values by "
+        f"BOA_ADD_OFFSET, -1000 DN for every band, so the same ground reads about "
+        f"1000 DN higher after the change than before it. Easy-EO reads stored values "
+        f"and does not decode reflectance, so a composite over this series is biased "
+        f"by however many scenes fall on each side, and an index trajectory shows a "
+        f"step at the boundary that is not in the ground. Keep the series on one side "
+        f"of that date, or use scenes reprocessed to a single baseline.",
+        UserWarning,
+        stacklevel=4,
+    )
+
+
+def _warn_on_duplicate_acquisitions(timestamps: Sequence[dt.datetime]) -> None:
+    """Warn when two timesteps claim the same acquisition time.
+
+    Not fixed automatically, because the two things it can mean want opposite
+    fixes: a catalog listing one scene twice should have one copy dropped, and
+    two tiles of one overpass over an area that straddles a tile boundary should
+    be mosaicked, since each holds only part of the ground. Dropping one of
+    those would throw away half the area.
+    """
+    counts: dict[dt.datetime, int] = {}
+    for stamp in timestamps:
+        counts[stamp] = counts.get(stamp, 0) + 1
+    repeated = sorted(stamp for stamp, count in counts.items() if count > 1)
+    if not repeated:
+        return
+    extra = len(timestamps) - len(counts)
+    shown = ", ".join(str(stamp) for stamp in repeated[:3])
+    if len(repeated) > 3:
+        shown += f", and {len(repeated) - 3} more"
+    warnings.warn(
+        f"{len(repeated)} acquisition time(s) appear more than once in this series "
+        f"({shown}), so {extra} timestep(s) repeat a moment another already covers. "
+        f"A statistic across time counts each timestep once, so a repeated moment is "
+        f"weighted twice in a median or mean composite. Two things cause this. A "
+        f"catalog publishes reprocessings of one scene and every copy matches a "
+        f"search: deduplicate the search before reading it, with "
+        f"eeo.stac_search(...).deduplicate(), or an existing series with "
+        f"EEOTimeSeries.deduplicate(). Or two tiles of one overpass both cover your "
+        f"area, in which case each holds only part of it and they want mosaicking "
+        f"rather than dropping.",
+        UserWarning,
+        stacklevel=4,
+    )
+
+
+def _chunks_of(datasets: Sequence[EEORasterDataset]) -> ChunkSpec | None:
+    """Return the chunking a series' timesteps are already split into, if any.
+
+    A series built on the lazy backend should stay there through a chain: when
+    ``map(save_dir=...)`` writes a result out, the file is reopened with these
+    chunk sizes rather than with rasterio, which would silently drop the backend
+    the caller chose. Read from the timesteps rather than remembered from the
+    call that built them, so it is right however the series was assembled.
+    """
+    for ds in datasets:
+        adapter = ds._adapter
+        if isinstance(adapter, XarrayAdapter):
+            sizes = adapter.chunk_sizes
+            if sizes is not None:
+                # dict values are invariant to a type checker, so a
+                # dict[str, int] is not a dict[str, int | Literal["auto"]]
+                # even though every value it holds is valid in one.
+                return cast("ChunkSpec", sizes)
+            # Lazily backed but not chunked: dask still owns the reads, so keep
+            # the backend and let it choose the sizes.
+            return "auto"
+    return None
+
+
+def _apply(
+    op: Callable[..., Any],
+    ds: EEORasterDataset,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> Any:
+    """Run one operation on one dataset, exactly as calling it on the dataset would.
+
+    An Easy-EO operation is written as a free function and bound onto
+    ``EEORasterDataset`` by ``@eeo_raster_op``, and it is the bound wrapper — not
+    the function — that carries the timestamp, attrs and band names of the input
+    onto the result. Calling the free function directly would quietly drop all
+    three, so a registered operation is invoked through its bound method, found
+    by the identity ``functools.wraps`` records. Anything else, including a
+    user's own function or a lambda, is called directly.
+
+    ``args`` holds any further operands, which a two-raster operation takes
+    second and positionally — ``subtract(ds, other)`` as a function and
+    ``ds.subtract(other)`` as a method — so the same tuple serves both calls and
+    nothing here has to know what the second parameter is called.
+    """
+    name = getattr(op, "__name__", None)
+    if name is not None:
+        bound = getattr(ds, name, None)
+        if bound is not None and getattr(bound, "__wrapped__", None) is op:
+            return bound(*args, **kwargs)
+    return op(ds, *args, **kwargs)
+
+
+class EEOTimeSeries(Sequence[EEORasterDataset]):
+    """An ordered, timestamped collection of rasters covering one area.
+
+    Behaves like a list of :class:`~eeo.core.core.EEORasterDataset` sorted from
+    oldest to newest, so it can be indexed, sliced, iterated, and measured with
+    ``len()``. Slicing returns another time series; indexing returns the
+    dataset at that timestep, which is an ordinary dataset with every operation
+    available on it.
+
+    Every timestep must carry a timestamp: the ordering is the point of the
+    type, and a trajectory or composite indexed by nothing is not a time
+    series. The STAC, Sentinel-2 and Landsat loaders all record one, so this is
+    only a constraint on a hand-assembled series.
+
+    Construct one with :func:`eeo.time_series`, or with
+    :meth:`from_stac` when the scenes come from a catalog search.
+
+    Parameters
+    ----------
+    datasets : iterable of EEORasterDataset
+        Rasters making up the series, in any order — they are sorted by
+        timestamp. Datasets are held by reference, not copied.
+    timestamps : sequence of datetime.datetime or None, default None
+        One acquisition time per dataset, overriding whatever the datasets
+        carry. None takes each dataset's own ``timestamp``. A naive datetime is
+        read as UTC. The datasets themselves are left untouched either way, so
+        supplying timestamps here does not mutate the caller's objects.
+    auto_align : bool, default False
+        Whether a timestep on a different pixel grid from the reference may be
+        resampled onto it. False refuses the series with an
+        :class:`~eeo.AlignmentError` instead, because resampling a series is
+        expensive and changes the pixels: opting in says you want that.
+    auto_reproject : bool, default False
+        Whether a timestep in a different CRS may be warped onto the
+        reference's. False refuses with a :class:`~eeo.CRSMismatchError`. Both
+        fixes are the same warp onto the reference grid; this flag is the
+        permission for the CRS part, as ``mosaic`` spells it.
+    method : str, default "nearest"
+        Resampling method used when either flag triggers. Nearest by default
+        rather than bilinear: a series built for cloud masking or compositing
+        carries a quality band whose values are class numbers, and blending
+        class numbers invents classes.
+    reference : int, default 0
+        Which timestep's CRS, grid and bands the others must match, indexed in
+        time order — 0 is the earliest, -1 the latest. The default follows
+        ``mosaic`` and ``stack``, where the first input sets the grid; a
+        chronological series cannot be reordered to put a different scene
+        first, which is what this is for.
+
+    Raises
+    ------
+    ValidationError
+        If ``datasets`` is empty, holds anything that is not an
+        ``EEORasterDataset``, or has a timestep with no timestamp and no
+        ``timestamps`` entry; if ``timestamps`` is given with a length that
+        does not match; if ``reference`` is not a timestep; or if the timesteps
+        do not hold the same number of bands, or disagree about what a band is
+        called.
+    CRSMismatchError
+        If timesteps are in different CRSs and ``auto_reproject`` is False.
+    AlignmentError
+        If timesteps are on different pixel grids and ``auto_align`` is False.
+
+    Warns
+    -----
+    UserWarning
+        If a Sentinel-2 series spans the processing baseline 04.00 change of
+        25 January 2022, across which the same ground reads about 1000 DN
+        apart. Stored values are not decoded to reflectance, so a composite or
+        trajectory over such a series carries a step that is not in the ground.
+
+    Notes
+    -----
+    Holds whatever its datasets hold: a series of file-backed datasets keeps
+    one GDAL handle per timestep and no pixels, while a series of in-memory
+    datasets (what a catalog load returns) keeps every window in memory. This
+    is why :meth:`from_stac` caches scenes to disk by default.
+
+    Validation reads metadata only — no pixels — so refusing a mismatched
+    series costs nothing. Alignment, when opted into, does read: each
+    mismatched timestep is warped onto the reference grid there and then.
+
+    Examples
+    --------
+    >>> import datetime as dt
+    >>> import numpy as np
+    >>> import eeo
+    >>> scenes = [
+    ...     eeo.load_array(
+    ...         np.full((4, 4), i, dtype="uint16"),
+    ...         crs=32633,
+    ...         timestamp=dt.datetime(2023, i, 1),
+    ...     )
+    ...     for i in (3, 1, 2)
+    ... ]
+    >>> ts = eeo.time_series(scenes)
+    >>> len(ts)
+    3
+    >>> [stamp.month for stamp in ts.timestamps]
+    [1, 2, 3]
+    """
+
+    def __init__(
+        self,
+        datasets: Iterable[EEORasterDataset],
+        *,
+        timestamps: Sequence[dt.datetime] | None = None,
+        auto_align: bool = False,
+        auto_reproject: bool = False,
+        method: str = "nearest",
+        reference: int = 0,
+    ) -> None:
+        items = list(datasets)
+        if not items:
+            raise ValidationError(
+                "a time series needs at least one dataset; got an empty collection"
+            )
+        for index, item in enumerate(items):
+            if not isinstance(item, EEORasterDataset):
+                raise ValidationError(
+                    f"timestep {index} is a {type(item).__name__}, not an "
+                    f"EEORasterDataset; a time series holds datasets"
+                )
+
+        stamps = _resolve_timestamps(items, timestamps)
+        # A stable sort, so reprocessed duplicates of one acquisition — which
+        # catalogs do return — keep the order they arrived in.
+        order = sorted(range(len(items)), key=lambda index: stamps[index])
+        ordered = [items[index] for index in order]
+        self._timestamps: list[dt.datetime] = [stamps[index] for index in order]
+
+        if not -len(ordered) <= reference < len(ordered):
+            raise ValidationError(
+                f"reference={reference} is not a timestep of a {len(ordered)}-step "
+                f"series; it indexes the series in time order, so 0 is the earliest"
+            )
+        reference %= len(ordered)
+        self._reference = reference
+        _check_bands(ordered, reference)
+        self._datasets: list[EEORasterDataset] = _on_one_grid(
+            ordered,
+            reference,
+            auto_align=auto_align,
+            auto_reproject=auto_reproject,
+            method=method,
+        )
+        _warn_on_mixed_baseline(self._datasets, self._timestamps)
+        _warn_on_duplicate_acquisitions(self._timestamps)
+        # Set by from_stac when it owns a temporary scene cache.
+        self._cache: tempfile.TemporaryDirectory | None = None
+        # A series on the lazy backend stays there through map(save_dir=),
+        # which reopens each saved result with these chunk sizes.
+        self._chunks: ChunkSpec | None = _chunks_of(self._datasets)
+
+    # ========================
+    # Constructors
+    # ========================
+    @classmethod
+    def from_stac(
+        cls,
+        result: STACSearchResult | Iterable[STACItem],
+        assets: str | Sequence[str],
+        *,
+        bbox: Sequence[float] | None = None,
+        crop: bool = True,
+        mask: bool = False,
+        resampling: ResamplingMethod | Any = "nearest",
+        cache: bool | StrPath = True,
+        chunks: ChunkSpec | None = None,
+        auto_align: bool = False,
+        auto_reproject: bool = False,
+        method: str = "nearest",
+        reference: int = 0,
+    ) -> EEOTimeSeries:
+        """Build a series from a STAC search, reading the same assets from each item.
+
+        A search result is already a time series in all but type: its items are
+        ordered oldest-first and each states its acquisition time, so nothing
+        has to be parsed out of filenames. Each item's assets are read with
+        :meth:`eeo.io.STACItem.load`, which crops to the search area by
+        default, and the scenes become the timesteps.
+
+        Parameters
+        ----------
+        result : STACSearchResult or iterable of STACItem
+            Items to read, typically straight from :func:`eeo.stac_search`.
+        assets : str or sequence of str
+            Asset key, or keys to stack into bands, read from every item — the
+            same set for each, since a series with different bands per timestep
+            could not be reduced. See :attr:`eeo.io.STACItem.asset_names`.
+        bbox : sequence of float or None, default None
+            Area to read from every item, as ``(minx, miny, maxx, maxy)`` in
+            WGS 84 lon/lat degrees. None uses each item's search area.
+        crop : bool, default True
+            Whether to crop at all. False reads whole scenes, which for a
+            series multiplies a full tile by the number of timesteps.
+        mask : bool, default False
+            Set pixels outside the search geometry to nodata, following its
+            outline rather than its bounding box. Requires a search made with
+            ``intersects``.
+        resampling : str or rasterio.enums.Resampling, default "nearest"
+            Method used where an asset must be resampled onto the first
+            asset's grid. Nearest by default so values are never blended.
+        cache : bool or str or path-like, default True
+            Where the scenes live once read. True writes each scene to a
+            temporary directory and reopens it from there, so the series holds
+            file handles instead of arrays and :meth:`close` removes the files.
+            A path does the same in a directory you keep, which also makes the
+            read reusable: signed catalog URLs expire, cached GeoTIFFs do not.
+            False keeps every scene in memory, which is faster for a small area
+            and unbounded for a large one.
+        chunks : str or int or dict or None, default None
+            Chunk sizes for reopening cached scenes on the lazy, dask-chunked
+            backend (see :func:`eeo.load_raster`), which needs the ``lazy``
+            extra. None reopens them with rasterio, which already defers reads
+            — the lazy backend adds dask on top of that, it is not what makes
+            the series bounded. Cannot be combined with ``cache=False``: an
+            in-memory scene has no file to open lazily.
+        auto_align, auto_reproject : bool, default False
+            Whether timesteps on a different grid, or in a different CRS, may be
+            warped onto the reference's — as :class:`EEOTimeSeries` documents
+            them. Worth knowing for a catalog search: items covering one area can
+            land in different UTM zones, and a search wide enough to cross a zone
+            boundary needs ``auto_reproject=True``.
+        method : str, default "nearest"
+            Resampling method used when either flag triggers.
+        reference : int, default 0
+            Which timestep's grid the others must match, indexed in time order.
+
+        Returns
+        -------
+        EEOTimeSeries
+            Series of one timestep per item, oldest first, each carrying the
+            item's acquisition time, band names taken from the asset keys, and
+            the item id, collection and asset list in ``attrs``.
+
+        Raises
+        ------
+        ValidationError
+            If ``result`` holds no items, if any item has no acquisition time,
+            if ``chunks`` is combined with ``cache=False``, if ``chunks`` is
+            not a valid chunk specification, or for anything
+            :meth:`eeo.io.STACItem.load` rejects (an unknown asset, a bbox
+            that is not four ordered lon/lat values, ``mask`` without a search
+            geometry).
+        CRSMismatchError
+            If the items are in different CRSs and ``auto_reproject`` is False.
+        AlignmentError
+            If the items land on different grids and ``auto_align`` is False.
+        MissingDependencyError
+            If ``chunks`` is given without the ``lazy`` extra installed.
+
+        Notes
+        -----
+        Reads every item eagerly, because a signed Planetary Computer URL is
+        only valid for a while: a series that deferred its reads would fail
+        hours later, in the middle of a computation. With the default cache,
+        peak memory is one scene's window rather than the whole series'.
+
+        Examples
+        --------
+        >>> import eeo
+        >>> results = eeo.stac_search(
+        ...     "sentinel-2-l2a",
+        ...     bbox=(11.0, 46.5, 11.2, 46.7),
+        ...     datetime="2023-04-01/2023-09-30",
+        ...     cloud_cover=20,
+        ... )  # doctest: +SKIP
+        >>> ts = eeo.EEOTimeSeries.from_stac(results, ["B04", "B08"])  # doctest: +SKIP
+        >>> ts.timestamps[0].date()  # doctest: +SKIP
+        datetime.date(2023, 4, 12)
+        """
+        if chunks is not None:
+            if cache is False:
+                raise ValidationError(
+                    "chunks= opens a cached scene on the lazy backend, so it needs a "
+                    "cache: pass cache=True (a temporary directory) or a path, or drop "
+                    "chunks= to keep the scenes in memory"
+                )
+            validate_chunks(chunks)
+
+        items = list(result)
+        if not items:
+            raise ValidationError(
+                "a time series needs at least one scene, and this search returned no "
+                "items; widen the search area, the date range, or the cloud filter"
+            )
+        # Checked before any asset is read: discovering an undated item after
+        # forty reads would waste all of them.
+        dated: list[tuple[dt.datetime, STACItem]] = []
+        for index, item in enumerate(items):
+            stamp = item.timestamp
+            if stamp is None:
+                raise ValidationError(
+                    f"item {index} ({item.id}) states no acquisition time, so it "
+                    f"cannot take a place in a time series. Drop it from the result "
+                    f"before building the series"
+                )
+            dated.append((stamp, item))
+        # Read oldest-first, whatever order the items arrived in: a search
+        # result is already chronological, but a hand-built list need not be,
+        # and the cache is numbered by read order — so sorting here is what
+        # makes the cached files read in time order too. Sorted on the
+        # timestamp alone: two items of one acquisition would otherwise be
+        # compared to each other, and a STACItem has no ordering.
+        dated.sort(key=lambda pair: pair[0])
+
+        holder: tempfile.TemporaryDirectory | None = None
+        directory: Path | None = None
+        if cache is not False:
+            if cache is True:
+                holder = tempfile.TemporaryDirectory(prefix="eeo-timeseries-")
+                directory = Path(holder.name)
+            else:
+                directory = Path(os.fspath(cache))
+                directory.mkdir(parents=True, exist_ok=True)
+
+        scenes: list[EEORasterDataset] = []
+        try:
+            # Iterated as the (timestamp, item) pairs built above, so the
+            # timestamp is known to be present rather than rechecked here.
+            for index, (stamp, item) in enumerate(dated):
+                scene = item.load(assets, bbox=bbox, crop=crop, mask=mask, resampling=resampling)
+                if directory is not None:
+                    scene = _through_file(scene, directory, index, chunks, timestamp=stamp)
+                scenes.append(scene)
+            series = cls(
+                scenes,
+                auto_align=auto_align,
+                auto_reproject=auto_reproject,
+                method=method,
+                reference=reference,
+            )
+        except BaseException:
+            for scene in scenes:
+                with contextlib.suppress(Exception):
+                    scene.close()
+            if holder is not None:
+                with contextlib.suppress(Exception):
+                    holder.cleanup()
+            raise
+
+        series._cache = holder
+        return series
+
+    @classmethod
+    def from_folder(
+        cls,
+        folder: StrPath,
+        pattern: str = "*.tif",
+        *,
+        timestamp: Callable[[Path], dt.datetime] | None = None,
+        chunks: ChunkSpec | None = None,
+        auto_align: bool = False,
+        auto_reproject: bool = False,
+        method: str = "nearest",
+        reference: int = 0,
+    ) -> EEOTimeSeries:
+        """Build a series from rasters on disk, dated by their filenames.
+
+        The path for scenes already downloaded, exported from another tool, or
+        written by an earlier step of your own: one file per timestep, each
+        opened with :func:`eeo.load_raster`, so the series is file-backed and
+        reads nothing until an operation asks for a window.
+
+        Unlike a catalog item, a file does not state when it was acquired. Its
+        name usually does, and that is what is read by default; ``timestamp=``
+        takes over where it does not.
+
+        Parameters
+        ----------
+        folder : str or path-like
+            Directory holding the rasters.
+        pattern : str, default "*.tif"
+            Glob pattern selecting them, matched with :meth:`pathlib.Path.glob`
+            — so ``"*.tif"`` takes that directory's own files and
+            ``"**/*.tif"`` walks subdirectories. Matching follows the
+            platform: case-sensitive on Linux and macOS, where a folder of
+            ``.TIF`` files needs ``"*.TIF"``, and not on Windows. Directories
+            the pattern happens to match are skipped.
+        timestamp : callable or None, default None
+            How each file is placed in time. None reads the first date in the
+            filename, accepting ``20230412``, ``2023-04-12``, and either with a
+            time after it (``20230412T100621``) — which covers Sentinel-2 and
+            Landsat names as they are delivered. Otherwise a function taking a
+            :class:`pathlib.Path` and returning a
+            :class:`~datetime.datetime`, which is the hook for a date that
+            lives somewhere else: the parent directory's name, a sidecar file,
+            or the file's own ``TIFFTAG_DATETIME`` tag. A naive datetime is read
+            as UTC.
+        chunks : str or int or dict or None, default None
+            Chunk sizes for opening each raster on the lazy, dask-chunked
+            backend (see :func:`eeo.load_raster`), which needs the ``lazy``
+            extra. None opens them with rasterio, which already defers reads.
+        auto_align, auto_reproject : bool, default False
+            Whether timesteps on a different grid, or in a different CRS, may be
+            warped onto the reference's — as :class:`EEOTimeSeries` documents
+            them. Worth knowing for a folder: files written at different times by
+            different tools are the likeliest source of a series whose timesteps
+            do not quite share a grid.
+        method : str, default "nearest"
+            Resampling method used when either flag triggers.
+        reference : int, default 0
+            Which timestep's grid the others must match, indexed in time order.
+
+        Returns
+        -------
+        EEOTimeSeries
+            Series of one timestep per file, oldest first, each carrying its
+            date and whatever band names the file's GDAL band descriptions
+            declare.
+
+        Raises
+        ------
+        ValidationError
+            If ``folder`` does not exist or is not a directory, if ``pattern``
+            matches no files, if a filename holds no recognisable date and no
+            ``timestamp`` was given, if ``timestamp`` returns something that is
+            not a datetime, or if ``chunks`` is not a valid chunk
+            specification. Also whatever :class:`EEOTimeSeries` rejects: a
+            mismatched grid, CRS, or band set across the files.
+        MissingDependencyError
+            If ``chunks`` is given without the ``lazy`` extra installed.
+
+        See Also
+        --------
+        from_stac : Build a series from a catalog search, where the items
+            already state their acquisition times.
+
+        Notes
+        -----
+        Dates are resolved for every file before any of them is opened, so a
+        folder holding one undated name is refused without opening the rest.
+
+        Examples
+        --------
+        >>> import eeo
+        >>> ts = eeo.time_series("scenes/")  # doctest: +SKIP
+        >>> ts = eeo.time_series("scenes/", pattern="**/*.tif")  # doctest: +SKIP
+
+        Where the date is in the folder rather than the file — one directory per
+        acquisition, each holding ``B04.tif`` — read it from the path:
+
+        >>> import datetime as dt
+        >>> ts = eeo.time_series(  # doctest: +SKIP
+        ...     "scenes/",
+        ...     pattern="*/B04.tif",
+        ...     timestamp=lambda path: dt.datetime.fromisoformat(path.parent.name),
+        ... )
+        """
+        if timestamp is not None and not callable(timestamp):
+            raise ValidationError(
+                f"timestamp= is a function taking a path and returning a datetime, "
+                f"not a {type(timestamp).__name__}. To place the timesteps by hand, "
+                f"load the rasters yourself and pass timestamps=[...] to "
+                f"eeo.time_series"
+            )
+        if chunks is not None:
+            validate_chunks(chunks)
+
+        directory = Path(os.fspath(folder))
+        if not directory.exists():
+            raise ValidationError(f"no such folder: {directory}")
+        if not directory.is_dir():
+            raise ValidationError(
+                f"{directory} is a file, not a folder. A series is built from several "
+                f"rasters: pass the directory holding them (and a pattern that selects "
+                f"them), or open this one on its own with eeo.load_raster"
+            )
+
+        # Sorted so the read order is the same on every filesystem. The series
+        # sorts itself by timestamp regardless; this is what decides the order
+        # of two files that carry the same date.
+        try:
+            paths = sorted(path for path in directory.glob(pattern) if path.is_file())
+        except (ValueError, NotImplementedError) as err:
+            # An absolute or empty pattern. Path.glob's own message says only
+            # that the pattern is unacceptable, which from a method that used to
+            # raise NotImplementedError for everything would read as "still not
+            # implemented".
+            raise ValidationError(
+                f"{pattern!r} is not a usable glob pattern: {err}. It is matched "
+                f"relative to {directory}, so it cannot start with a separator"
+            ) from err
+        if not paths:
+            raise ValidationError(_NO_MATCHES.format(folder=directory, pattern=pattern))
+
+        # Resolved before anything is opened: an undated filename halfway
+        # through would otherwise leave every earlier file open.
+        resolve = _timestamp_from_name if timestamp is None else timestamp
+        stamps = [_timestamp_for(resolve, path) for path in paths]
+
+        scenes: list[EEORasterDataset] = []
+        try:
+            for path, stamp in zip(paths, stamps, strict=True):
+                scenes.append(load_raster(path, chunks=chunks, timestamp=stamp))
+            return cls(
+                scenes,
+                auto_align=auto_align,
+                auto_reproject=auto_reproject,
+                method=method,
+                reference=reference,
+            )
+        except BaseException:
+            for scene in scenes:
+                with contextlib.suppress(Exception):
+                    scene.close()
+            raise
+
+    # ========================
+    # Sequence protocol
+    # ========================
+    def __len__(self) -> int:
+        """Return the number of timesteps.
+
+        Returns
+        -------
+        int
+            Count of datasets in the series.
+        """
+        return len(self._datasets)
+
+    @overload
+    def __getitem__(self, index: int) -> EEORasterDataset: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> EEOTimeSeries: ...
+
+    def __getitem__(self, index: int | slice) -> EEORasterDataset | EEOTimeSeries:
+        """Return the dataset at ``index``, or a series for a slice.
+
+        Parameters
+        ----------
+        index : int or slice
+            Position of one timestep, or a slice of positions.
+
+        Returns
+        -------
+        EEORasterDataset or EEOTimeSeries
+            The dataset at ``index``, or a new series over the sliced
+            timesteps. A slice shares its datasets with this series rather than
+            copying them, and does not own the scene cache, so closing either
+            one affects both.
+
+        Raises
+        ------
+        ValidationError
+            If a slice selects no timesteps. Unlike a list, a series is never
+            empty — the grid it reports would have nothing to describe — so an
+            empty slice is refused rather than returned.
+        IndexError
+            If an int index is out of range.
+        """
+        if isinstance(index, slice):
+            return self._derive(self._datasets[index], self._timestamps[index])
+        return self._datasets[index]
+
+    def __repr__(self) -> str:
+        """Return a one-line summary: timestep count, time span, and grid."""
+        count = len(self._datasets)
+        span = f"{self._timestamps[0].date()} to {self._timestamps[-1].date()}"
+        try:
+            first = self._datasets[0]
+            height, width = first.get_shape()
+            dtype = first.get_metadata().get("dtype", "?")
+            crs = first.get_crs()
+            epsg = crs.to_epsg() if crs is not None else None
+            grid = f", {first.get_count()}×{height}×{width} {dtype} "
+            grid += f"EPSG:{epsg}" if epsg else "no CRS"
+        except Exception:
+            grid = ""
+        return f"<EEOTimeSeries: {count} timesteps from {span}{grid}>"
+
+    # ========================
+    # Derivation
+    # ========================
+    def _derive(
+        self, datasets: Sequence[EEORasterDataset], timestamps: Sequence[dt.datetime]
+    ) -> EEOTimeSeries:
+        """Build a series from this one's timesteps, keeping its backend choice.
+
+        The scene cache is deliberately not carried over: the series that opened
+        it owns it, and two owners would delete it twice.
+        """
+        derived = type(self)(datasets, timestamps=timestamps)
+        derived._chunks = self._chunks
+        return derived
+
+    def resample_time(self, freq: str) -> TemporalBins:
+        """Group the timesteps into periods, to be reduced within each one.
+
+        Forty acquisitions is rarely the number a question is asked in. Binning
+        reduces *within* each period rather than across the whole series, so a
+        season becomes six monthly composites — and the result is a series like
+        any other, which can be mapped over, sampled, reduced again or saved.
+
+        Parameters
+        ----------
+        freq : str
+            Period length, as a pandas offset alias: ``"D"`` a day, ``"7D"``
+            seven days, ``"W"`` a week, ``"MS"`` a calendar month, ``"QS"`` a
+            quarter, ``"YS"`` a year. Passed to pandas untouched, so its whole
+            vocabulary is available — including anchored aliases such as
+            ``"W-MON"``.
+
+            Prefer the start-of-period spellings above. pandas 2.2 renamed the
+            end-of-period aliases (``"M"`` to ``"ME"``, ``"Q"`` to ``"QE"``,
+            ``"Y"`` to ``"YE"``), and Easy-EO supports pandas on both sides of
+            that change, so ``"MS"`` works everywhere and ``"M"`` does not.
+
+        Returns
+        -------
+        TemporalBins
+            The grouping, with :meth:`~eeo.timeseries.TemporalBins.median`,
+            ``mean``, ``min``, ``max`` and
+            :meth:`~eeo.timeseries.TemporalBins.composite` to call on it, each
+            returning a new series with one timestep per period. Periods holding
+            no acquisition are dropped, since a series cannot hold a timestep
+            with no raster behind it.
+
+        Raises
+        ------
+        ValidationError
+            If ``freq`` is not a period pandas recognises. The message says so in
+            pandas' words and names the rename above, which is the likeliest
+            cause.
+
+        Notes
+        -----
+        Reads nothing: grouping is arithmetic on the timestamps, and the pixels
+        are only touched when a reducer is called.
+
+        Each result is stamped with its period's label — a reducer states no
+        timestamp of its own, since a composite was not acquired at one moment —
+        and records the span it actually covers in ``attrs``
+        (``time_start``, ``time_end``, ``timesteps``), plus the period alias
+        under ``temporal_bin``.
+
+        Examples
+        --------
+        >>> import eeo
+        >>> monthly = ts.resample_time("MS").median()  # doctest: +SKIP
+        >>> len(monthly)  # doctest: +SKIP
+        6
+        >>> monthly.timestamps[0].date()  # doctest: +SKIP
+        datetime.date(2023, 4, 1)
+
+        A monthly cloud-free composite, then the greenest month of the season:
+
+        >>> monthly = ts.resample_time("MS").composite()  # doctest: +SKIP
+        >>> peak = monthly.map(eeo.ndvi, red="B04", nir="B08").max()  # doctest: +SKIP
+
+        The grouping itself is inspectable, which is the quick way to see whether
+        a period is long enough to be worth compositing:
+
+        >>> bins = ts.resample_time("MS")  # doctest: +SKIP
+        >>> [len(period) for period in bins]  # doctest: +SKIP
+        [5, 7, 6, 8, 7, 5]
+        """
+        return resample_time(self, freq)
+
+    def deduplicate(self) -> EEOTimeSeries:
+        """Keep one timestep per acquisition time.
+
+        The fix for a series that already holds two copies of one moment, which
+        a catalog produces by publishing reprocessings of a scene: every copy
+        matches a search, and a statistic across time counts each timestep once,
+        so the repeated moment is weighted twice in a composite.
+
+        Of the timesteps sharing a moment, the one carrying the highest
+        processing version wins — for Sentinel-2 the processing baseline, the one
+        recorded value that describes the pixels rather than the record — then
+        the most recently processed, then whichever came first.
+
+        Returns
+        -------
+        EEOTimeSeries
+            A new series holding the surviving timesteps, or this series itself
+            where no two timesteps share a moment. The new series shares its
+            datasets with this one rather than copying them, and does not own the
+            scene cache, so closing either one affects both — as a slice does.
+
+        Warns
+        -----
+        UserWarning
+            A series holding duplicates warns when it is *built*, naming this
+            method. Nothing warns here.
+
+        See Also
+        --------
+        eeo.io.STACSearchResult.deduplicate : The same rule applied to a search
+            before its scenes are read, which is cheaper and has more metadata
+            to decide on — a catalog item states the ground it covers and when
+            it was processed, where a scene read from it keeps only the
+            baseline. Prefer it when the scenes come from a catalog.
+
+        Notes
+        -----
+        Reads no pixels: the decision is made on timestamps and ``attrs``.
+
+        Two tiles of one overpass also share an acquisition time, and this drops
+        one of them — which for an area straddling a tile boundary throws away
+        the half the other tile held. That case wants
+        :func:`eeo.mosaic` across the pair, not this.
+
+        Examples
+        --------
+        >>> import eeo
+        >>> ts = eeo.time_series(results, assets=["B04", "B08"])  # doctest: +SKIP
+        >>> len(ts), len(ts.deduplicate())  # doctest: +SKIP
+        (41, 38)
+        """
+        winners: dict[dt.datetime, tuple[tuple[Any, ...], int]] = {}
+        for index, (ds, stamp) in enumerate(zip(self._datasets, self._timestamps, strict=True)):
+            rank = processing_rank(ds.attrs, index)
+            standing = winners.get(stamp)
+            if standing is None or rank > standing[0]:
+                winners[stamp] = (rank, index)
+
+        keep = sorted(index for _, index in winners.values())
+        if len(keep) == len(self._datasets):
+            return self
+        return self._derive(
+            [self._datasets[index] for index in keep],
+            [self._timestamps[index] for index in keep],
+        )
+
+    def map(
+        self,
+        op: Callable[..., EEORasterDataset],
+        /,
+        *,
+        save_dir: StrPath | None = None,
+        **kwargs: Any,
+    ) -> EEOTimeSeries:
+        """Apply one operation to every timestep, returning a new series.
+
+        Any operation that takes a dataset first and returns a dataset works,
+        unchanged — the spectral indices, the algebra, clipping, resampling,
+        masking, or a function of your own. The same keyword arguments go to
+        every timestep, which is what makes a trajectory comparable across
+        time: one recipe, applied identically.
+
+        Parameters
+        ----------
+        op : callable
+            The operation itself, not its name: ``eeo.ndvi``, not ``"ndvi"``.
+            Called as ``op(dataset, **kwargs)`` once per timestep, and must
+            return an ``EEORasterDataset``.
+        save_dir : str or path-like or None, default None
+            Write each result to this directory and return a series reading
+            those files, instead of holding every result in memory. Peak memory
+            is then one result rather than all of them, which is what makes a
+            long series mappable. Files are named by position and acquisition
+            time, and an existing file of the same name is overwritten, as
+            :meth:`~eeo.core.core.EEORasterDataset.save_raster` does. The
+            directory is created if it does not exist.
+        **kwargs
+            Passed to ``op`` unchanged, for every timestep.
+
+        Returns
+        -------
+        EEOTimeSeries
+            New series with one result per timestep, in the same order and
+            carrying this series' timestamps — including any that were supplied
+            with ``timestamps=`` rather than read from the datasets.
+
+        Raises
+        ------
+        ValidationError
+            If ``op`` is a string (pass the function), is not callable, or
+            returns anything other than an ``EEORasterDataset`` for some
+            timestep.
+
+        Notes
+        -----
+        Applies the operation immediately, timestep by timestep. Without
+        ``save_dir`` the results are held in memory, so peak memory is the
+        whole series' worth of results — fine for an area of interest, not for
+        whole scenes. ``save_dir`` bounds it to one result, and a series opened
+        on the lazy backend reopens its saved results there too, so the backend
+        survives a chain.
+
+        This series is left untouched: its datasets are the operation's inputs,
+        never its outputs.
+
+        Examples
+        --------
+        >>> ndvi_series = ts.map(eeo.ndvi, red="B04", nir="B08")  # doctest: +SKIP
+        >>> masked = ts.map(eeo.mask_clouds).map(  # doctest: +SKIP
+        ...     eeo.ndvi, red="B04", nir="B08", save_dir="ndvi/"
+        ... )
+
+        A function of your own is just as welcome:
+
+        >>> doubled = ts.map(lambda ds: ds.multiply(2))  # doctest: +SKIP
+        """
+        if isinstance(op, str):
+            raise ValidationError(
+                f"map takes the operation itself, not its name: pass eeo.{op} rather "
+                f"than {op!r} (or any function taking a dataset and returning one)"
+            )
+        if not callable(op):
+            raise ValidationError(
+                f"map needs a callable taking a dataset first and returning one; got "
+                f"{type(op).__name__}"
+            )
+
+        directory: Path | None = None
+        if save_dir is not None:
+            directory = Path(os.fspath(save_dir))
+            directory.mkdir(parents=True, exist_ok=True)
+
+        results: list[EEORasterDataset] = []
+        try:
+            for index, ds in enumerate(self._datasets):
+                result = _apply(op, ds, (), kwargs)
+                if not isinstance(result, EEORasterDataset):
+                    raise ValidationError(
+                        f"map builds a series, so every result must be an "
+                        f"EEORasterDataset; {getattr(op, '__name__', op)!r} returned "
+                        f"{type(result).__name__} for timestep {index}. For an "
+                        f"operation that returns a value rather than a raster, read "
+                        f"the timesteps directly: [{getattr(op, '__name__', 'f')}(ds) "
+                        f"for ds in ts]"
+                    )
+                if directory is not None:
+                    result = _through_file(
+                        result,
+                        directory,
+                        index,
+                        self._chunks,
+                        timestamp=self._timestamps[index],
+                    )
+                results.append(result)
+        except BaseException:
+            for result in results:
+                with contextlib.suppress(Exception):
+                    result.close()
+            raise
+
+        return self._derive(results, self._timestamps)
+
+    def map_with(
+        self,
+        other: EEOTimeSeries,
+        op: Callable[..., EEORasterDataset],
+        /,
+        *,
+        save_dir: StrPath | None = None,
+        **kwargs: Any,
+    ) -> EEOTimeSeries:
+        """Apply a two-raster operation to this series and another, timestep by timestep.
+
+        What change detection is: two series of the same place, paired off and
+        differenced. The first timestep of this series is combined with the
+        first of ``other``, the second with the second, and so on — a zip, not a
+        broadcast.
+
+        The distinction is worth being explicit about, because
+        :meth:`map` already covers the other case:
+
+        .. code-block:: python
+
+            ts.map(eeo.subtract, other=baseline)   # one raster, from every timestep
+            ts.map_with(later, eeo.subtract)       # timestep 1 from timestep 1, ...
+
+        Parameters
+        ----------
+        other : EEOTimeSeries
+            Series to pair with, of the same length as this one. Pairing is by
+            **position**, not by timestamp: two series of different epochs are
+            the point of the method, so their dates are not expected to match.
+            Each of its timesteps is the operation's *second* operand, so
+            ``after.map_with(before, eeo.subtract)`` is after minus before.
+        op : callable
+            A two-raster operation — :func:`eeo.subtract`,
+            :func:`eeo.normalized_difference`, any of the algebra, or a function
+            of your own taking two datasets and returning one. Passed
+            positionally, as every two-raster operation in Easy-EO takes its
+            second raster, so nothing has to know what that parameter is called.
+            Positional-only here so an operation with its own ``op`` or
+            ``other`` keyword cannot collide with these.
+        save_dir : str or path-like or None, default None
+            Write each result to a GeoTIFF in this directory and read the
+            returned series from those files, so peak memory is one result
+            rather than the whole series. Created if absent; a rerun overwrites,
+            as :meth:`eeo.EEORasterDataset.save_raster` does.
+        **kwargs
+            Passed to ``op`` at every pair, unchanged — including its own
+            ``auto_align`` or ``method`` where the two grids do not match.
+
+        Returns
+        -------
+        EEOTimeSeries
+            One timestep per pair, carrying **this** series' timestamps, since a
+            result has to be placed somewhere in time and the left operand is
+            the predictable choice. Each result records its partner's
+            acquisition time in ``attrs["paired_timestamp"]``, so a difference
+            between two epochs still says which two dates it spans.
+
+        Raises
+        ------
+        ValidationError
+            If ``other`` is not a series — with the broadcasting call to use
+            instead where it is a single dataset — if the two series are of
+            different lengths, if ``op`` is a string or not callable, or if
+            ``op`` returns anything but a dataset.
+
+        See Also
+        --------
+        map : Apply a one-raster operation to every timestep, broadcasting any
+            second operand.
+
+        Notes
+        -----
+        Neither series is touched: the result is a new series, and both inputs
+        are left as they were.
+
+        The two series' grids are not checked here. ``op`` behaves exactly as it
+        does on a single pair of rasters, which is what keeps its own
+        ``auto_align=True`` meaningful rather than pre-empted.
+
+        Results are held in memory unless ``save_dir`` is given, which for whole
+        scenes is the difference between one result and *n*.
+
+        Examples
+        --------
+        Change between two epochs of the same place. Note which series the call
+        is made on: the receiver goes in first, so this is *after minus before*:
+
+        >>> import eeo
+        >>> before = eeo.time_series(spring, assets=["B04", "B08"])  # doctest: +SKIP
+        >>> after = eeo.time_series(autumn, assets=["B04", "B08"])  # doctest: +SKIP
+        >>> change = after.map_with(before, eeo.subtract)  # doctest: +SKIP
+        >>> change.median()  # doctest: +SKIP
+
+        A per-timestep index between two series, then the largest change:
+
+        >>> difference = after.map_with(  # doctest: +SKIP
+        ...     before, eeo.normalized_difference, name="change"
+        ... )
+        >>> biggest = difference.max()  # doctest: +SKIP
+
+        A function of your own works too, taking the pair in that order:
+
+        >>> ratio = after.map_with(before, lambda a, b: a.divide(b))  # doctest: +SKIP
+        """
+        if isinstance(other, EEORasterDataset):
+            raise ValidationError(
+                "map_with pairs this series with another series, timestep by "
+                "timestep, and was handed a single dataset. To apply one raster to "
+                "every timestep, broadcast it with map instead: "
+                f"ts.map({getattr(op, '__name__', 'op')}, other=that_raster)"
+            )
+        if not isinstance(other, EEOTimeSeries):
+            raise ValidationError(
+                f"map_with pairs this series with another EEOTimeSeries; got {type(other).__name__}"
+            )
+        if len(other) != len(self):
+            raise ValidationError(
+                f"map_with pairs timesteps off by position, so both series must be "
+                f"the same length; this one has {len(self)} and the other has "
+                f"{len(other)}. Slice them to a common length, or deduplicate a "
+                f"catalog search that returned one acquisition twice"
+            )
+        if isinstance(op, str):
+            raise ValidationError(
+                f"map_with takes the operation itself, not its name: pass eeo.{op} "
+                f"rather than {op!r}"
+            )
+        if not callable(op):
+            raise ValidationError(
+                f"map_with needs a callable taking two datasets and returning one; "
+                f"got {type(op).__name__}"
+            )
+
+        directory: Path | None = None
+        if save_dir is not None:
+            directory = Path(os.fspath(save_dir))
+            directory.mkdir(parents=True, exist_ok=True)
+
+        results: list[EEORasterDataset] = []
+        try:
+            for index, (ds, partner) in enumerate(
+                zip(self._datasets, other._datasets, strict=True)
+            ):
+                result = _apply(op, ds, (partner,), kwargs)
+                if not isinstance(result, EEORasterDataset):
+                    raise ValidationError(
+                        f"map_with builds a series, so every result must be an "
+                        f"EEORasterDataset; {getattr(op, '__name__', op)!r} returned "
+                        f"{type(result).__name__} for the pair at position {index}"
+                    )
+                # An operation returns a new dataset by contract, so this records
+                # provenance on our own result. Guarded because a plain function
+                # need not honour that, and writing into a caller's dataset
+                # would be a side effect this method has no business having.
+                if result is not ds and result is not partner:
+                    result.attrs["paired_timestamp"] = other.timestamps[index]
+                if directory is not None:
+                    result = _through_file(
+                        result,
+                        directory,
+                        index,
+                        self._chunks,
+                        timestamp=self._timestamps[index],
+                    )
+                results.append(result)
+        except BaseException:
+            for result in results:
+                with contextlib.suppress(Exception):
+                    result.close()
+            raise
+
+        return self._derive(results, self._timestamps)
+
+    # ========================
+    # Series metadata
+    # ========================
+    @property
+    def timestamps(self) -> list[dt.datetime]:
+        """Acquisition times of the timesteps, in order.
+
+        Returns
+        -------
+        list of datetime.datetime
+            One timezone-aware UTC timestamp per timestep, oldest first.
+        """
+        return list(self._timestamps)
+
+    @property
+    def reference(self) -> EEORasterDataset:
+        """The timestep whose CRS, grid and bands the others match.
+
+        Returns
+        -------
+        EEORasterDataset
+            The timestep chosen by ``reference`` at construction — the earliest
+            by default. Every other timestep was checked against it, and
+            aligned onto it where that was allowed.
+        """
+        return self._datasets[self._reference]
+
+    @property
+    def crs(self) -> CRS | None:
+        """Coordinate reference system of the series.
+
+        Returns
+        -------
+        rasterio.crs.CRS or None
+            The one CRS every timestep is in, or None if the reference timestep
+            declares none. Always a ``CRS``, even where a timestep was built
+            from an EPSG code or a string.
+        """
+        return _crs_of(self.reference)
+
+    @property
+    def transform(self) -> Affine:
+        """Affine transform of the series' grid.
+
+        Returns
+        -------
+        affine.Affine
+            Mapping from pixel to world coordinates, shared by every timestep.
+        """
+        return self.reference.get_transform()
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        """Pixel dimensions of the series' grid.
+
+        Returns
+        -------
+        tuple of int
+            ``(height, width)``, shared by every timestep.
+        """
+        return self.reference.get_shape()
+
+    @property
+    def band_count(self) -> int:
+        """Number of bands each timestep holds.
+
+        Named ``band_count`` rather than ``count``, which a sequence already
+        uses to count occurrences of a value.
+
+        Returns
+        -------
+        int
+            Band count, the same at every timestep.
+        """
+        return self.reference.get_count()
+
+    @property
+    def band_names(self) -> list[str | None]:
+        """Band names of the series.
+
+        Returns
+        -------
+        list of (str or None)
+            One entry per band, ``None`` for a band the reference timestep does
+            not name. No two timesteps may disagree about a name, so these
+            describe the series.
+        """
+        return self.reference.band_names
+
+    # ========================
+    # Temporal reducers
+    # ========================
+    def median(self, *, save_path: StrPath | None = None) -> EEORasterDataset:
+        """Collapse the series to the median of every pixel across time.
+
+        The reducer to reach for on a stack of scenes: a median over time is
+        what turns repeat coverage into one clean image, because a cloud, a
+        shadow or a sensor artefact at one timestep is an outlier among the
+        others rather than a vote.
+
+        Parameters
+        ----------
+        save_path : str or path-like or None, default None
+            Write the result to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single float32 raster on the series' grid, with its bands and band
+            names, holding each pixel's median over time. A pixel that no
+            timestep saw is NaN, which is the result's recorded nodata value.
+
+        Notes
+        -----
+        Streams window by window, with the block divided by the number of
+        timesteps, so peak memory is about one block's worth in total however
+        long the series is. Each timestep's nodata pixels are absent from the median
+        rather than counted, so a pixel missing at two of five timesteps is the
+        median of the other three; only a pixel missing everywhere is nodata.
+        float32 because a median over an even number of timesteps averages the
+        two middle values.
+
+        Examples
+        --------
+        >>> composite = ts.median()  # doctest: +SKIP
+        >>> ts.map(eeo.mask_clouds).median(save_path="composite.tif")  # doctest: +SKIP
+        """
+        return reducers.median(self, save_path=save_path)
+
+    def mean(self, *, save_path: StrPath | None = None) -> EEORasterDataset:
+        """Collapse the series to the mean of every pixel across time.
+
+        Parameters
+        ----------
+        save_path : str or path-like or None, default None
+            Write the result to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single float32 raster on the series' grid, with its bands and band
+            names, holding each pixel's mean over time. A pixel that no timestep
+            saw is NaN, the result's recorded nodata value.
+
+        Notes
+        -----
+        Streams window by window, with the block divided by the number of
+        timesteps, so peak memory does not grow with the series' length. Nodata
+        pixels are absent from the mean rather than counted as zero, so each
+        pixel is averaged over however many timesteps actually saw it. Prefer
+        :meth:`median` over a series that may hold cloud: a mean is pulled by
+        outliers, a median is not.
+
+        Examples
+        --------
+        >>> average = ts.mean()  # doctest: +SKIP
+        """
+        return reducers.mean(self, save_path=save_path)
+
+    def min(self, *, save_path: StrPath | None = None) -> EEORasterDataset:
+        """Collapse the series to the smallest value of every pixel across time.
+
+        Parameters
+        ----------
+        save_path : str or path-like or None, default None
+            Write the result to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single raster on the series' grid, with its bands and band names, in
+            the timesteps' own dtype — a minimum selects a value that was
+            measured rather than computing a new one. A pixel that no timestep
+            saw takes the timesteps' nodata value, or none if they declare none,
+            in which case no pixel can be missing.
+
+        Notes
+        -----
+        Streams window by window, with the block divided by the number of
+        timesteps, so peak memory does not grow with the series' length. Nodata
+        pixels are absent from the comparison, so a fill value can never win it.
+
+        Examples
+        --------
+        >>> darkest = ts.min()  # doctest: +SKIP
+        """
+        return reducers.minimum(self, save_path=save_path)
+
+    def max(self, *, save_path: StrPath | None = None) -> EEORasterDataset:
+        """Collapse the series to the largest value of every pixel across time.
+
+        Parameters
+        ----------
+        save_path : str or path-like or None, default None
+            Write the result to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single raster on the series' grid, with its bands and band names, in
+            the timesteps' own dtype — a maximum selects a value that was
+            measured rather than computing a new one. A pixel that no timestep
+            saw takes the timesteps' nodata value, or none if they declare none.
+
+        Notes
+        -----
+        Streams window by window, with the block divided by the number of
+        timesteps, so peak memory does not grow with the series' length. Nodata
+        pixels are absent from the comparison. A maximum over an index series is
+        the usual way to ask "how green did this ever get", one reason the
+        reducers return a plain dataset that the rest of the library can chain.
+
+        Examples
+        --------
+        >>> peak_greenness = ts.map(eeo.ndvi, red="red", nir="nir").max()  # doctest: +SKIP
+        """
+        return reducers.maximum(self, save_path=save_path)
+
+    def composite(
+        self,
+        *,
+        how: str = "median",
+        mask_band: int | str | None = None,
+        classes: Iterable[Any] | None = None,
+        flags: Iterable[Any] | None = None,
+        min_cloud_confidence: Any = QA_PIXEL_DEFAULT_MIN_CLOUD_CONFIDENCE,
+        mission: int | None = None,
+        nodata: int | float | None = None,
+        mask_dir: StrPath | None = None,
+        save_path: StrPath | None = None,
+    ) -> EEORasterDataset:
+        """Build one cloud-free raster from the series: mask, then reduce.
+
+        The reason a time series is worth having. Each timestep is masked with
+        its own quality band — Sentinel-2's ``SCL`` or Landsat's ``QA_PIXEL``,
+        whichever it carries — and the masked timesteps are then reduced pixel
+        by pixel across time. Where one scene was clouded another usually was
+        not, so the result is a view of the ground assembled from whichever
+        timestep saw it, rather than any single acquisition.
+
+        The quality band is **not** in the result. It has done its work, and a
+        median of scene-class numbers would be a number no classifier ever
+        assigned.
+
+        Parameters
+        ----------
+        how : {"median", "mean", "min", "max"}, default "median"
+            Statistic taken across the masked timesteps. Median by default:
+            a cloud edge or a missed cloud at one timestep is an outlier among
+            the others, which a median discards and a mean averages in.
+        mask_band : int or str, optional
+            Which band holds the quality layer, as a 1-based index or a band
+            name. Defaults to the one band named ``"scl"`` or ``"qa_pixel"``;
+            having none, or more than one, is an error rather than a guess, and
+            is raised before any pixel is read.
+        classes : iterable of SCLClass or int or str, optional
+            For an ``SCL`` band: which scene classes to mask, defaulting to
+            :data:`~eeo.preprocessing.quality.SCL_DEFAULT_MASKED`.
+        flags : iterable of QAPixelFlag or int or str, optional
+            For a ``QA_PIXEL`` band: which flags to mask on, defaulting to
+            :data:`~eeo.preprocessing.quality.QA_PIXEL_DEFAULT_MASKED`.
+        min_cloud_confidence : QAConfidence or int or None, optional
+            For a ``QA_PIXEL`` band: also mask pixels whose cloud confidence
+            reaches this level, Medium by default.
+        mission : int, optional
+            For a ``QA_PIXEL`` band: which Landsat took the scenes, when the
+            loaders did not record it.
+        nodata : int or float, optional
+            Value a masked pixel is set to in each timestep, defaulting to the
+            raster's own. It marks pixels as absent, so it never reaches the
+            result: what the result records is the reducer's own nodata.
+        mask_dir : str or path-like or None, default None
+            Write the masked timesteps to this directory instead of holding
+            them in memory. Masking reads a whole scene, so without this the
+            series' worth of masked scenes is held at once; with it, one is.
+        save_path : str or path-like or None, default None
+            Write the composite to this path instead of holding it in memory.
+
+        Returns
+        -------
+        EEORasterDataset
+            Single raster on the series' grid holding every band except the
+            quality band, named as the series names them. float32 with NaN
+            where no timestep saw the ground clear for ``"median"`` and
+            ``"mean"``; the timesteps' own dtype, with their nodata value
+            there, for ``"min"`` and ``"max"``. Carries no timestamp, and
+            records the reduction and the time span it covers in ``attrs``.
+
+        Raises
+        ------
+        ValidationError
+            If no quality band can be found or more than one is present; if the
+            series holds nothing but a quality band; if ``classes`` is given
+            for a ``QA_PIXEL`` band or ``flags`` for an ``SCL`` band; if a
+            ``QA_PIXEL`` series records no mission and none is given; or if the
+            timesteps are an integer type declaring no nodata, leaving no value
+            a masked pixel could take.
+
+        Notes
+        -----
+        Equivalent to ``ts.map(eeo.mask_clouds, ...)`` followed by the reducer,
+        minus the quality band — spelled as one call because it is the workflow
+        a series exists for. Do it by hand when a timestep's mask lives in a
+        separate raster, which this does not cover.
+
+        A pixel clouded at every timestep is the one the composite cannot fill;
+        it comes back as nodata rather than as whatever the cloud looked like.
+
+        Examples
+        --------
+        >>> results = eeo.stac_search(  # doctest: +SKIP
+        ...     "sentinel-2-l2a", bbox=AOI, datetime="2023-04-01/2023-09-30"
+        ... )
+        >>> ts = eeo.time_series(results, assets=["B04", "B08", "SCL"])  # doctest: +SKIP
+        >>> clear = ts.composite()  # doctest: +SKIP
+        >>> clear.band_names  # doctest: +SKIP
+        ['B04', 'B08']
+        >>> ndvi = clear.ndvi(red="B04", nir="B08")  # doctest: +SKIP
+        """
+        quality = (
+            _find_quality_band(self.reference)[0]
+            if mask_band is None
+            else resolve_band_index(self.reference, mask_band)
+        )
+        data_bands = [band for band in range(1, self.band_count + 1) if band != quality]
+        if not data_bands:
+            raise ValidationError(
+                f"this series holds only its quality band (band {quality}), so there "
+                f"is nothing to composite. Load the spectral bands alongside it, e.g. "
+                f"assets=['B04', 'B08', 'SCL']"
+            )
+
+        masked = self.map(
+            mask_clouds,
+            mask_band=quality,
+            classes=classes,
+            flags=flags,
+            min_cloud_confidence=min_cloud_confidence,
+            mission=mission,
+            nodata=nodata,
+            save_dir=mask_dir,
+        )
+        try:
+            return reducers.reduce_series(masked, how, bands=data_bands, save_path=save_path)
+        finally:
+            # The composite is its own raster, so the masked timesteps have
+            # done their work; closing frees them now rather than at collection.
+            # Files written to mask_dir are the caller's and are left alone.
+            masked.close()
+
+    # ========================
+    # Extraction
+    # ========================
+    def extract_at(
+        self,
+        coordinates: Sequence[float],
+        *,
+        bands: Sequence[int | str] | None = None,
+        crs: Any = None,
+    ) -> Any:
+        """Sample one location at every timestep, as a table indexed by time.
+
+        The counterpart to the reducers: where they collapse time into one
+        raster, this collapses space into one trajectory — what happened *here*,
+        in the shape pandas and matplotlib already understand.
+
+        Parameters
+        ----------
+        coordinates : sequence of float
+            ``(x, y)`` position, in the series' CRS unless ``crs`` says
+            otherwise.
+        bands : sequence of (int or str) or None, default None
+            Which bands to sample, as 1-based indices or band names; None
+            samples every band.
+        crs : optional
+            CRS the coordinates are given in — anything rasterio accepts, such
+            as ``"EPSG:4326"`` — when that is not the series' own. Saves
+            transforming lon/lat by hand after a catalog search.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per timestep, indexed by a ``DatetimeIndex`` named ``time``,
+            with one float column per sampled band named after that band
+            (``band_<n>`` for an unnamed one). A pixel that was nodata at a
+            timestep is ``NaN`` there rather than its fill value, so a gap in
+            the trajectory reads as a gap. ``attrs`` records the point sampled.
+
+        Raises
+        ------
+        ValidationError
+            If ``coordinates`` does not hold exactly two values, if the point
+            falls outside the series' extent, if ``crs`` is given for a series
+            that declares none, or if ``bands`` names a band the series does not
+            have.
+
+        Notes
+        -----
+        Reads one pixel per timestep and band — never a band, never a scene, so
+        a trajectory over a season of full tiles costs a few dozen pixels.
+
+        Examples
+        --------
+        >>> trajectory = ts.extract_at((11.1, 46.6), crs="EPSG:4326")  # doctest: +SKIP
+        >>> ndvi = ts.map(eeo.ndvi, red="B04", nir="B08")  # doctest: +SKIP
+        >>> ndvi.extract_at((11.1, 46.6), crs="EPSG:4326").plot()  # doctest: +SKIP
+        """
+        return extract.extract_at(self, coordinates, bands=bands, crs=crs)
+
+    # ========================
+    # Visualization
+    # ========================
+    def plot_trajectory(
+        self,
+        coordinates: Sequence[float],
+        *,
+        bands: Sequence[int | str] | None = None,
+        crs: Any = None,
+        figsize: tuple[int, int] = (10, 4),
+        title: str | None = None,
+        save_path: StrPath | None = None,
+        dpi: int = 300,
+    ) -> None:
+        """Plot what happened at one location, through time.
+
+        One line per band, with a marker at every acquisition, so a date the
+        pixel was clouded at reads as a gap rather than a dip. See
+        :func:`eeo.viz.timeseries.plot_trajectory` for the arguments and for
+        when to plot the :meth:`extract_at` table yourself instead.
+
+        Parameters
+        ----------
+        coordinates : sequence of float
+            ``(x, y)`` position, in the series' CRS unless ``crs`` says
+            otherwise.
+        bands : sequence of (int or str) or None, default None
+            Bands to draw; None draws every band.
+        crs : optional
+            CRS the coordinates are given in, when not the series' own.
+        figsize : tuple of int, default (10, 4)
+            Figure size in inches.
+        title : str or None, default None
+            Figure title; None labels the plot with the sampled point.
+        save_path : str or path-like or None, default None
+            Write the figure here as well as showing it.
+        dpi : int, default 300
+            Resolution for ``save_path``.
+
+        Returns
+        -------
+        None
+            Terminal: shows the figure, and writes it where ``save_path`` says.
+
+        Raises
+        ------
+        ValidationError
+            For anything :meth:`extract_at` rejects.
+
+        Notes
+        -----
+        Reads one pixel per timestep and band.
+
+        Examples
+        --------
+        >>> ndvi = ts.map(eeo.ndvi, red="B04", nir="B08", name="ndvi")  # doctest: +SKIP
+        >>> ndvi.plot_trajectory((11.1, 46.6), crs="EPSG:4326")  # doctest: +SKIP
+        """
+        from eeo.viz.timeseries import plot_trajectory
+
+        plot_trajectory(
+            self,
+            coordinates,
+            bands=bands,
+            crs=crs,
+            figsize=figsize,
+            title=title,
+            save_path=save_path,
+            dpi=dpi,
+        )
+
+    def plot_filmstrip(
+        self,
+        *,
+        band: int | str = 1,
+        nrows: int | None = None,
+        ncols: int | None = None,
+        shared_scale: bool = True,
+        pmin: float = 2,
+        pmax: float = 98,
+        cmap: Any = None,
+        figsize: tuple[int, int] | None = None,
+        title: str | None = None,
+        save_path: StrPath | None = None,
+        dpi: int = 300,
+    ) -> None:
+        """Plot one small map per timestep, laid out as a grid.
+
+        The quick look at a series — which dates are clouded, when the field
+        greened up. Panels are titled with their acquisition date, oldest first,
+        and share one colour scale by default so they can be compared. See
+        :func:`eeo.viz.timeseries.plot_filmstrip` for the full contract.
+
+        Parameters
+        ----------
+        band : int or str, default 1
+            Band each panel shows, as a 1-based index or a name.
+        nrows, ncols : int or None
+            Grid to lay the panels out in; both None chooses a near-square grid.
+        shared_scale : bool, default True
+            Whether every panel uses the same colour limits. True is what makes
+            the dates comparable; False stretches each panel on its own.
+        pmin : float, default 2
+            Lower percentile for the colour limits.
+        pmax : float, default 98
+            Upper percentile for the colour limits.
+        cmap : str or matplotlib.colors.Colormap or None, default None
+            Colormap for the panels.
+        figsize : tuple of int or None, default None
+            Figure size in inches; None derives one from the grid.
+        title : str or None, default None
+            Figure title.
+        save_path : str or path-like or None, default None
+            Write the figure here as well as showing it.
+        dpi : int, default 300
+            Resolution for ``save_path``.
+
+        Returns
+        -------
+        None
+            Terminal: shows the figure, and writes it where ``save_path`` says.
+
+        Raises
+        ------
+        ValidationError
+            If ``band`` is not a band of the series, or a requested grid cannot
+            hold every timestep.
+
+        Notes
+        -----
+        Each panel is read decimated to the size it is drawn at, so the cost is
+        a thumbnail per timestep however large the scenes are.
+
+        Examples
+        --------
+        >>> ts.plot_filmstrip(band="B04")  # doctest: +SKIP
+        >>> monthly = ts.resample_time("MS").composite()  # doctest: +SKIP
+        >>> monthly.plot_filmstrip(cmap="RdYlGn")  # doctest: +SKIP
+        """
+        from eeo.viz.timeseries import plot_filmstrip
+
+        plot_filmstrip(
+            self,
+            band=band,
+            nrows=nrows,
+            ncols=ncols,
+            shared_scale=shared_scale,
+            pmin=pmin,
+            pmax=pmax,
+            cmap=cmap,
+            figsize=figsize,
+            title=title,
+            save_path=save_path,
+            dpi=dpi,
+        )
+
+    # ========================
+    # Interop
+    # ========================
+    def to_xarray(self) -> Any:
+        """Convert the series to one xarray DataArray with a ``time`` dimension.
+
+        The hand-off to the xarray ecosystem. Time is a native xarray dimension,
+        so a series is a natural thing to express there — and once it is, xarray's
+        own vocabulary applies: ``.sel(time="2023-06")``, ``.resample(time=...)``,
+        ``.groupby("time.season")``, and whatever else you already do with a
+        ``DataArray``.
+
+        Requires the ``xarray`` extra (``pip install "easy-eo[xarray]"``).
+
+        Returns
+        -------
+        xarray.DataArray
+            Dimensions ``("time", "band", "y", "x")``. ``time`` holds the
+            series' acquisition times as ``datetime64``, oldest first, and is a
+            real indexed dimension, so ``.sel(time=...)`` works; ``y`` and ``x``
+            are pixel-centre coordinates; ``band`` is 1-based. The CRS, affine
+            transform and nodata value are written through ``rioxarray``, so the
+            result is georeferenced rather than merely shaped like a raster, and
+            band names are in ``attrs["long_name"]``.
+
+        Raises
+        ------
+        MissingDependencyError
+            If the ``xarray`` extra is not installed.
+
+        See Also
+        --------
+        eeo.from_xarray : Convert one DataArray back to a dataset. A slice of
+            this result converts back with it — ``eeo.from_xarray(da.isel(time=0))``.
+        eeo.EEORasterDataset.to_xarray : The single-raster conversion this builds
+            on, which puts the acquisition time in as a scalar coordinate.
+
+        Notes
+        -----
+        **Memory: this reads every timestep.** The whole series ends up in one
+        array, so a season of full Sentinel-2 tiles will not fit — slice the
+        series, or reduce it first (:meth:`resample_time` into monthly
+        composites is usually the useful shape anyway). A series on the lazy
+        backend is no exception; the conversion materialises it.
+
+        ``attrs`` hold what every timestep agrees on. xarray's own rule when
+        concatenating is that the first array's attrs win, which would put one
+        scene's provenance — a STAC item id, a processing time — on an array
+        describing all of them, so a differing attr is dropped instead. The
+        georeferencing attrs are taken from the first timestep, as the series'
+        own grid and band names are.
+
+        The time values are the **series'** timestamps, which are not always the
+        datasets' own: a series built with ``timestamps=`` carries times its
+        datasets do not. Timezones are dropped in favour of naive UTC, which is
+        the only thing xarray's ``datetime64`` can hold.
+
+        Examples
+        --------
+        >>> import eeo
+        >>> ts = eeo.time_series(results, assets=["B04", "B08"])  # doctest: +SKIP
+        >>> da = ts.to_xarray()  # doctest: +SKIP
+        >>> da.dims  # doctest: +SKIP
+        ('time', 'band', 'y', 'x')
+        >>> da.sel(time="2023-06").mean(dim="time")  # doctest: +SKIP
+
+        Bands as named variables, which is often what xarray users want:
+
+        >>> ts.to_xarray().to_dataset(dim="band")  # doctest: +SKIP
+        """
+        from eeo.io.xarray import series_to_xarray
+
+        return series_to_xarray(self)
+
+    # ========================
+    # Lifecycle
+    # ========================
+    def close(self) -> None:
+        """Release every timestep's resources, and the scene cache if owned.
+
+        Returns
+        -------
+        None
+            Nothing; the series should not be used afterwards.
+
+        Notes
+        -----
+        Safe to call more than once. A series built by :meth:`from_stac` with
+        the default ``cache=True`` owns a temporary directory, which this
+        deletes — so a slice taken from it, which shares those files, stops
+        working too. A cache directory you named yourself is left alone.
+        """
+        for ds in self._datasets:
+            with contextlib.suppress(Exception):
+                ds.close()
+        if self._cache is not None:
+            with contextlib.suppress(Exception):
+                self._cache.cleanup()
+            self._cache = None
+
+    def __del__(self):
+        """Best-effort close on garbage collection; errors are suppressed."""
+        with contextlib.suppress(Exception):
+            self.close()
+
+
+def time_series(
+    source: STACSearchResult | Iterable[STACItem] | Iterable[EEORasterDataset] | StrPath,
+    assets: str | Sequence[str] | None = None,
+    **kwargs: Any,
+) -> EEOTimeSeries:
+    """Build a time series from whatever holds the scenes.
+
+    The one call to reach for: it reads what it was handed and delegates to the
+    matching :class:`EEOTimeSeries` constructor, which stays available for
+    anyone who prefers to name it.
+
+    Parameters
+    ----------
+    source : STACSearchResult, iterable of STACItem, iterable of EEORasterDataset, or path
+        The scenes. A search result or its items go to
+        :meth:`EEOTimeSeries.from_stac`; datasets go to the
+        :class:`EEOTimeSeries` constructor; a directory path goes to
+        :meth:`EEOTimeSeries.from_folder`.
+    assets : str or sequence of str or None, default None
+        Assets to read from each item. Required for a STAC source, rejected for
+        datasets, which already hold their bands.
+    **kwargs
+        Keyword arguments of the constructor the source selects — ``bbox``,
+        ``crop``, ``mask``, ``resampling``, ``cache`` and ``chunks`` for a STAC
+        source, ``pattern``, ``timestamp`` and ``chunks`` for a folder,
+        ``timestamps`` for datasets. The grid-consistency arguments
+        (``auto_align``, ``auto_reproject``, ``method``, ``reference``) go
+        through all three.
+
+    Returns
+    -------
+    EEOTimeSeries
+        Series over the scenes, oldest first.
+
+    Raises
+    ------
+    ValidationError
+        If ``source`` is not one of the accepted forms, is empty, mixes items
+        and datasets, or is a STAC source without ``assets`` (or datasets
+        with them). Also whatever the selected constructor rejects.
+
+    Examples
+    --------
+    From a catalog search — the search result is already ordered and dated:
+
+    >>> import eeo
+    >>> results = eeo.stac_search(
+    ...     "sentinel-2-l2a", bbox=(11.0, 46.5, 11.2, 46.7), limit=5
+    ... )  # doctest: +SKIP
+    >>> ts = eeo.time_series(results, assets=["B04", "B08"])  # doctest: +SKIP
+
+    From a folder of rasters, dated by their filenames:
+
+    >>> ts = eeo.time_series("scenes/", pattern="**/*.tif")  # doctest: +SKIP
+
+    From datasets you loaded yourself:
+
+    >>> import datetime as dt
+    >>> import numpy as np
+    >>> scenes = [
+    ...     eeo.load_array(
+    ...         np.full((4, 4), month, dtype="uint16"),
+    ...         crs=32633,
+    ...         timestamp=dt.datetime(2023, month, 1),
+    ...     )
+    ...     for month in (5, 4)
+    ... ]
+    >>> ts = eeo.time_series(scenes)
+    >>> len(ts)
+    2
+    >>> ts.timestamps[0].date()
+    datetime.date(2023, 4, 1)
+    """
+    if isinstance(source, (str, os.PathLike)):
+        if assets is not None:
+            raise ValidationError(
+                "assets= names catalog assets to read and means nothing for a folder "
+                "of rasters; drop it"
+            )
+        return EEOTimeSeries.from_folder(source, **kwargs)
+
+    try:
+        items = list(source)
+    except TypeError as err:
+        raise ValidationError(
+            f"time_series takes a STAC search result, an iterable of STACItems, an "
+            f"iterable of EEORasterDatasets, or a folder path; got "
+            f"{type(source).__name__}"
+        ) from err
+
+    if not items:
+        raise ValidationError("a time series needs at least one scene; got an empty collection")
+
+    if all(isinstance(item, STACItem) for item in items):
+        if assets is None:
+            raise ValidationError(
+                "reading from a catalog needs to know which assets to read, and there "
+                "is no safe default — a Sentinel-2 item offers gigabytes across its "
+                "bands. Pass assets=['B04', 'B08'] (or whatever the items offer, see "
+                "STACItem.asset_names)"
+            )
+        # Narrowed by the isinstance check above; mypy cannot see that
+        # through a list comprehension over `object`.
+        return EEOTimeSeries.from_stac(cast("list[STACItem]", items), assets, **kwargs)
+
+    if all(isinstance(item, EEORasterDataset) for item in items):
+        if assets is not None:
+            raise ValidationError(
+                "assets= names catalog assets to read; these datasets are already "
+                "loaded, so select their bands with band names instead"
+            )
+        return EEOTimeSeries(cast("list[EEORasterDataset]", items), **kwargs)
+
+    kinds = sorted({type(item).__name__ for item in items})
+    raise ValidationError(
+        f"a time series is built from STACItems or from EEORasterDatasets, not a "
+        f"mixture; got {', '.join(kinds)}"
+    )

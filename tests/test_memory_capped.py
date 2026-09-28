@@ -217,3 +217,93 @@ def test_the_dataset_api_reaches_the_same_answer(big_scene, tmp_path, chunks):
         np.testing.assert_allclose(
             saved.read(1, window=window), _reference_ndvi(big_scene, window), equal_nan=True
         )
+
+
+# --------------------------------------------------------------------------
+# A temporal reduction of large scenes, on both backends
+# --------------------------------------------------------------------------
+#: How many timesteps the reduction below covers. The same file stands in for
+#: each of them: the claim under test is about how many blocks are held at once,
+#: not about the pixels differing, and one 268 MB scene is enough disk for a
+#: test. Held eagerly, five timesteps of band 1 would be 640 MB of uint16 before
+#: the float32 result.
+TIMESTEPS = 5
+
+
+def _reduced_series_run(scene, out, chunks, timesteps=None):
+    """Reduce a series of a large scene, in a capped process."""
+    return run_capped(
+        f"""
+        import datetime as dt
+        import eeo
+
+        scenes = [
+            eeo.load_raster(
+                {str(scene)!r},
+                chunks={chunks!r},
+                timestamp=dt.datetime(2023, month, 1, tzinfo=dt.timezone.utc),
+            )
+            for month in range(1, {timesteps or TIMESTEPS} + 1)
+        ]
+        ts = eeo.time_series(scenes)
+        result = ts.median(save_path={str(out)!r})
+        report(
+            shape=list(result.get_shape()),
+            dtype=str(result.get_metadata()["dtype"]),
+            bands=result.get_count(),
+        )
+        """,
+        cap_mib=CAP_MIB,
+    )
+
+
+def test_a_temporal_reduction_of_large_scenes_stays_bounded(big_scene, tmp_path, chunks):
+    """A reduction reads one block per timestep, not one raster per timestep."""
+    out = tmp_path / "median.tif"
+    run = _reduced_series_run(big_scene, out, chunks)
+
+    assert run.ok, run.failure
+    assert run.result["shape"] == [SIDE, SIDE]
+    assert run.result["dtype"] == "float32"
+    assert run.result["bands"] == 2
+    assert run.peak_rss_mib < PEAK_BUDGET_MIB, f"peaked at {run.peak_rss_mib:.0f} MiB"
+
+
+def test_the_peak_does_not_grow_with_the_number_of_timesteps(big_scene, tmp_path):
+    """The claim is boundedness *in the number of timesteps*, not at one length.
+
+    A reduction holds a block of every timestep at once, so a naive block size
+    would make a longer series cost proportionally more memory — which is the
+    length at which a real season of scenes stops working. The block is divided
+    by the timestep count instead, so twelve timesteps read more, smaller blocks
+    rather than holding more.
+    """
+    short = _reduced_series_run(big_scene, tmp_path / "short.tif", chunks=None, timesteps=5)
+    long = _reduced_series_run(big_scene, tmp_path / "long.tif", chunks=None, timesteps=12)
+
+    assert short.ok, short.failure
+    assert long.ok, long.failure
+    # Measured: 549 MiB for five timesteps against 545 for twelve, of which 256
+    # is GDAL's pinned cache. The margin is for noise, not for growth — a peak
+    # that scaled with the series would be hundreds of MiB above it.
+    assert long.peak_rss_mib < short.peak_rss_mib + 150, (
+        f"five timesteps peaked at {short.peak_rss_mib:.0f} MiB, "
+        f"twelve at {long.peak_rss_mib:.0f} MiB"
+    )
+
+
+def test_the_reduction_is_the_right_answer(big_scene, tmp_path):
+    """Bounded is worth nothing if it is bounded around the wrong numbers."""
+    out = tmp_path / "median.tif"
+    run = _reduced_series_run(big_scene, out, chunks=None)
+    assert run.ok, run.failure
+
+    # Every timestep is the same file, so the median over time is that file —
+    # which makes the answer checkable window by window without holding a scene.
+    window = Window(2000, 3000, 128, 96)
+    with rio.open(out) as saved, rio.open(big_scene) as source:
+        for band in (1, 2):
+            np.testing.assert_allclose(
+                saved.read(band, window=window),
+                source.read(band, window=window).astype("float32"),
+            )

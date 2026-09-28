@@ -45,13 +45,14 @@ def _get_versions() -> dict[str, str]:
     dict of str to str
         Ordered mapping of component name to version string. Covers easy-eo,
         the Python runtime and platform, the core geospatial stack (rasterio,
-        GDAL, numpy, geopandas, matplotlib), and each optional-extra
+        GDAL, numpy, pandas, geopandas, matplotlib), and each optional-extra
         dependency (reported as ``"not installed"`` when absent).
     """
     # Imported lazily to keep `import eeo` light; all are hard dependencies.
     import geopandas
     import matplotlib
     import numpy
+    import pandas
     import rasterio
 
     gdal_version = getattr(rasterio, "__gdal_version__", None) or rasterio.gdal_version()
@@ -63,6 +64,7 @@ def _get_versions() -> dict[str, str]:
         "rasterio": rasterio.__version__,
         "GDAL": str(gdal_version),
         "numpy": numpy.__version__,
+        "pandas": pandas.__version__,
         "geopandas": geopandas.__version__,
         "matplotlib": matplotlib.__version__,
     }
@@ -76,7 +78,7 @@ def show_versions() -> None:
 
     Writes a human-readable report to standard output covering easy-eo, the
     Python runtime and operating system, the core geospatial stack (rasterio,
-    GDAL, numpy, geopandas, matplotlib), and the optional-extra dependencies
+    GDAL, numpy, pandas, geopandas, matplotlib), and the optional-extra dependencies
     (each shown as its version or ``not installed``). Intended for pasting
     into bug reports.
 

@@ -21,6 +21,7 @@ from .core.adapters import *
 from .io import from_xarray, load_landsat, load_sentinel2, stac_search
 from .ops import *
 from .preprocessing import *
+from .timeseries import EEOTimeSeries, time_series
 from .viz import *
 
 __all__ = [
@@ -31,6 +32,8 @@ __all__ = [
     "load_landsat",
     "load_sentinel2",
     "from_xarray",
+    "time_series",
+    "EEOTimeSeries",
     "show_versions",
     "EEOError",
     "ValidationError",
