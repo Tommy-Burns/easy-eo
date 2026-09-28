@@ -23,6 +23,17 @@ are called out under a **Breaking** heading.
   delegates: a `STACSearchResult` or its items to
   `EEOTimeSeries.from_stac`, loaded datasets to the constructor, a directory
   path to `EEOTimeSeries.from_folder`. The classmethods remain public.
+- `EEOTimeSeries.map_with(other, op, ...)` applies a two-raster operation to two
+  series timestep by timestep — a zip, not a broadcast — which is what change
+  detection between two epochs is. The receiving series is the operation's first
+  operand, so `after.map_with(before, eeo.subtract)` is after minus before.
+  Pairing is by position and not by timestamp, since two epochs are the point;
+  both series must be the same length. The result carries the receiving series'
+  timestamps and records each partner's date in `attrs["paired_timestamp"]`, so
+  a difference still says which two dates it spans. Registered operations are
+  invoked through their bound method as `map` does, so band names and attrs
+  survive; `save_dir=` works the same way. Handing it a single dataset is refused
+  with the broadcasting `map` call to use instead.
 - `EEOTimeSeries.resample_time(freq)` groups a series into periods and reduces
   within each one, so a season becomes monthly composites: `median()`, `mean()`,
   `min()`, `max()` and `composite()` on the returned `TemporalBins` each give
