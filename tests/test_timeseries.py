@@ -21,7 +21,7 @@ from rasterio.warp import transform_bounds
 import eeo
 from eeo.core.adapters import RasterioAdapter, XarrayAdapter
 from eeo.core.exceptions import AlignmentError, CRSMismatchError, ValidationError
-from eeo.timeseries.core import EEOTimeSeries
+from eeo.timeseries.core import EEOTimeSeries, _timestamp_from_name
 
 UTC = dt.timezone.utc
 
@@ -186,11 +186,24 @@ def test_two_timesteps_at_one_moment_warn():
         eeo.time_series([scene(6, value=10), scene(6, value=20)])
 
 
+def easy_eo_warning(caught, containing):
+    """Return the text of the one warning in ``caught`` that mentions ``containing``.
+
+    Chosen by what it says, never by position. ``pytest.warns`` records every
+    warning raised in its block, and a dependency can warn there too: on the
+    minimum supported versions rasterio 1.4 composes Affine transforms with
+    ``*``, which affine 3 deprecates, and that warning lands first.
+    """
+    matching = [str(w.message) for w in caught if containing in str(w.message)]
+    assert len(matching) == 1, f"expected one warning mentioning {containing!r}; got {matching}"
+    return matching[0]
+
+
 def test_the_duplicate_warning_names_both_causes_and_both_fixes():
     with pytest.warns(UserWarning, match="deduplicate") as caught:
         eeo.time_series([scene(6, value=10), scene(6, value=20)])
 
-    message = str(caught[0].message)
+    message = easy_eo_warning(caught, "appear more than once")
     assert "stac_search(...).deduplicate()" in message
     assert "mosaic" in message
     # And it says how many, so a long series is diagnosable from the warning.
@@ -416,13 +429,13 @@ def test_a_directory_matching_the_pattern_is_skipped(tmp_path):
         ),
     ],
 )
-def test_the_recognised_filename_dates(tmp_path, name, expected):
-    write_scene(tmp_path / name, value=1)
-
-    ts = eeo.time_series(tmp_path, pattern=name)
-
-    assert ts.timestamps == [expected]
-    ts.close()
+def test_the_recognised_filename_dates(name, expected):
+    # Asserted on the name alone, with no file written: "2023-04-12 10:06:21"
+    # is a legal filename on Linux and macOS but not on Windows, where a colon
+    # is reserved — so a test that created it could only ever pass on two of the
+    # three platforms. How a recognised name reaches the series through a real
+    # folder is covered by test_a_folder_becomes_a_series_in_time_order.
+    assert _timestamp_from_name(Path(name)) == expected
 
 
 @pytest.mark.parametrize(
@@ -527,8 +540,11 @@ def test_timestamp_must_be_callable(folder):
 
 
 def test_an_empty_match_says_what_a_glob_matches(folder):
+    # An extension absent from the folder rather than "*.TIF": whether a
+    # different case matches is the platform's call, not Easy-EO's — Windows
+    # globs ignore case and would match every .tif here.
     with pytest.raises(ValidationError, match="walks subdirectories"):
-        eeo.time_series(folder, pattern="*.TIF")
+        eeo.time_series(folder, pattern="*.jp2")
 
 
 def test_an_absolute_pattern_is_refused(folder):
@@ -1082,7 +1098,7 @@ def test_the_baseline_warning_names_the_split_and_the_offset():
     with pytest.warns(UserWarning) as caught:
         eeo.time_series([s2_scene(BEFORE_04_00), s2_scene(AFTER_04_00), s2_scene(ALSO_AFTER_04_00)])
 
-    message = str(caught[0].message)
+    message = easy_eo_warning(caught, "baseline 04.00")
     assert "1 timestep(s) sit before it and 2 after" in message
     assert "BOA_ADD_OFFSET" in message
     assert "1000 DN" in message

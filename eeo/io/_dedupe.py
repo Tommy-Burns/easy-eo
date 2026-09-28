@@ -52,6 +52,20 @@ def version_rank(properties: Mapping[str, Any]) -> tuple[int, ...]:
     zero-padded, and as strings ``"05.11"`` sorts below ``"5.2"``. A version
     that is not a dot-separated number contributes nothing to the ordering
     instead of contributing a wrong answer.
+
+    Parameters
+    ----------
+    properties : mapping
+        STAC item properties, or a dataset's ``attrs``. Read from
+        ``processing:version``, then ``s2:processing_baseline``, then
+        ``processing_baseline``, whichever is present first.
+
+    Returns
+    -------
+    tuple of int
+        The version's dot-separated parts as integers — ``"05.11"`` is
+        ``(5, 11)`` — or ``()`` when there is no version, or none that reads as
+        numbers.
     """
     for key in _VERSION_KEYS:
         value = properties.get(key)
@@ -64,7 +78,21 @@ def version_rank(properties: Mapping[str, Any]) -> tuple[int, ...]:
 
 
 def processed_at(properties: Mapping[str, Any]) -> dt.datetime | None:
-    """Return when this copy was processed, as UTC, or None if it does not say."""
+    """Return when this copy was processed, as UTC, or None if it does not say.
+
+    Parameters
+    ----------
+    properties : mapping
+        STAC item properties, or a dataset's ``attrs``. Read from
+        ``processing:datetime``, then ``updated``, then ``created``, then
+        ``processed_at``, whichever first holds a readable time.
+
+    Returns
+    -------
+    datetime.datetime or None
+        The processing time, timezone-aware in UTC (a naive value is read as
+        UTC), or None when no field holds one.
+    """
     for key in _PROCESSED_AT_KEYS:
         value = properties.get(key)
         if isinstance(value, dt.datetime):
@@ -104,6 +132,20 @@ def processing_rank(
     processing time is absent, is a statement about the metadata record: a
     metadata fix can make an older processing look newer, and it must not be
     allowed to beat a genuinely better one.
+
+    Parameters
+    ----------
+    properties : mapping
+        STAC item properties, or a dataset's ``attrs``.
+    arrival : int
+        Position of this copy in the order it was received, which breaks a
+        total tie in favour of the earliest.
+
+    Returns
+    -------
+    tuple
+        ``(version, processing time, -arrival)``, comparable with ``>`` against
+        the rank of any other copy of the same acquisition.
     """
     return (version_rank(properties), processed_at(properties) or _UNDATED, -arrival)
 
@@ -141,8 +183,19 @@ def acquisition_key(item: Any) -> tuple[Any, ...] | None:
     weighed against a Sentinel-2 one; the timestamp is taken to the second,
     which is how a sensing time is published.
 
-    Returns None for an item with no acquisition time, which cannot be placed
-    in time at all and so cannot be found to duplicate anything.
+    Parameters
+    ----------
+    item : STACItem
+        Catalog item, read for its ``timestamp``, ``collection``, ``bbox`` and
+        ``properties``.
+
+    Returns
+    -------
+    tuple or None
+        ``(collection, acquisition time to the second, ground)``, equal for two
+        copies of one acquisition and different for two tiles of one overpass.
+        None for an item with no acquisition time, which cannot be placed in
+        time at all and so cannot be found to duplicate anything.
     """
     stamp = item.timestamp
     if stamp is None:
@@ -153,9 +206,17 @@ def acquisition_key(item: Any) -> tuple[Any, ...] | None:
 def deduplicate_items(items: Sequence[Any]) -> list[Any]:
     """Keep one item per acquisition, by the rule :func:`processing_rank` states.
 
-    Items are returned in the order they arrived, minus the copies that lost.
-    An item with no acquisition time is always kept: it cannot be shown to
-    duplicate anything.
+    Parameters
+    ----------
+    items : sequence of STACItem
+        Catalog items, in the order they were received.
+
+    Returns
+    -------
+    list of STACItem
+        The surviving items, in the order they arrived, minus the copies that
+        lost. An item with no acquisition time is always kept: it cannot be
+        shown to duplicate anything.
     """
     Rank = tuple[tuple[int, ...], dt.datetime, int]
     winners: dict[tuple[Any, ...], tuple[Rank, int, Any]] = {}

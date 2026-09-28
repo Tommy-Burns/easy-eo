@@ -211,6 +211,22 @@ def series_to_xarray(series: Any) -> Any:
     along that coordinate promotes it to a real dimension. The time values come
     from the *series*, not from the datasets: a series can be given timestamps
     its datasets do not carry, and those are the authoritative ones.
+
+    Parameters
+    ----------
+    series : EEOTimeSeries
+        Series to stack.
+
+    Returns
+    -------
+    xarray.DataArray
+        Dimensions ``("time", "band", "y", "x")``, georeferenced through
+        rioxarray, with the attrs every timestep agrees on.
+
+    Raises
+    ------
+    MissingDependencyError
+        If the ``xarray`` extra is not installed.
     """
     xr = _import_xarray()
 

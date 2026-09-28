@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import os
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -82,11 +83,23 @@ def _grouped(series: EEOTimeSeries, freq: str) -> list[tuple[dt.datetime, list[i
     positions = pd.Series(
         range(len(series)), index=pd.DatetimeIndex(series.timestamps), dtype="int64"
     )
-    try:
-        resampled = positions.resample(freq)
-        periods = [(label, list(values)) for label, values in resampled]
-    except (ValueError, TypeError) as err:
-        raise ValidationError(_explain(freq, str(err))) from err
+    # pandas' warnings are held back until the outcome is known. On 2.2-2.3 an
+    # unknown alias warns before it is rejected — "'bogus' is deprecated, please
+    # use 'BOGUS' instead" — which recommends something just as unknown and,
+    # under an error filter, escapes as a FutureWarning instead of the refusal.
+    # A deprecated alias that does resolve ('M' on 2.2+) still deserves pandas'
+    # own guidance, so on success whatever pandas said is passed on.
+    with warnings.catch_warnings(record=True) as said:
+        warnings.simplefilter("always")
+        try:
+            resampled = positions.resample(freq)
+            periods = [(label, list(values)) for label, values in resampled]
+        except (ValueError, TypeError) as err:
+            raise ValidationError(_explain(freq, str(err))) from err
+    for warning in said:
+        # Level 5 reaches the caller's line through EEOTimeSeries.resample_time,
+        # resample_time and TemporalBins.__init__.
+        warnings.warn(warning.message, stacklevel=5)
 
     return [(pd.Timestamp(label).to_pydatetime(), members) for label, members in periods if members]
 

@@ -243,7 +243,24 @@ def median(
     bands: Sequence[int | str] | None = None,
     save_path: StrPath | None = None,
 ) -> EEORasterDataset:
-    """Median of every pixel across time. See :func:`reduce_series`."""
+    """Median of every pixel across time. See :func:`reduce_series`.
+
+    Parameters
+    ----------
+    series : EEOTimeSeries
+        Series to collapse.
+    bands : sequence of (int or str) or None, default None
+        Which bands to reduce, as 1-based indices or band names; None reduces
+        every band.
+    save_path : str or path-like or None, default None
+        Write the result here instead of holding it in memory.
+
+    Returns
+    -------
+    EEORasterDataset
+        The median across timesteps, ``float32`` with NaN where no timestep
+        saw the pixel.
+    """
     return reduce_series(series, "median", bands=bands, save_path=save_path)
 
 
@@ -253,7 +270,24 @@ def mean(
     bands: Sequence[int | str] | None = None,
     save_path: StrPath | None = None,
 ) -> EEORasterDataset:
-    """Mean of every pixel across time. See :func:`reduce_series`."""
+    """Mean of every pixel across time. See :func:`reduce_series`.
+
+    Parameters
+    ----------
+    series : EEOTimeSeries
+        Series to collapse.
+    bands : sequence of (int or str) or None, default None
+        Which bands to reduce, as 1-based indices or band names; None reduces
+        every band.
+    save_path : str or path-like or None, default None
+        Write the result here instead of holding it in memory.
+
+    Returns
+    -------
+    EEORasterDataset
+        The mean across timesteps, ``float32`` with NaN where no timestep saw
+        the pixel.
+    """
     return reduce_series(series, "mean", bands=bands, save_path=save_path)
 
 
@@ -263,7 +297,23 @@ def minimum(
     bands: Sequence[int | str] | None = None,
     save_path: StrPath | None = None,
 ) -> EEORasterDataset:
-    """Smallest value of every pixel across time. See :func:`reduce_series`."""
+    """Smallest value of every pixel across time. See :func:`reduce_series`.
+
+    Parameters
+    ----------
+    series : EEOTimeSeries
+        Series to collapse.
+    bands : sequence of (int or str) or None, default None
+        Which bands to reduce, as 1-based indices or band names; None reduces
+        every band.
+    save_path : str or path-like or None, default None
+        Write the result here instead of holding it in memory.
+
+    Returns
+    -------
+    EEORasterDataset
+        The smallest value across timesteps, in the timesteps' own dtype.
+    """
     return reduce_series(series, "min", bands=bands, save_path=save_path)
 
 
@@ -273,5 +323,21 @@ def maximum(
     bands: Sequence[int | str] | None = None,
     save_path: StrPath | None = None,
 ) -> EEORasterDataset:
-    """Largest value of every pixel across time. See :func:`reduce_series`."""
+    """Largest value of every pixel across time. See :func:`reduce_series`.
+
+    Parameters
+    ----------
+    series : EEOTimeSeries
+        Series to collapse.
+    bands : sequence of (int or str) or None, default None
+        Which bands to reduce, as 1-based indices or band names; None reduces
+        every band.
+    save_path : str or path-like or None, default None
+        Write the result here instead of holding it in memory.
+
+    Returns
+    -------
+    EEORasterDataset
+        The largest value across timesteps, in the timesteps' own dtype.
+    """
     return reduce_series(series, "max", bands=bands, save_path=save_path)

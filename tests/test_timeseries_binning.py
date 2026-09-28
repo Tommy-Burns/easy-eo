@@ -13,8 +13,10 @@ message builder directly instead.
 """
 
 import datetime as dt
+import warnings
 
 import numpy as np
+import pandas as pd
 import pytest
 from rasterio.transform import from_origin
 
@@ -376,3 +378,53 @@ def test_every_renamed_alias_is_explained(freq, expected):
 
 def test_an_alias_that_was_never_renamed_gets_no_rename_hint():
     assert "renamed" not in _explain("bogus", "Invalid frequency: bogus")
+
+
+# What pandas says while resolving an alias depends on the installed version:
+# 2.1 rejects an unknown one outright, 2.2-2.3 warn first and then reject, and 3.x
+# rejects outright again. So these make pandas warn on demand, which pins what
+# Easy-EO does with each outcome whichever pandas is installed.
+def _pandas_that_warns(monkeypatch, *, then_raise):
+    real_resample = pd.Series.resample
+
+    def resample(self, freq, *args, **kwargs):
+        warnings.warn(f"{freq!r} is deprecated, use {freq.upper()!r}", FutureWarning, stacklevel=2)
+        if then_raise:
+            raise ValueError(f"Invalid frequency: {freq}")
+        return real_resample(self, "MS", *args, **kwargs)
+
+    monkeypatch.setattr(pd.Series, "resample", resample)
+
+
+def test_a_refused_alias_raises_the_refusal_not_pandas_warning(season, monkeypatch):
+    # pandas 2.2-2.3 on an unknown alias: warn, then reject. The warning would
+    # recommend 'BOGUS', which is just as unknown, and under an error filter it
+    # would escape in place of the refusal — which is what CI caught.
+    _pandas_that_warns(monkeypatch, then_raise=True)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(ValidationError, match="is not a period pandas recognises"):
+            season.resample_time("bogus")
+
+
+def test_a_refused_alias_does_not_leave_pandas_warning_behind(season, monkeypatch):
+    _pandas_that_warns(monkeypatch, then_raise=True)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(ValidationError):
+            season.resample_time("bogus")
+
+    assert [str(w.message) for w in caught] == []
+
+
+def test_an_accepted_but_deprecated_alias_passes_pandas_guidance_on(season, monkeypatch):
+    # 'M' on pandas 2.2-2.3: it still works, and pandas' "use 'ME'" is exactly
+    # what the caller needs to hear, so it is not swallowed with the rest.
+    _pandas_that_warns(monkeypatch, then_raise=False)
+
+    with pytest.warns(FutureWarning, match="use 'M'"):
+        periods = season.resample_time("m")
+
+    assert len(periods) == 3

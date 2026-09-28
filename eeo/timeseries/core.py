@@ -61,8 +61,8 @@ _NO_TIMESTAMP = (
 _NO_MATCHES = (
     "no files in {folder} match {pattern!r}. Check the pattern — it is a glob, "
     "so {pattern!r} matches only that directory's own files, and '**/*.tif' "
-    "walks subdirectories too — and check the extension: a glob is "
-    "case-sensitive, so a folder of '.TIF' files needs '*.TIF'."
+    "walks subdirectories too — and check the extension: on Linux and macOS a "
+    "glob is case-sensitive, so a folder of '.TIF' files needs '*.TIF' there."
 )
 
 _NO_DATE_IN_NAME = (
@@ -727,11 +727,16 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             — the lazy backend adds dask on top of that, it is not what makes
             the series bounded. Cannot be combined with ``cache=False``: an
             in-memory scene has no file to open lazily.
-        auto_align, auto_reproject, method, reference
-            Grid consistency across timesteps, as :class:`EEOTimeSeries`
-            documents them. Worth knowing for a catalog search: items covering
-            one area can land in different UTM zones, and a search wide enough
-            to cross a zone boundary needs ``auto_reproject=True``.
+        auto_align, auto_reproject : bool, default False
+            Whether timesteps on a different grid, or in a different CRS, may be
+            warped onto the reference's — as :class:`EEOTimeSeries` documents
+            them. Worth knowing for a catalog search: items covering one area can
+            land in different UTM zones, and a search wide enough to cross a zone
+            boundary needs ``auto_reproject=True``.
+        method : str, default "nearest"
+            Resampling method used when either flag triggers.
+        reference : int, default 0
+            Which timestep's grid the others must match, indexed in time order.
 
         Returns
         -------
@@ -880,9 +885,10 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         pattern : str, default "*.tif"
             Glob pattern selecting them, matched with :meth:`pathlib.Path.glob`
             — so ``"*.tif"`` takes that directory's own files and
-            ``"**/*.tif"`` walks subdirectories. Case-sensitive, as a glob is:
-            a folder of ``.TIF`` files needs ``"*.TIF"``. Directories the
-            pattern happens to match are skipped.
+            ``"**/*.tif"`` walks subdirectories. Matching follows the
+            platform: case-sensitive on Linux and macOS, where a folder of
+            ``.TIF`` files needs ``"*.TIF"``, and not on Windows. Directories
+            the pattern happens to match are skipped.
         timestamp : callable or None, default None
             How each file is placed in time. None reads the first date in the
             filename, accepting ``20230412``, ``2023-04-12``, and either with a
@@ -897,11 +903,16 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
             Chunk sizes for opening each raster on the lazy, dask-chunked
             backend (see :func:`eeo.load_raster`), which needs the ``lazy``
             extra. None opens them with rasterio, which already defers reads.
-        auto_align, auto_reproject, method, reference
-            Grid consistency across timesteps, as :class:`EEOTimeSeries`
-            documents them. Worth knowing for a folder: files written at
-            different times by different tools are the likeliest source of a
-            series whose timesteps do not quite share a grid.
+        auto_align, auto_reproject : bool, default False
+            Whether timesteps on a different grid, or in a different CRS, may be
+            warped onto the reference's — as :class:`EEOTimeSeries` documents
+            them. Worth knowing for a folder: files written at different times by
+            different tools are the likeliest source of a series whose timesteps
+            do not quite share a grid.
+        method : str, default "nearest"
+            Resampling method used when either flag triggers.
+        reference : int, default 0
+            Which timestep's grid the others must match, indexed in time order.
 
         Returns
         -------
@@ -2163,6 +2174,7 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         Returns
         -------
         None
+            Nothing; the series should not be used afterwards.
 
         Notes
         -----
