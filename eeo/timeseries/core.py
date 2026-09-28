@@ -480,7 +480,12 @@ def _chunks_of(datasets: Sequence[EEORasterDataset]) -> ChunkSpec | None:
     return None
 
 
-def _apply(op: Callable[..., Any], ds: EEORasterDataset, kwargs: dict[str, Any]) -> Any:
+def _apply(
+    op: Callable[..., Any],
+    ds: EEORasterDataset,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> Any:
     """Run one operation on one dataset, exactly as calling it on the dataset would.
 
     An Easy-EO operation is written as a free function and bound onto
@@ -490,13 +495,18 @@ def _apply(op: Callable[..., Any], ds: EEORasterDataset, kwargs: dict[str, Any])
     three, so a registered operation is invoked through its bound method, found
     by the identity ``functools.wraps`` records. Anything else, including a
     user's own function or a lambda, is called directly.
+
+    ``args`` holds any further operands, which a two-raster operation takes
+    second and positionally — ``subtract(ds, other)`` as a function and
+    ``ds.subtract(other)`` as a method — so the same tuple serves both calls and
+    nothing here has to know what the second parameter is called.
     """
     name = getattr(op, "__name__", None)
     if name is not None:
         bound = getattr(ds, name, None)
         if bound is not None and getattr(bound, "__wrapped__", None) is op:
-            return bound(**kwargs)
-    return op(ds, **kwargs)
+            return bound(*args, **kwargs)
+    return op(ds, *args, **kwargs)
 
 
 class EEOTimeSeries(Sequence[EEORasterDataset]):
@@ -1304,7 +1314,7 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         results: list[EEORasterDataset] = []
         try:
             for index, ds in enumerate(self._datasets):
-                result = _apply(op, ds, kwargs)
+                result = _apply(op, ds, (), kwargs)
                 if not isinstance(result, EEORasterDataset):
                     raise ValidationError(
                         f"map builds a series, so every result must be an "
@@ -1314,6 +1324,180 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
                         f"the timesteps directly: [{getattr(op, '__name__', 'f')}(ds) "
                         f"for ds in ts]"
                     )
+                if directory is not None:
+                    result = _through_file(
+                        result,
+                        directory,
+                        index,
+                        self._chunks,
+                        timestamp=self._timestamps[index],
+                    )
+                results.append(result)
+        except BaseException:
+            for result in results:
+                with contextlib.suppress(Exception):
+                    result.close()
+            raise
+
+        return self._derive(results, self._timestamps)
+
+    def map_with(
+        self,
+        other: EEOTimeSeries,
+        op: Callable[..., EEORasterDataset],
+        /,
+        *,
+        save_dir: StrPath | None = None,
+        **kwargs: Any,
+    ) -> EEOTimeSeries:
+        """Apply a two-raster operation to this series and another, timestep by timestep.
+
+        What change detection is: two series of the same place, paired off and
+        differenced. The first timestep of this series is combined with the
+        first of ``other``, the second with the second, and so on — a zip, not a
+        broadcast.
+
+        The distinction is worth being explicit about, because
+        :meth:`map` already covers the other case:
+
+        .. code-block:: python
+
+            ts.map(eeo.subtract, other=baseline)   # one raster, from every timestep
+            ts.map_with(later, eeo.subtract)       # timestep 1 from timestep 1, ...
+
+        Parameters
+        ----------
+        other : EEOTimeSeries
+            Series to pair with, of the same length as this one. Pairing is by
+            **position**, not by timestamp: two series of different epochs are
+            the point of the method, so their dates are not expected to match.
+            Each of its timesteps is the operation's *second* operand, so
+            ``after.map_with(before, eeo.subtract)`` is after minus before.
+        op : callable
+            A two-raster operation — :func:`eeo.subtract`,
+            :func:`eeo.normalized_difference`, any of the algebra, or a function
+            of your own taking two datasets and returning one. Passed
+            positionally, as every two-raster operation in Easy-EO takes its
+            second raster, so nothing has to know what that parameter is called.
+            Positional-only here so an operation with its own ``op`` or
+            ``other`` keyword cannot collide with these.
+        save_dir : str or path-like or None, default None
+            Write each result to a GeoTIFF in this directory and read the
+            returned series from those files, so peak memory is one result
+            rather than the whole series. Created if absent; a rerun overwrites,
+            as :meth:`eeo.EEORasterDataset.save_raster` does.
+        **kwargs
+            Passed to ``op`` at every pair, unchanged — including its own
+            ``auto_align`` or ``method`` where the two grids do not match.
+
+        Returns
+        -------
+        EEOTimeSeries
+            One timestep per pair, carrying **this** series' timestamps, since a
+            result has to be placed somewhere in time and the left operand is
+            the predictable choice. Each result records its partner's
+            acquisition time in ``attrs["paired_timestamp"]``, so a difference
+            between two epochs still says which two dates it spans.
+
+        Raises
+        ------
+        ValidationError
+            If ``other`` is not a series — with the broadcasting call to use
+            instead where it is a single dataset — if the two series are of
+            different lengths, if ``op`` is a string or not callable, or if
+            ``op`` returns anything but a dataset.
+
+        See Also
+        --------
+        map : Apply a one-raster operation to every timestep, broadcasting any
+            second operand.
+
+        Notes
+        -----
+        Neither series is touched: the result is a new series, and both inputs
+        are left as they were.
+
+        The two series' grids are not checked here. ``op`` behaves exactly as it
+        does on a single pair of rasters, which is what keeps its own
+        ``auto_align=True`` meaningful rather than pre-empted.
+
+        Results are held in memory unless ``save_dir`` is given, which for whole
+        scenes is the difference between one result and *n*.
+
+        Examples
+        --------
+        Change between two epochs of the same place. Note which series the call
+        is made on: the receiver goes in first, so this is *after minus before*:
+
+        >>> import eeo
+        >>> before = eeo.time_series(spring, assets=["B04", "B08"])  # doctest: +SKIP
+        >>> after = eeo.time_series(autumn, assets=["B04", "B08"])  # doctest: +SKIP
+        >>> change = after.map_with(before, eeo.subtract)  # doctest: +SKIP
+        >>> change.median()  # doctest: +SKIP
+
+        A per-timestep index between two series, then the largest change:
+
+        >>> difference = after.map_with(  # doctest: +SKIP
+        ...     before, eeo.normalized_difference, name="change"
+        ... )
+        >>> biggest = difference.max()  # doctest: +SKIP
+
+        A function of your own works too, taking the pair in that order:
+
+        >>> ratio = after.map_with(before, lambda a, b: a.divide(b))  # doctest: +SKIP
+        """
+        if isinstance(other, EEORasterDataset):
+            raise ValidationError(
+                "map_with pairs this series with another series, timestep by "
+                "timestep, and was handed a single dataset. To apply one raster to "
+                "every timestep, broadcast it with map instead: "
+                f"ts.map({getattr(op, '__name__', 'op')}, other=that_raster)"
+            )
+        if not isinstance(other, EEOTimeSeries):
+            raise ValidationError(
+                f"map_with pairs this series with another EEOTimeSeries; got {type(other).__name__}"
+            )
+        if len(other) != len(self):
+            raise ValidationError(
+                f"map_with pairs timesteps off by position, so both series must be "
+                f"the same length; this one has {len(self)} and the other has "
+                f"{len(other)}. Slice them to a common length, or deduplicate a "
+                f"catalog search that returned one acquisition twice"
+            )
+        if isinstance(op, str):
+            raise ValidationError(
+                f"map_with takes the operation itself, not its name: pass eeo.{op} "
+                f"rather than {op!r}"
+            )
+        if not callable(op):
+            raise ValidationError(
+                f"map_with needs a callable taking two datasets and returning one; "
+                f"got {type(op).__name__}"
+            )
+
+        directory: Path | None = None
+        if save_dir is not None:
+            directory = Path(os.fspath(save_dir))
+            directory.mkdir(parents=True, exist_ok=True)
+
+        results: list[EEORasterDataset] = []
+        try:
+            for index, (ds, partner) in enumerate(
+                zip(self._datasets, other._datasets, strict=True)
+            ):
+                result = _apply(op, ds, (partner,), kwargs)
+                if not isinstance(result, EEORasterDataset):
+                    raise ValidationError(
+                        f"map_with builds a series, so every result must be an "
+                        f"EEORasterDataset; {getattr(op, '__name__', op)!r} returned "
+                        f"{type(result).__name__} for the pair at position {index}"
+                    )
+                # An operation returns a new dataset by contract, so this records
+                # provenance on our own result. Guarded because a plain function
+                # need not honour that, and writing into a caller's dataset
+                # would be a side effect this method has no business having.
+                if result is not ds and result is not partner:
+                    result.attrs["paired_timestamp"] = other.timestamps[index]
                 if directory is not None:
                     result = _through_file(
                         result,
