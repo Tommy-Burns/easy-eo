@@ -267,6 +267,11 @@ on 25 January 2022. Easy-EO gives you the stored numbers, so a series that spans
 that date mixes two conventions and will warn you. Keep a series on one side of
 it.
 
+**If you already know xarray**, ``ts.to_xarray()`` hands the whole series over as
+one array with a ``time`` dimension, and everything you do there works from
+that point on. It reads every scene into memory, so reduce or slice the series
+first if it covers full tiles.
+
 -----
 
 Where to look next

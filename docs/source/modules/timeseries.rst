@@ -409,6 +409,40 @@ Several locations are a concat of several calls:
         names=["plot"],
     )
 
+Handing the series to xarray
+----------------------------
+
+Time is a native xarray dimension, so a series is a natural thing to express
+there. :meth:`eeo.EEOTimeSeries.to_xarray` stacks the timesteps into one
+``DataArray`` with dimensions ``("time", "band", "y", "x")``, after which
+xarray's own vocabulary applies:
+
+.. code-block:: python
+
+    da = ts.to_xarray()
+
+    da.sel(time="2023-06")               # a real indexed dimension
+    da.resample(time="MS").mean()
+    da.groupby("time.season").mean()
+    da.to_dataset(dim="band")            # bands as named variables
+
+It needs the ``xarray`` extra (``pip install "easy-eo[xarray]"``), and the result
+is georeferenced through ``rioxarray`` — CRS, transform and nodata are written,
+not merely implied by the coordinates. One slice converts back with
+:func:`eeo.from_xarray`:
+
+.. code-block:: python
+
+    scene = eeo.from_xarray(da.isel(time=0))
+
+.. warning::
+
+   **This reads every timestep.** The whole series ends up in one array, so a
+   season of full Sentinel-2 tiles will not fit in memory. Slice the series
+   first, or reduce it — ``ts.resample_time("MS").median().to_xarray()`` is
+   usually the shape you wanted anyway. A series on the lazy backend is no
+   exception: the conversion materialises it.
+
 .. autofunction:: eeo.time_series
 
 .. autoclass:: eeo.EEOTimeSeries
