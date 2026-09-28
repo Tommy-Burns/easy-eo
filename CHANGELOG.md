@@ -19,6 +19,17 @@ are called out under a **Breaking** heading.
   `.band_count`, `.band_names`). Temporal stacking stays deliberately distinct from spectral
   `stack()`: timesteps are repeats of one measurement, bands are different
   measurements, and neither call can be mistaken for the other.
+- `EEOTimeSeries.to_xarray()` stacks a series into one georeferenced
+  `xarray.DataArray` with dimensions `("time", "band", "y", "x")`, where `time`
+  is a real indexed dimension — so `.sel(time="2023-06")`,
+  `.resample(time=...)` and `.groupby("time.season")` all work, and
+  `.to_dataset(dim="band")` gives named variables. Needs the `xarray` extra.
+  The time values are the series' own timestamps, which a series built with
+  `timestamps=` carries where its datasets do not, converted to naive UTC since
+  `datetime64` holds no timezone. `attrs` keep what every timestep agrees on
+  rather than xarray's first-wins rule, which would label a whole stack with one
+  scene's STAC item id; the georeferencing attrs come from the first timestep.
+  It reads every timestep, so slice or reduce a series of full scenes first.
 - `eeo.time_series(source, assets=None, ...)` reads what it is handed and
   delegates: a `STACSearchResult` or its items to
   `EEOTimeSeries.from_stac`, loaded datasets to the constructor, a directory
