@@ -10,6 +10,9 @@ abstract: >-
   search against any SpatioTemporal Asset Catalog returns matching scenes, and
   loading one reads only the pixels covering the area of interest, so imagery
   can be worked on without downloading the scenes it comes from.
+  Scenes from a search, or a folder of rasters, gather into a time series
+  that can be composited into one cloud-free image, reduced to one image per
+  period, or followed through time at a single place.
 authors:
   - family-names: Botchwey
     given-names: Thomas Burns
@@ -29,3 +32,4 @@ keywords:
   - GIS
   - STAC
   - spectral indices
+  - time series

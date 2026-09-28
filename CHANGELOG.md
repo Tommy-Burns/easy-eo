@@ -9,14 +9,16 @@ are called out under a **Breaking** heading.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-28
+
 ### Added
 
 - A time-series type: `eeo.EEOTimeSeries`, an ordered, timestamped collection
   of datasets covering one area, built with `eeo.time_series(...)`. It behaves
   like a list sorted oldest-first — `len()`, indexing, slicing (which returns
   another series) and iteration — and exposes `.timestamps` plus the grid of
-  its earliest timestep (`.crs`, `.transform`, `.shape`,
-  `.band_count`, `.band_names`). Temporal stacking stays deliberately distinct from spectral
+  its earliest timestep (`.crs`, `.transform`, `.shape`, `.band_count`,
+  `.band_names`). Temporal stacking stays deliberately distinct from spectral
   `stack()`: timesteps are repeats of one measurement, bands are different
   measurements, and neither call can be mistaken for the other.
 - Two plots for a series, as terminal functions in `eeo.viz` with methods on
@@ -103,7 +105,6 @@ are called out under a **Breaking** heading.
   function of the path for a date that lives elsewhere — the parent
   directory, a sidecar, the file's own `TIFFTAG_DATETIME`. Dates are resolved
   for every file before any is opened, so one undated name costs no opens.
-  This replaces the `NotImplementedError` the method shipped with.
 - `EEOTimeSeries.from_stac(result, assets, ...)` reads the same assets from
   every item of a search, cropping to the search area as
   `STACItem.load` does. Each scene is written to a temporary cache and
@@ -112,11 +113,11 @@ are called out under a **Breaking** heading.
   Without `close()` they go when the last thing reading them is released, so a
   slice or a scene taken from a series outlives it, and releasing a slice — or
   the sub-series a `resample_time` reduction works through — never closes the
-  series it came from. `cache=<dir>` keeps them instead — a signed catalog URL expires, a cached
-  GeoTIFF does not — and `cache=False` keeps the scenes in memory.
-  `chunks=` additionally reopens the cached scenes on the lazy, dask-chunked
-  backend (the `lazy` extra); it cannot be combined with `cache=False`,
-  because an in-memory scene has no file to open lazily.
+  series it came from. `cache=<dir>` keeps them instead — a signed catalog URL
+  expires, a cached GeoTIFF does not — and `cache=False` keeps the scenes in
+  memory. `chunks=` additionally reopens the cached scenes on the lazy,
+  dask-chunked backend (the `lazy` extra); it cannot be combined with
+  `cache=False`, because an in-memory scene has no file to open lazily.
 - Every timestep must carry a timestamp, since the ordering is the point of
   the type: the STAC, Sentinel-2 and Landsat loaders all record one, and
   `timestamps=` supplies or overrides them for a hand-assembled series without
@@ -124,7 +125,6 @@ are called out under a **Breaking** heading.
   metadata parsers, so a series mixing aware and naive times still sorts.
   Items are read oldest-first whatever order they arrive in, and reprocessed
   duplicates of one acquisition keep their arrival order.
-
 - `EEOTimeSeries.map(op, **kwargs)` applies one operation to every timestep and
   returns a new series, leaving the source untouched. Any callable taking a
   dataset and returning one works, including a function of your own; a
@@ -139,7 +139,6 @@ are called out under a **Breaking** heading.
   and acquisition time and returns a series reading those files, so peak memory
   is one result instead of the whole series. A series opened on the lazy backend
   reopens its saved results there too, so the backend survives a chain.
-
 - Series validation at construction, on metadata only: every timestep must be
   in the same CRS, on the same pixel grid, and hold the same number of bands,
   with no two timesteps disagreeing about what a band is called (band names are
@@ -175,26 +174,24 @@ are called out under a **Breaking** heading.
   from `processing:version` (or the deprecated `s2:processing_baseline`). Before
   this, a catalog-built series could only infer the baseline from the
   acquisition date.
-
 - Shared test fixtures for the temporal layer: `season_stack` (five monthly
   two-band scenes over one growing season, on one grid, with a two-timestep
   nodata gap at one pixel), `season_series` (the same as an `EEOTimeSeries`) and
   `season_reference` (a constant single-band partner for two-raster ops). Values
   are uniform within a scene and chosen so every reduction over the stack is a
-  round number, which is what the temporal reducers will be measured against.
-
+  round number, which is what the temporal reducers are measured against.
 - Temporal reducers on `EEOTimeSeries`: `.median()`, `.mean()`, `.min()` and
   `.max()` collapse a series into one `EEORasterDataset` on the series' grid,
   with its bands and band names. Each takes `save_path=` to write the result
   instead of holding it, and each streams window by window, so peak memory is
   one block per timestep rather than the series.
-- Reducers are nodata-aware in the sense the contract's first rule means: a
-  statistic treats nodata as *absent*, not contagious. A pixel missing at two of
-  five timesteps is reduced over the three that saw it, a fill value can never
-  win a minimum, and only a pixel missing at every timestep is nodata in the
-  result. `median()` and `mean()` are float32 with NaN there (a median over an
-  even number of timesteps averages two values); `min()` and `max()` keep the
-  timesteps' dtype — they select a measured value rather than computing one —
+- Reducers are nodata-aware in the sense the nodata contract's first rule
+  means: a statistic treats nodata as *absent*, not contagious. A pixel missing
+  at two of five timesteps is reduced over the three that saw it, a fill value
+  can never win a minimum, and only a pixel missing at every timestep is nodata
+  in the result. `median()` and `mean()` are float32 with NaN there (a median
+  over an even number of timesteps averages two values); `min()` and `max()`
+  keep the timesteps' dtype — they select a measured value rather than computing one —
   and mark it with the timesteps' nodata value, or leave none where the
   timesteps declare none.
 - A reduction carries no timestamp, since it was not acquired at one moment, and
@@ -206,7 +203,6 @@ are called out under a **Breaking** heading.
   series; the methods on `EEOTimeSeries` are thin delegations, which keeps the
   class from growing a statistics library and needs no second decorator
   registry or generated stub.
-
 - `EEOTimeSeries.composite()`: mask every timestep with its own quality band —
   Sentinel-2 `SCL` or Landsat `QA_PIXEL`, whichever it carries — then reduce
   across time, so the result is assembled from whichever timestep saw the ground
@@ -221,7 +217,6 @@ are called out under a **Breaking** heading.
   read.
 - The reducers take an internal band subset, which is what lets a composite
   leave the quality band out of its output while reducing everything else.
-
 - `EEOTimeSeries.extract_at(coordinates)` samples one location at every
   timestep and returns a `pandas.DataFrame` indexed by a `DatetimeIndex` named
   `time`, with one float column per band, named after the band (`band_<n>` where
@@ -237,7 +232,6 @@ are called out under a **Breaking** heading.
   `geopandas>=1.1` already implied) because the library returns a DataFrame
   rather than only importing pandas through geopandas, and `eeo.show_versions()`
   reports its version alongside the rest of the stack.
-
 - A reduction's peak memory no longer grows with the number of timesteps. It
   holds one block of every timestep at once, so the per-block budget is now
   divided by their number: a longer series reads more, smaller blocks instead of
@@ -259,7 +253,6 @@ are called out under a **Breaking** heading.
   rather than remembered from the call that built them, so a hand-built lazy
   series no longer silently drops to rasterio mid-chain — only a series from
   `from_stac` used to keep it.
-
 - New tutorial notebook,
   `examples/04_timeseries/01_cloud_free_composite_and_trends.ipynb`: a season of
   Sentinel-2 over Dutch polder farmland, from a catalog search to a cloud-free
@@ -290,13 +283,6 @@ are called out under a **Breaking** heading.
   a time-series example and a downloaded-product example. The "What's next"
   table is gone, since everything it listed has shipped, and the backends table
   now lists the lazy xarray backend. Every example in it was run as written.
-
-### Notes
-
-- `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that
-  does the same thing today; the STAC path is the supported one for now.
-  Consistency of CRS, grid and band structure across timesteps is not enforced
-  yet, and `.map` is not implemented yet.
 
 ## [0.5.0] - 2026-09-18
 
@@ -1186,7 +1172,8 @@ Initial public beta release.
 - Visualization: `plot_raster`, `plot_composite`,
   `plot_raster_with_histogram`, `plot_band_array`.
 
-[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Tommy-Burns/easy-eo/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Tommy-Burns/easy-eo/compare/v0.4.0...v0.4.1
