@@ -29,6 +29,7 @@ extensions = [
 ]
 
 extensions.append("sphinx_copybutton")
+extensions.append("sphinx_design")
 
 # -- matplotlib plot_directive -----------------------------------------------
 # Render the spectral-index comparison figure from source at build time (no
@@ -72,14 +73,60 @@ exclude_patterns = []
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "sphinx_rtd_theme"
+html_theme = "pydata_sphinx_theme"
+html_title = "Easy-EO"
 
-# Optional: customize sidebar/navigation depth
+# Top-level toctree entries in index.rst become the navbar tabs; each tab's
+# own toctree fills the left sidebar. The header is always navy, so the logo
+# is the light-outlined variant in both colour modes.
 html_theme_options = {
+    "logo": {
+        "text": "Easy-EO",
+        "image_light": "_static/logo/eeo-mark-on-dark.png",
+        "image_dark": "_static/logo/eeo-mark-on-dark.png",
+        "alt_text": "Easy-EO home",
+    },
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/tommy-burns/easy-eo",
+            "icon": "fa-brands fa-github",
+        },
+        {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/easy-eo/",
+            "icon": "fa-brands fa-python",
+        },
+    ],
+    "navbar_align": "left",
+    "navbar_end": ["theme-switcher", "navbar-icon-links"],
+    "navbar_persistent": ["search-button"],
+    "header_links_before_dropdown": 6,
     "collapse_navigation": False,
-    "sticky_navigation": True,
-    "navigation_depth": 4,
+    "navigation_depth": 2,
+    "show_nav_level": 1,
+    "show_toc_level": 2,
+    "show_prev_next": True,
+    "use_edit_page_button": True,
+    "secondary_sidebar_items": ["page-toc", "edit-this-page", "sourcelink"],
+    "footer_start": ["copyright"],
+    "footer_end": ["sphinx-version", "theme-version"],
+    "pygments_light_style": "github-light-colorblind",
+    "pygments_dark_style": "github-dark-colorblind",
 }
+html_context = {
+    "github_user": "tommy-burns",
+    "github_repo": "easy-eo",
+    "github_version": "main",
+    "doc_path": "docs/source",
+    "default_mode": "auto",
+}
+# Single-page tabs have no section to navigate, so drop the empty sidebar.
+html_sidebars = {"index": [], "getting_started": [], "tutorials": [], "citation": []}
 html_static_path = ["_static"]
-html_logo = "_static/eeo_logo.png"
-html_favicon = "_static/eeo_logo.png"
+html_css_files = [
+    "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800"
+    "&family=JetBrains+Mono:wght@400;600&display=swap",
+    "css/eeo-theme.css",
+]
+html_favicon = "_static/logo/favicon.png"

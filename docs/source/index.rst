@@ -1,21 +1,69 @@
-.. Easy-EO documentation master file, created by
-   sphinx-quickstart on Tue Dec 16 23:28:11 2025.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. Landing page. The section title is visually hidden (the hero carries the
+   heading), and the hidden toctree at the bottom defines the navbar tabs:
+   each entry becomes one tab, and that page's own toctree fills the sidebar.
 
-Easy-EO documentation
-=====================
+:html_theme.sidebar_secondary.remove: true
 
-.. image:: _static/eeo_logo.png
-   :align: center
-   :width: 200px
-   :alt: Easy-EO logo
+Easy-EO
+=======
 
-Easy-EO is a Python package for **chainable raster processing, algebra, and visualization**.
-It provides high-level abstractions over libraries such as `Rasterio <https://rasterio.readthedocs.io/en/stable/>`_,
-`NumPy <https://numpy.org/>`_, and `Matplotlib <https://matplotlib.org/>`_, enabling users to perform common earth-observation analyses and
-visualization tasks efficiently, without dealing with the underlying complexity.
-It supports all ``rasterio`` supported datasets since it is built on ``rasterio``.
+.. container:: eeo-hero
+
+   .. grid:: 1 1 2 2
+      :gutter: 4
+      :class-container: eeo-hero-grid
+
+      .. grid-item::
+         :class: eeo-hero-copy
+
+         .. rst-class:: eeo-hero-eyebrow
+
+         Earth observation · Python
+
+         .. rst-class:: eeo-hero-title
+
+         Chainable raster processing for Earth observation
+
+         .. rst-class:: eeo-hero-lede
+
+         Clip, resample, compute indices, and plot in one readable chain.
+         Easy-EO wraps Rasterio, NumPy, and Matplotlib, so it reads every
+         format ``rasterio`` supports.
+
+         .. container:: eeo-hero-actions
+
+            .. button-ref:: getting_started
+               :ref-type: doc
+               :class: eeo-btn eeo-btn-primary
+
+               Get started
+
+            .. button-ref:: tutorials
+               :ref-type: doc
+               :class: eeo-btn eeo-btn-ghost
+
+               Browse tutorials
+
+         .. rst-class:: eeo-hero-install
+
+         ``pip install easy-eo``
+
+      .. grid-item::
+         :class: eeo-hero-code
+
+         .. code-block:: python
+
+            from eeo import load_raster
+
+            nir = load_raster(path="nir.tif")
+            red = load_raster(path="red.tif")
+
+            ndvi = (
+                nir.clip_raster_with_bbox(bbox=(0, 0, 1000, 1000))
+                .resample(scale_factor=2)
+                .normalized_difference(other=red)
+            )
+            ndvi.plot_raster_with_histogram(stretch=True)
 
 Why Easy-EO?
 ------------
@@ -25,12 +73,88 @@ boilerplate code for simple operations such as raster reprojection, resampling, 
 between rasters, clipping, mosaicking, or plotting. Easy-EO abstracts these routines into
 **high-level, chainable methods**, allowing users to:
 
-   - Perform multiple operations in a single, readable chain.
-   - Persist intermediate results **in memory** without writing to disk unnecessarily.
-   - Automatically align rasters with differing shapes or coordinate reference systems.
-   - Return a consistent **EEORasterDataset** object from each operation, enabling further chaining.
-   - Use **terminal visualization methods** for plotting bands, composites, and histograms,
-     which do not return EEORasterDataset but instead display results.
+- Perform multiple operations in a single, readable chain.
+- Persist intermediate results **in memory** without writing to disk unnecessarily.
+- Automatically align rasters with differing shapes or coordinate reference systems.
+- Return a consistent **EEORasterDataset** object from each operation, enabling further chaining.
+- Use **terminal visualization methods** for plotting bands, composites, and histograms,
+  which do not return EEORasterDataset but instead display results.
+
+Key Features
+------------
+
+.. grid:: 1 2 3 3
+   :gutter: 3
+   :class-container: eeo-feature-grid
+
+   .. grid-item-card:: :octicon:`plus-circle` Raster algebra
+      :link: user_guide/ops
+      :link-type: doc
+      :class-card: eeo-card
+
+      Pixel-wise addition, subtraction, multiplication, division, and power.
+      Operator overloading allows ``+``, ``-``, ``*``, ``/``, and ``**``.
+
+   .. grid-item-card:: :octicon:`graph` Spectral indices
+      :link: user_guide/spectral_indices
+      :link-type: doc
+      :class-card: eeo-card
+
+      Normalized-difference indices such as NDVI, or your own, returned as
+      arrays or as datasets you can keep chaining.
+
+   .. grid-item-card:: :octicon:`screen-full` Spatial operations
+      :link: user_guide/preprocessing
+      :link-type: doc
+      :class-card: eeo-card
+
+      Clip with bounding boxes or vector geometries, mosaic rasters, or stack
+      them as new bands.
+
+   .. grid-item-card:: :octicon:`sliders` Standardization
+      :link: user_guide/preprocessing
+      :link-type: doc
+      :class-card: eeo-card
+
+      Z-score, min–max, or percentile-based normalization.
+
+   .. grid-item-card:: :octicon:`image` Visualization
+      :link: user_guide/visualization
+      :link-type: doc
+      :class-card: eeo-card
+
+      Bands, composites, histograms, or a raster beside its histogram, with
+      percentile contrast stretching.
+
+   .. grid-item-card:: :octicon:`globe` Satellite data from STAC
+      :link: user_guide/loading_satellite_data
+      :link-type: doc
+      :class-card: eeo-card
+
+      Search any STAC catalog and read only your area of interest, without
+      downloading a full scene.
+
+   .. grid-item-card:: :octicon:`cloud` Cloud masking
+      :link: user_guide/masking_clouds
+      :link-type: doc
+      :class-card: eeo-card
+
+      Remove cloud, shadow, and haze before they quietly change your answer.
+
+   .. grid-item-card:: :octicon:`history` Time series
+      :link: user_guide/time_series
+      :link-type: doc
+      :class-card: eeo-card
+
+      Ordered, timestamped collections of scenes of the same place.
+
+   .. grid-item-card:: :octicon:`arrow-switch` xarray interop
+      :link: user_guide/xarray_interop
+      :link-type: doc
+      :class-card: eeo-card
+
+      Convert to and from xarray for labelled arrays, dask, and the wider
+      ecosystem.
 
 Chainable Workflow
 ------------------
@@ -60,56 +184,47 @@ Visualization is always done at the end of the chain:
     # Terminal operation: display raster and histogram
     result.plot_raster_with_histogram(bands=[1,2], stretch=True)
 
-Key Features
-------------
+Explore the Docs
+----------------
 
-- **Raster algebra:** Supports pixel-wise addition, subtraction, multiplication, division, and power operations. Operator overloading allows `+`, `-`, `*`, `/`, and `**` for concise syntax.
-- **Raster indices:** Compute normalized difference indices (e.g., NDVI) or custom indices, returning either NumPy arrays or EEORasterDataset for further chaining.
-- **Spatial operations:** Clip rasters using bounding boxes or vector geometries, mosaic multiple rasters, or stack rasters as new bands.
-- **Standardization & normalization:** Apply z-score, min-max, or percentile-based normalization.
-- **Visualization:** Plot individual bands, composites, histograms, or raster with histogram. Supports multi-band rasters and percentile-based contrast stretching.
+.. grid:: 1 2 4 4
+   :gutter: 3
+   :class-container: eeo-explore-grid
 
-Getting Started
----------------
+   .. grid-item-card:: Getting Started
+      :link: getting_started
+      :link-type: doc
+      :class-card: eeo-card eeo-card-explore
 
-See :doc:`getting_started` for step-by-step instructions on loading rasters, performing
-arithmetic, computing indices, and visualizing results, or :doc:`tutorials` for sixteen
-runnable notebooks — each one openable in Colab with nothing to install.
+      Install Easy-EO and learn the core concepts.
+
+   .. grid-item-card:: User Guide
+      :link: user_guide/index
+      :link-type: doc
+      :class-card: eeo-card eeo-card-explore
+
+      Each topic in depth, from loading data to time series.
+
+   .. grid-item-card:: Tutorials
+      :link: tutorials
+      :link-type: doc
+      :class-card: eeo-card eeo-card-explore
+
+      Sixteen runnable notebooks, each openable in Colab.
+
+   .. grid-item-card:: API Reference
+      :link: modules/index
+      :link-type: doc
+      :class-card: eeo-card eeo-card-explore
+
+      Every public class, function, and method.
 
 .. toctree::
+   :hidden:
    :maxdepth: 2
-   :caption: User Guide
 
-   getting_started
-   tutorials
-   user_guide/core_dataset
-   user_guide/sample_data
-   user_guide/loading_satellite_data
-   user_guide/loading_downloaded_scenes
-   user_guide/masking_clouds
-   user_guide/band_names
-   user_guide/ops
-   user_guide/spectral_indices
-   user_guide/preprocessing
-   user_guide/nodata_and_dtype
-   user_guide/visualization
-   user_guide/statistical_locations
-   user_guide/time_series
-   user_guide/xarray_interop
-   user_guide/large_rasters
-   backends
-   citation
-
-.. toctree::
-   :maxdepth: 1
-   :caption: API Reference
-
-   modules/core
-   modules/adapters
-   modules/analysis
-   modules/datasets
-   modules/io
-   modules/ops
-   modules/preprocessing
-   modules/timeseries
-   modules/viz
+   Getting Started <getting_started>
+   User Guide <user_guide/index>
+   Tutorials <tutorials>
+   API Reference <modules/index>
+   Citation <citation>
