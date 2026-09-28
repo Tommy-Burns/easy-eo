@@ -109,7 +109,10 @@ are called out under a **Breaking** heading.
   `STACItem.load` does. Each scene is written to a temporary cache and
   reopened from the file, so the series holds one GDAL handle per timestep
   instead of every window in memory, and `close()` removes the files.
-  `cache=<dir>` keeps them instead — a signed catalog URL expires, a cached
+  Without `close()` they go when the last thing reading them is released, so a
+  slice or a scene taken from a series outlives it, and releasing a slice — or
+  the sub-series a `resample_time` reduction works through — never closes the
+  series it came from. `cache=<dir>` keeps them instead — a signed catalog URL expires, a cached
   GeoTIFF does not — and `cache=False` keeps the scenes in memory.
   `chunks=` additionally reopens the cached scenes on the lazy, dask-chunked
   backend (the `lazy` extra); it cannot be combined with `cache=False`,

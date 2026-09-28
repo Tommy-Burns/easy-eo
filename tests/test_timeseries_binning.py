@@ -64,6 +64,20 @@ def season():
     ts.close()
 
 
+@pytest.fixture
+def season_on_disk(tmp_path):
+    """The season written out and read back, so every timestep holds an open file."""
+    scenes = []
+    for index, (month, day, value) in enumerate(SEASON):
+        path = tmp_path / f"{index}.tif"
+        scene(month, day, value).save_raster(path)
+        stamp = dt.datetime(2023, month, day, tzinfo=UTC)
+        scenes.append(eeo.load_raster(path, timestamp=stamp))
+    ts = eeo.time_series(scenes)
+    yield ts
+    ts.close()
+
+
 def s2_scene(month, day, red, nir, *, clouded=()):
     """A Sentinel-2-like scene whose SCL band flags the given pixels."""
     scl = np.full((4, 4), CLEAR, dtype="uint16")
@@ -144,6 +158,15 @@ def test_the_grouping_leaves_the_series_alone(season):
     season.resample_time("MS").median()
 
     assert len(season) == 5
+
+
+def test_a_binned_reduction_leaves_a_file_backed_series_open(season_on_disk):
+    # Each period is reduced through a sub-series sharing these datasets, and
+    # releasing it must not close them. The in-memory season cannot show this:
+    # an array-backed dataset reads the same after close().
+    season_on_disk.resample_time("MS").median()
+
+    assert season_on_disk.median().to_array().flat[0] == 50
 
 
 def test_the_repr_says_how_many_periods_and_how_full(season):

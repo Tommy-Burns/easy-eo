@@ -294,6 +294,10 @@ class EEORasterDataset:
         self.timestamp = timestamp
         self.attrs: dict = {} if attrs is None else dict(attrs)
         self._band_names: list[str | None] = _resolve_initial_band_names(adapter, band_names)
+        # Whatever must outlive this dataset's reads — the temporary directory
+        # its file sits in, say. Held, never used: releasing the dataset is what
+        # releases it.
+        self._keepalive: object | None = None
 
     def __repr__(self) -> str:
         """Return a concise one-line summary for REPLs and logs."""

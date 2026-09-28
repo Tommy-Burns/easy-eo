@@ -29,6 +29,7 @@ class EEORasterDataset:
     timestamp: datetime | None
     attrs: dict
     _band_names: list[str | None]
+    _keepalive: object | None
 
     def __init__(
         self,

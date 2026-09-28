@@ -10,6 +10,7 @@ network.
 """
 
 import datetime as dt
+import gc
 from pathlib import Path
 
 import numpy as np
@@ -377,6 +378,17 @@ def test_a_folder_becomes_a_series_in_time_order(folder):
         dt.date(2023, 5, 1),
         dt.date(2023, 7, 1),
     ]
+    assert [int(ds.to_array().flat[0]) for ds in ts] == [3, 5, 7]
+    ts.close()
+
+
+def test_releasing_a_slice_leaves_the_series_open(folder):
+    ts = eeo.time_series(folder)
+
+    sliced = ts[:2]
+    del sliced
+    gc.collect()
+
     assert [int(ds.to_array().flat[0]) for ds in ts] == [3, 5, 7]
     ts.close()
 
@@ -751,6 +763,49 @@ def test_cache_false_keeps_the_scenes_in_memory(items):
     assert all(ds.path is None for ds in ts)
     assert len(ts) == 3
     ts.close()
+
+
+def test_releasing_the_series_removes_its_cache(items):
+    ts = EEOTimeSeries.from_stac(items, ["B04"])
+    cache = Path(ts[0].path).parent
+
+    del ts
+    gc.collect()
+    assert not cache.exists()
+
+
+@pytest.mark.parametrize("chunks", [None, "auto"])
+def test_a_slice_outlives_the_series_it_came_from(items, chunks):
+    if chunks is not None:
+        pytest.importorskip("dask.array")
+        pytest.importorskip("rioxarray")
+    ts = EEOTimeSeries.from_stac(items, ["B04"], chunks=chunks)
+    cache = Path(ts[0].path).parent
+    sliced = ts[1:]
+
+    del ts
+    gc.collect()
+    # The slice's scenes hold the cache, so it stays until they go. The lazy
+    # backend reopens a scene by path, so a deleted file would fail here.
+    assert [int(ds.to_array().flat[0]) for ds in sliced] == [200, 300]
+
+    del sliced
+    gc.collect()
+    assert not cache.exists()
+
+
+def test_a_scene_outlives_the_series_it_came_from(items):
+    ts = EEOTimeSeries.from_stac(items, ["B04"])
+    cache = Path(ts[0].path).parent
+    first = ts[0]
+
+    del ts
+    gc.collect()
+    assert int(first.to_array().flat[0]) == 100
+
+    del first
+    gc.collect()
+    assert not cache.exists()
 
 
 def test_chunks_without_a_cache_is_refused(items):
