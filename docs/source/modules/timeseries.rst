@@ -198,6 +198,64 @@ Datasets loaded by hand work the same way, as long as each carries a timestamp:
     ]
     ts = eeo.time_series(scenes)
 
+Change detection: comparing two series
+--------------------------------------
+
+Two sets of scenes of one place, taken years apart. What changed between them?
+:meth:`eeo.EEOTimeSeries.map_with` answers that by pairing the two series off and
+combining each pair:
+
+.. code-block:: python
+
+    before = eeo.time_series(scenes_2020, assets=["B04", "B08"])
+    after = eeo.time_series(scenes_2023, assets=["B04", "B08"])
+
+    change = after.map_with(before, eeo.subtract)
+    typical = change.median()
+
+The first scene of ``after`` is combined with the first of ``before``, the second
+with the second, and so on, so ``change`` holds one timestep per pair. It is an
+ordinary series, so it reduces, maps and samples like any other — which is what
+``median()`` above is doing. Any two-raster operation works, not just
+subtraction:
+
+.. code-block:: python
+
+    difference = after.map_with(before, eeo.normalized_difference, name="change")
+    biggest = difference.max()
+
+**Which way round.** The series you call the method on goes into the operation
+first, so ``after.map_with(before, eeo.subtract)`` is *after minus before*.
+Swapping them is an equally valid call that gives you the negative, so it is
+worth reading twice.
+
+**Pairs are taken in order, never matched by date.** Position one with position
+one. The two series are expected to be from different dates — that is what makes
+it a comparison — so nothing tries to line their timestamps up. They do have to
+hold the same number of timesteps; if they do not, the call is refused, and
+slicing one of them is the fix.
+
+**It is not the same as applying one raster to everything.**
+:meth:`~eeo.EEOTimeSeries.map` also takes a second raster, but the *same* one at
+every timestep:
+
+.. code-block:: python
+
+    after.map(eeo.subtract, other=one_raster)   # every scene less that one raster
+    after.map_with(before, eeo.subtract)      # every scene less its own partner
+
+**The result's dates.** A raster has to be placed somewhere in time, so each
+result takes the date of the scene from the series you called the method on, and
+records its partner's date in ``attrs["paired_timestamp"]``. A 2020-against-2023
+difference therefore still says which two dates it spans.
+
+Everything else is the operation's own business, exactly as in
+:meth:`~eeo.EEOTimeSeries.map`: arguments like ``auto_align=True`` pass straight
+through to it, and the two grids are left for it to reconcile rather than being
+checked here first. ``save_dir=`` writes each result to a GeoTIFF and reads the
+series back from those files, so peak memory is one result instead of all of
+them.
+
 Collapsing a series to one raster
 ---------------------------------
 

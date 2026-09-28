@@ -172,6 +172,34 @@ Periods are written the way pandas writes them: ``"D"`` a day, ``"7D"`` seven
 days, ``"W"`` a week, ``"MS"`` a month, ``"YS"`` a year. A month with no
 acquisitions is simply absent from the result.
 
+Comparing two series
+--------------------
+
+Two sets of scenes of the same place, years apart. What changed?
+
+.. code-block:: python
+
+   before = eeo.time_series(results_2020, assets=["B04", "B08"])
+   after = eeo.time_series(results_2023, assets=["B04", "B08"])
+
+   change = after.map_with(before, eeo.subtract)
+   change.median()             # the usual change
+
+The scenes are paired off in order — first with first, second with second — so
+``change`` holds one raster per pair, and is a series like any other.
+
+The series you call the method on goes in first, so that reads *after minus
+before*. The two have to hold the same number of scenes. Their dates are not
+expected to line up, since being from different years is the whole point.
+
+Do not confuse it with handing ``map`` a raster, which uses the same one at every
+timestep:
+
+.. code-block:: python
+
+   after.map(eeo.subtract, other=one_raster)   # every scene less that one raster
+   after.map_with(before, eeo.subtract)        # every scene less its own partner
+
 -----
 
 Following one place through time
