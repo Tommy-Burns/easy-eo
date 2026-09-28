@@ -277,6 +277,12 @@ def test_a_failed_reduction_closes_its_half_written_output(
     assert all(handle.closed for handle in opened)
 
 
+def test_a_save_path_that_cannot_be_opened_raises_before_anything_is_read(season_series, tmp_path):
+    # The output fails to open, so there is nothing yet to close on the way out.
+    with pytest.raises(rio.errors.RasterioIOError):
+        season_series.median(save_path=tmp_path / "no-such-folder" / "composite.tif")
+
+
 def test_the_reducers_are_also_plain_functions(season_series):
     # The methods are thin: the work lives in functions taking a series, which
     # is what keeps core.py from growing a statistics library.
