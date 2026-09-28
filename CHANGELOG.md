@@ -278,6 +278,19 @@ are called out under a **Breaking** heading.
   having to line up, and writing large results to disk. The module reference now
   points at it, and covers the arguments.
 
+### Changed
+
+- Every code example in the documentation and the README names its arguments
+  (`load_raster(path=...)`, `clip_raster_with_bbox(bbox=...)`), except where a
+  parameter is positional-only, such as the operation handed to
+  `EEOTimeSeries.map`. A time-series guide example passed `geometry=` to
+  `clip_raster_with_vector`, which takes `vector_file=`; it now runs.
+- The README is rewritten for what the library now does: the product loaders,
+  cloud masking, time series and large rasters are in the feature table, with
+  a time-series example and a downloaded-product example. The "What's next"
+  table is gone, since everything it listed has shipped, and the backends table
+  now lists the lazy xarray backend. Every example in it was run as written.
+
 ### Notes
 
 - `EEOTimeSeries.from_folder` raises `NotImplementedError` naming the code that
