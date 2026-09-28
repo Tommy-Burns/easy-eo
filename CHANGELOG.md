@@ -19,6 +19,18 @@ are called out under a **Breaking** heading.
   `.band_count`, `.band_names`). Temporal stacking stays deliberately distinct from spectral
   `stack()`: timesteps are repeats of one measurement, bands are different
   measurements, and neither call can be mistaken for the other.
+- Two plots for a series, as terminal functions in `eeo.viz` with methods on
+  the series: `plot_trajectory(coordinates, ...)` draws a line through time at
+  one place, one line per band, with a marker at every acquisition — a date the
+  pixel was clouded at breaks the line rather than plunging to zero — and costs
+  one pixel per timestep. `plot_filmstrip(band=...)` draws one small map per
+  timestep, titled with its date and laid out near-square, which is the quick
+  look at which acquisitions are usable. Its panels share one colour scale by
+  default, since stretched individually a dark date and a bright one render
+  identically; `shared_scale=False` stretches each panel on its own and draws no
+  colorbar, because one bar cannot describe several scales. Panels are read
+  decimated to the size each is drawn at — one panel's budget, not the whole
+  figure's.
 - `EEOTimeSeries.to_xarray()` stacks a series into one georeferenced
   `xarray.DataArray` with dimensions `("time", "band", "y", "x")`, where `time`
   is a real indexed dimension — so `.sel(time="2023-06")`,
