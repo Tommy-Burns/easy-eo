@@ -31,12 +31,12 @@ Search a catalog, hand the results over, and ask for a cloud-free image:
    import eeo
 
    results = eeo.stac_search(
-       "sentinel-2-l2a",
+       collection="sentinel-2-l2a",
        bbox=(5.60, 52.05, 5.65, 52.085),
        datetime="2023-04-01/2023-09-30",
    )
 
-   ts = eeo.time_series(results, assets=["B04", "B08", "SCL"])
+   ts = eeo.time_series(source=results, assets=["B04", "B08", "SCL"])
    clear = ts.composite()
 
    ndvi = clear.ndvi(red="B04", nir="B08")
@@ -54,9 +54,9 @@ Building a series
 
 .. code-block:: python
 
-   ts = eeo.time_series(results, assets=["B04", "B08", "SCL"])   # a catalog search
-   ts = eeo.time_series("scenes/")                               # a folder of GeoTIFFs
-   ts = eeo.time_series([scene_may, scene_june, scene_july])     # scenes you loaded
+   ts = eeo.time_series(source=results, assets=["B04", "B08", "SCL"])  # a catalog search
+   ts = eeo.time_series(source="scenes/")                              # a folder of GeoTIFFs
+   ts = eeo.time_series(source=[scene_may, scene_june, scene_july])    # scenes you loaded
 
 Every timestep needs to know when it was taken. Catalog results and the
 Sentinel-2 and Landsat loaders record that for you. A folder has to be read from
@@ -72,7 +72,7 @@ the date:
    import datetime as dt
 
    ts = eeo.time_series(
-       "scenes/",                    # scenes/2023-04-12/B04.tif
+       source="scenes/",             # scenes/2023-04-12/B04.tif
        pattern="*/B04.tif",
        timestamp=lambda path: dt.datetime.fromisoformat(path.parent.name),
    )
@@ -81,7 +81,7 @@ And if you built the scenes by hand, pass the dates yourself:
 
 .. code-block:: python
 
-   ts = eeo.time_series(scenes, timestamps=[date_one, date_two, date_three])
+   ts = eeo.time_series(source=scenes, timestamps=[date_one, date_two, date_three])
 
 The series sorts itself oldest-first, and behaves like a list: ``len(ts)``,
 ``ts[0]``, ``ts[2:5]``, and ``for scene in ts``. Each timestep is a normal
@@ -109,14 +109,14 @@ scene:
 .. code-block:: python
 
    ndvi_series = ts.map(eeo.ndvi, red="B04", nir="B08", name="ndvi")
-   clipped = ts.map(eeo.clip_raster_with_vector, geometry=boundary)
+   clipped = ts.map(eeo.clip_raster_with_vector, vector_file=boundary)
    masked = ts.map(eeo.mask_clouds)
 
 Your own functions work too — anything that takes a dataset and returns one:
 
 .. code-block:: python
 
-   brightened = ts.map(lambda scene: scene.multiply(2))
+   brightened = ts.map(lambda scene: scene.multiply(other=2))
 
 The original series is untouched; ``map`` builds a new one.
 
@@ -161,7 +161,7 @@ each month instead of across everything, group first:
 
 .. code-block:: python
 
-   monthly = ts.resample_time("MS").composite()
+   monthly = ts.resample_time(freq="MS").composite()
 
    len(monthly)              # one timestep per month
    monthly.timestamps[0]     # the month it covers
@@ -179,8 +179,8 @@ Two sets of scenes of the same place, years apart. What changed?
 
 .. code-block:: python
 
-   before = eeo.time_series(results_2020, assets=["B04", "B08"])
-   after = eeo.time_series(results_2023, assets=["B04", "B08"])
+   before = eeo.time_series(source=results_2020, assets=["B04", "B08"])
+   after = eeo.time_series(source=results_2023, assets=["B04", "B08"])
 
    change = after.map_with(before, eeo.subtract)
    change.median()             # the usual change
@@ -210,7 +210,7 @@ The other direction: instead of collapsing time, collapse space.
 
 .. code-block:: python
 
-   trend = ndvi_series.extract_at((5.625, 52.0675), crs="EPSG:4326")
+   trend = ndvi_series.extract_at(coordinates=(5.625, 52.0675), crs="EPSG:4326")
 
    trend.plot()                  # a chart of the season
    trend["ndvi"].idxmax()        # the date it peaked
@@ -231,7 +231,7 @@ A line through time at one place, and a contact sheet of every date:
 
 .. code-block:: python
 
-   ndvi.plot_trajectory((5.625, 52.0675), crs="EPSG:4326")
+   ndvi.plot_trajectory(coordinates=(5.625, 52.0675), crs="EPSG:4326")
    ndvi.plot_filmstrip(cmap="RdYlGn")
 
 The trajectory breaks where the pixel was clouded, so a gap looks like a gap. The
@@ -256,7 +256,7 @@ duplicated. Drop the extras before you read anything:
 
 .. code-block:: python
 
-   ts = eeo.time_series(results.deduplicate(), assets=["B04", "B08", "SCL"])
+   ts = eeo.time_series(source=results.deduplicate(), assets=["B04", "B08", "SCL"])
 
 The best-processed copy of each acquisition survives. Two tiles of one overpass
 are not duplicates and are both kept — over a wide area they cover different

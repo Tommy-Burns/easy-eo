@@ -206,6 +206,29 @@ def _through_file(
     return load_raster(path, chunks=chunks, timestamp=timestamp, attrs=attrs, band_names=band_names)
 
 
+class _SceneCache:
+    """A temporary directory of cached scenes, removed once nothing reads it.
+
+    The series that opened it holds it, and so does every scene cached in it —
+    which a slice or other derived series holds in turn. So a slice outlives its
+    parent and a scene outlives its series, and the directory goes when the last
+    of them is released, or when the opening series is closed.
+    """
+
+    def __init__(self) -> None:
+        self._holder = tempfile.TemporaryDirectory(prefix="eeo-timeseries-")
+        self.path = Path(self._holder.name)
+
+    def cleanup(self) -> None:
+        """Remove the directory; safe to call more than once."""
+        with contextlib.suppress(Exception):
+            self._holder.cleanup()
+
+    def __del__(self):
+        """Remove the directory quietly, where TemporaryDirectory would warn."""
+        self.cleanup()
+
+
 def _crs_of(ds: EEORasterDataset) -> CRS | None:
     """Return a dataset's CRS as a :class:`rasterio.crs.CRS`, or None if it has none.
 
@@ -658,7 +681,7 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         _warn_on_mixed_baseline(self._datasets, self._timestamps)
         _warn_on_duplicate_acquisitions(self._timestamps)
         # Set by from_stac when it owns a temporary scene cache.
-        self._cache: tempfile.TemporaryDirectory | None = None
+        self._cache: _SceneCache | None = None
         # A series on the lazy backend stays there through map(save_dir=),
         # which reopens each saved result with these chunk sizes.
         self._chunks: ChunkSpec | None = _chunks_of(self._datasets)
@@ -816,12 +839,12 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         # compared to each other, and a STACItem has no ordering.
         dated.sort(key=lambda pair: pair[0])
 
-        holder: tempfile.TemporaryDirectory | None = None
+        holder: _SceneCache | None = None
         directory: Path | None = None
         if cache is not False:
             if cache is True:
-                holder = tempfile.TemporaryDirectory(prefix="eeo-timeseries-")
-                directory = Path(holder.name)
+                holder = _SceneCache()
+                directory = holder.path
             else:
                 directory = Path(os.fspath(cache))
                 directory.mkdir(parents=True, exist_ok=True)
@@ -834,6 +857,7 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
                 scene = item.load(assets, bbox=bbox, crop=crop, mask=mask, resampling=resampling)
                 if directory is not None:
                     scene = _through_file(scene, directory, index, chunks, timestamp=stamp)
+                    scene._keepalive = holder
                 scenes.append(scene)
             series = cls(
                 scenes,
@@ -1091,7 +1115,9 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         """Build a series from this one's timesteps, keeping its backend choice.
 
         The scene cache is deliberately not carried over: the series that opened
-        it owns it, and two owners would delete it twice.
+        it owns it, and two owners would delete it twice. A derived series needs
+        no hold on it anyway — each cached scene holds it for as long as the
+        scene lives.
         """
         derived = type(self)(datasets, timestamps=timestamps)
         derived._chunks = self._chunks
@@ -2182,19 +2208,19 @@ class EEOTimeSeries(Sequence[EEORasterDataset]):
         the default ``cache=True`` owns a temporary directory, which this
         deletes — so a slice taken from it, which shares those files, stops
         working too. A cache directory you named yourself is left alone.
+
+        Not calling it leaks nothing: each timestep closes itself once nothing
+        holds it, and the temporary cache goes with the last series or scene
+        reading from it. So releasing a slice, or the sub-series a
+        :meth:`resample_time` reduction works through, never closes the series
+        it came from.
         """
         for ds in self._datasets:
             with contextlib.suppress(Exception):
                 ds.close()
         if self._cache is not None:
-            with contextlib.suppress(Exception):
-                self._cache.cleanup()
+            self._cache.cleanup()
             self._cache = None
-
-    def __del__(self):
-        """Best-effort close on garbage collection; errors are suppressed."""
-        with contextlib.suppress(Exception):
-            self.close()
 
 
 def time_series(

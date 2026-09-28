@@ -32,16 +32,16 @@ clean one-liner.
    from eeo import load_raster
 
    # (a) one band per raster -- call on the primary band, pass the others
-   nir = load_raster("B08.tif")
-   red = load_raster("B04.tif")
-   ndvi = nir.ndvi(red)
+   nir = load_raster(path="B08.tif")
+   red = load_raster(path="B04.tif")
+   ndvi = nir.ndvi(red=red)
 
    # (b) one stacked scene -- select bands by 1-based index
-   scene = load_raster("sentinel2_stack.tif")   # e.g. [B02, B03, B04, B08]
+   scene = load_raster(path="sentinel2_stack.tif")   # e.g. [B02, B03, B04, B08]
    ndvi = scene.ndvi(red=3, nir=4)
 
    # (c) the same scene, addressed by name
-   scene = load_raster("sentinel2_stack.tif", band_names=["blue", "green", "red", "nir"])
+   scene = load_raster(path="sentinel2_stack.tif", band_names=["blue", "green", "red", "nir"])
    ndvi = scene.ndvi(red="red", nir="nir")
 
 When a band is a separate raster on a different grid, it is resampled onto the
@@ -50,14 +50,14 @@ receiver's grid automatically (``auto_align=True``, the default); pass
 
 Each method returns a new single-band ``EEORasterDataset`` and is fully
 chainable. When you want the raw values, read them off the result:
-``.get_band(1)`` for the 2D band, or ``.to_array()`` for the
+``.get_band(idx=1)`` for the 2D band, or ``.to_array()`` for the
 ``(bands, height, width)`` array.
 
 .. code-block:: python
 
    # chain straight into a stretch and a plot
    (
-       nir.ndvi(red)
+       nir.ndvi(red=red)
        .normalize_percentile(lower_percentile=2, upper_percentile=98)
        .plot_raster()
    )
@@ -68,7 +68,7 @@ further arguments.
 
 .. code-block:: python
 
-   nir.ndvi(red, name="NDVI").plot_raster(cmap="RdYlGn", colorbar=True)
+   nir.ndvi(red=red, name="NDVI").plot_raster(cmap="RdYlGn", colorbar=True)
 
 -----
 
@@ -126,7 +126,7 @@ default index ``1``).
 
    ``evi`` expects surface reflectance scaled to roughly ``[0, 1]``. If your
    bands are integer DN or reflectance scaled by 10000, rescale first, e.g.
-   ``scene.divide(10000).evi(red=3, blue=1, nir=4)``.
+   ``scene.divide(other=10000).evi(red=3, blue=1, nir=4)``.
 
    ``savi`` takes a soil-brightness factor ``soil_factor`` (``L``): ``0`` for
    dense cover (then SAVI equals NDVI), ``1`` for very sparse cover, ``0.5``
@@ -187,15 +187,15 @@ vegetation patch (top-left), open water (top-right), and a built-up area
        bands[name] = arr
 
    transform = Affine.translation(0, h) * Affine.scale(1, -1)
-   ds = {n: load_array(a, transform=transform, crs=4326) for n, a in bands.items()}
+   ds = {n: load_array(array=a, transform=transform, crs=4326) for n, a in bands.items()}
 
    panels = [
-       ("NDVI", ds["nir"].ndvi(ds["red"]).get_band(1), "RdYlGn", -1, 1),
-       ("NDWI", ds["green"].ndwi(ds["nir"]).get_band(1), "BrBG_r", -1, 1),
-       ("NDMI", ds["nir"].ndmi(ds["swir"]).get_band(1), "BrBG", -1, 1),
-       ("NDBI", ds["swir"].ndbi(ds["nir"]).get_band(1), "pink", -1, 1),
-       ("EVI", ds["nir"].evi(ds["red"], ds["blue"]).get_band(1), "YlGn", -1, 1),
-       ("SAVI", ds["nir"].savi(ds["red"]).get_band(1), "YlGn", -1, 1),
+       ("NDVI", ds["nir"].ndvi(red=ds["red"]).get_band(idx=1), "RdYlGn", -1, 1),
+       ("NDWI", ds["green"].ndwi(nir=ds["nir"]).get_band(idx=1), "BrBG_r", -1, 1),
+       ("NDMI", ds["nir"].ndmi(swir=ds["swir"]).get_band(idx=1), "BrBG", -1, 1),
+       ("NDBI", ds["swir"].ndbi(nir=ds["nir"]).get_band(idx=1), "pink", -1, 1),
+       ("EVI", ds["nir"].evi(red=ds["red"], blue=ds["blue"]).get_band(idx=1), "YlGn", -1, 1),
+       ("SAVI", ds["nir"].savi(red=ds["red"]).get_band(idx=1), "YlGn", -1, 1),
    ]
 
    fig, axes = plt.subplots(2, 3, figsize=(9, 6))
@@ -220,7 +220,7 @@ call to :func:`~eeo.analysis.indices.normalized_difference`:
 .. code-block:: python
 
    # NDVI, written out
-   ndvi = nir.normalized_difference(red)
+   ndvi = nir.normalized_difference(other=red)
 
    # a custom ratio index
-   custom = nir.subtract(red).divide(nir.add(red).add(0.5))
+   custom = nir.subtract(other=red).divide(other=nir.add(other=red).add(other=0.5))

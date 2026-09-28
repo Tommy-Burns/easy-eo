@@ -100,8 +100,8 @@ loader — nothing else in your code changes:
 
 .. code-block:: python
 
-   ds = eeo.load_raster("scene.tif", chunks="auto")        # dask decides
-   ds = eeo.load_raster("scene.tif", chunks={"y": 2048, "x": 2048})
+   ds = eeo.load_raster(path="scene.tif", chunks="auto")        # dask decides
+   ds = eeo.load_raster(path="scene.tif", chunks={"y": 2048, "x": 2048})
 
 ``"auto"`` lets dask pick chunk sizes aligned with the file's internal blocks,
 capped at dask's configured chunk size (128 MiB by default) — so a single
@@ -132,7 +132,7 @@ can be read where it sits:
 .. code-block:: python
 
    url = "https://example.com/scenes/B04.tif"
-   ds = eeo.load_raster(url, chunks=1024)
+   ds = eeo.load_raster(path=url, chunks=1024)
    patch = ds.read(1, window=Window(2048, 2048, 512, 512))
 
 Nothing is downloaded whole. GDAL fetches byte ranges, so opening the raster

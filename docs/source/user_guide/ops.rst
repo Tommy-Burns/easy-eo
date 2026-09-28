@@ -60,13 +60,13 @@ normalized_difference or raster arithmetic.
 
    .. code-block:: python
 
-      ndvi = ds_nir.normalized_difference(ds_red)
+      ndvi = ds_nir.normalized_difference(other=ds_red)
 
       # Alternatively, as a plain function call
-      ndvi = normalized_difference(ds_nir, ds_red)
+      ndvi = normalized_difference(ds=ds_nir, other=ds_red)
 
       # The raw values, when that is what you need
-      ndvi_array = ds_nir.normalized_difference(ds_red).to_array()
+      ndvi_array = ds_nir.normalized_difference(other=ds_red).to_array()
 
 -----
 
@@ -94,7 +94,7 @@ Pixel Value Extraction
 
    .. code-block:: python
 
-      value = extract_value_at_coordinate(ds, (500000, 4100000))
+      value = extract_value_at_coordinate(ds=ds, coordinates=(500000, 4100000))
 
 -----
 
@@ -147,7 +147,7 @@ Addition
    .. code-block:: python
 
       result = ds + ds2
-      result = ds.add(10)
+      result = ds.add(other=10)
 
 Subtraction
 ^^^^^^^^^^^
@@ -247,7 +247,7 @@ Mosaicking
 
    .. code-block:: python
 
-      mosaic_ds = ds.mosaic([ds2, ds3], auto_reproject=True)
+      mosaic_ds = ds.mosaic(others=[ds2, ds3], auto_reproject=True)
 
 -----
 
@@ -267,7 +267,7 @@ Stacking
 
    .. code-block:: python
 
-      stacked = ds.stack([ds_red, ds_green, ds_blue])
+      stacked = ds.stack(others=[ds_red, ds_green, ds_blue])
 
 -----
 
@@ -284,10 +284,10 @@ All operations in this section:
 .. code-block:: python
 
    result = (
-       ds.clip_raster_with_bbox((0, 0, 1000, 1000))
-       .normalized_difference(ds2)
+       ds.clip_raster_with_bbox(bbox=(0, 0, 1000, 1000))
+       .normalized_difference(other=ds2)
        .normalize_min_max()
-       .save_raster("output.tif")
+       .save_raster(path="output.tif")
    )
 
 

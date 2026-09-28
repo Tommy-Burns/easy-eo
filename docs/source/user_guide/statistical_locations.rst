@@ -100,7 +100,7 @@ Returns the pixel corresponding to a given percentile.
 
 .. code-block:: python
 
-    ds.get_percentile_pixel(95)
+    ds.get_percentile_pixel(percentile=95)
 
 -------------------------------------
 
@@ -110,7 +110,7 @@ Chaining Example
 .. code-block:: python
 
        data = (
-           ds.clip_raster_with_bbox(bbox)
+           ds.clip_raster_with_bbox(bbox=bbox)
            .normalize_percentile()
            .get_maximum_pixel()
        )

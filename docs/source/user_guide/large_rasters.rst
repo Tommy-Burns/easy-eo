@@ -32,11 +32,11 @@ The short version
       - Write each big intermediate to disk, or run one pass with
         :func:`~eeo.core.blockwise.apply_blockwise` and ``save_path=``.
     * - Avoid reading a file you only want metadata from
-      - ``eeo.load_raster(path)`` — opening never reads pixels.
+      - ``eeo.load_raster(path=path)`` — opening never reads pixels.
     * - Read a scene from a URL
-      - ``eeo.load_raster("https://.../scene.tif")`` — see :doc:`../backends`.
+      - ``eeo.load_raster(path="https://.../scene.tif")`` — see :doc:`../backends`.
     * - Chunk a raster and read only parts of it
-      - ``eeo.load_raster(path, chunks="auto")``, with the ``lazy`` extra.
+      - ``eeo.load_raster(path=path, chunks="auto")``, with the ``lazy`` extra.
     * - Know what a call costs before you make it
       - The table in `What holds a whole raster`_.
 
@@ -80,10 +80,10 @@ because the first intermediate has nowhere to live:
 .. code-block:: python
 
    # Bounded: one pass, result written straight to disk.
-   ds.ndvi("red", nir="nir").save_raster("ndvi.tif")
+   ds.ndvi(red="red", nir="nir").save_raster(path="ndvi.tif")
 
    # Not bounded on a very large scene: three full-size intermediates.
-   ds.add(5).multiply(2).normalize_min_max()
+   ds.add(other=5).multiply(other=2).normalize_min_max()
 
 For a scene that genuinely does not fit, do the whole computation in one pass
 and stream it to a file. :func:`~eeo.core.blockwise.apply_blockwise` is public
@@ -99,10 +99,10 @@ for exactly this: hand it a plain NumPy function and the bands it applies to.
        return (nir - red) * (1 + soil) / (nir + red + soil)
 
    result = apply_blockwise(
-       ds,
-       savi,
-       sources=[BlockSource.from_dataset(ds, band="nir"),
-                BlockSource.from_dataset(ds, band="red")],
+       ds=ds,
+       compute=savi,
+       sources=[BlockSource.from_dataset(ds=ds, band="nir"),
+                BlockSource.from_dataset(ds=ds, band="red")],
        fractional=True,
        save_path="savi.tif",
    )
@@ -142,8 +142,8 @@ dask-chunked :class:`xarray.DataArray` instead of through rasterio.
 
 .. code-block:: python
 
-   ds = eeo.load_raster("scene.tif", chunks="auto")        # dask picks sizes
-   ds = eeo.load_raster("scene.tif", chunks={"y": 2048, "x": 2048})
+   ds = eeo.load_raster(path="scene.tif", chunks="auto")        # dask picks sizes
+   ds = eeo.load_raster(path="scene.tif", chunks={"y": 2048, "x": 2048})
 
 Nothing else in your code changes — every operation, statistic and plot works
 the same way on either backend, and returns the same answer.

@@ -25,8 +25,8 @@ propagate:
     import eeo
 
     try:
-        ds = eeo.load_raster("scene.tif")
-        result = ds.normalized_difference(other, auto_align=False)
+        ds = eeo.load_raster(path="scene.tif")
+        result = ds.normalized_difference(other=other, auto_align=False)
     except eeo.AlignmentError as err:
         # rasters were not on the same grid
         print(err)
@@ -67,7 +67,7 @@ the *output* is also larger than memory:
     import eeo
     from eeo.core.blockwise import BlockSource, apply_blockwise
 
-    scene = eeo.load_landsat("LC09_....tar", bands=["red", "nir08"])
+    scene = eeo.load_landsat(path="LC09_....tar", bands=["red", "nir08"])
 
     def ndvi(nir, red):
         nir, red = nir.astype("float32"), red.astype("float32")
@@ -76,11 +76,11 @@ the *output* is also larger than memory:
             return np.where(total != 0, (nir - red) / total, np.float32(0))
 
     result = apply_blockwise(
-        scene,
-        ndvi,
+        ds=scene,
+        compute=ndvi,
         sources=[
-            BlockSource.from_dataset(scene, band=2),
-            BlockSource.from_dataset(scene, band=1),
+            BlockSource.from_dataset(ds=scene, band=2),
+            BlockSource.from_dataset(ds=scene, band=1),
         ],
         fractional=True,
         save_path="ndvi.tif",

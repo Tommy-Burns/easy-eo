@@ -202,7 +202,7 @@ Loading a raster
     from eeo import load_raster
 
     # Load a raster from disk
-    ds = load_raster("path/to/image.tif")
+    ds = load_raster(path="path/to/image.tif")
 
 This function performs validation and returns an :class:`~eeo.core.EEORasterDataset`.
 Advanced users may access the underlying rasterio dataset via `ds.ds`
@@ -221,10 +221,10 @@ Accessing bands
 .. code-block:: python
 
     # Read a single band
-    band1 = ds.get_band(1)
+    band1 = ds.get_band(idx=1)
 
     # Read multiple bands
-    bands = [ds.get_band(i) for i in range(1, ds.get_count() + 1)]
+    bands = [ds.get_band(idx=i) for i in range(1, ds.get_count() + 1)]
 
 
 Algebra and Arithmetic
@@ -236,7 +236,7 @@ Easy-EO supports **pixel-wise operations** with chainable syntax.
 
     from eeo.ops.algebra import add, subtract, multiply, divide
 
-    ds2 = load_raster("path/to/other.tif")
+    ds2 = load_raster(path="path/to/other.tif")
 
     # Add two rasters (auto-aligns if necessary)
     result = ds + ds2
@@ -245,7 +245,7 @@ Easy-EO supports **pixel-wise operations** with chainable syntax.
     result2 = ds * 2
 
     # Chain operations
-    result3 = (ds - ds2).divide(100)
+    result3 = (ds - ds2).divide(other=100)
 
 .. note::
     Supports operator overloading: ``+``, ``-``, ``*``, ``/``, ``**``.
@@ -261,10 +261,10 @@ Easy-EO allows computing **normalized or custom indices**:
     from eeo.analysis import normalized_difference
 
     # NDVI-like computation
-    ndvi = normalized_difference(ds_nir, ds_red)
+    ndvi = normalized_difference(ds=ds_nir, other=ds_red)
 
     # The same thing as a bound method
-    ndvi = ds_nir.normalized_difference(ds_red)
+    ndvi = ds_nir.normalized_difference(other=ds_red)
 
 .. note::
     Returns a new **EEORasterDataset**, so it chains with any other operation.
@@ -276,23 +276,23 @@ Clipping, Mosaicking, and Stacking
 .. code-block:: python
 
     # Clip raster to bounding box
-    clipped = ds.clip_raster_with_bbox((0, 0, 1000, 1000))
+    clipped = ds.clip_raster_with_bbox(bbox=(0, 0, 1000, 1000))
 
     # Clip using vector (using a geopandas GeodataFrame)
     import geopandas as gpd
     shapefile = gpd.read_file("vector.shp")
-    clipped2 = ds.clip_raster_with_vector(shapefile, crop=True)
+    clipped2 = ds.clip_raster_with_vector(vector_file=shapefile, crop=True)
 
 
     # Clip using vector (using the path to a geopandas supported vector file)
     shapefile_path = r"/path/to/vector_file"
-    clipped3 = ds.clip_raster_with_vector(shapefile_path, crop=True)
+    clipped3 = ds.clip_raster_with_vector(vector_file=shapefile_path, crop=True)
 
     # Mosaic multiple rasters
-    mosaic_ds = ds.mosaic([ds2, ds3], auto_reproject=True)
+    mosaic_ds = ds.mosaic(others=[ds2, ds3], auto_reproject=True)
 
     # Stack multiple rasters as bands
-    stacked = ds.stack([ds2, ds3])
+    stacked = ds.stack(others=[ds2, ds3])
 
 .. note::
     - Auto-reprojects if CRS mismatch
@@ -363,7 +363,7 @@ Example:
 
 .. code-block:: python
 
-    ds.normalize_min_max().save_raster("output.tif")
+    ds.normalize_min_max().save_raster(path="output.tif")
 
 Until this method is called, datasets typically live in memory, allowing
 fast experimentation without unnecessary disk I/O.
@@ -400,7 +400,7 @@ Tips
 
     # Use chainable operations for clarity
     (
-        ds.clip_raster_with_bbox((0, 0, 1000, 1000))
+        ds.clip_raster_with_bbox(bbox=(0, 0, 1000, 1000))
         .normalize_min_max()
         .plot_raster()
     )

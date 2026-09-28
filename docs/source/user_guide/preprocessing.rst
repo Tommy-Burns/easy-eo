@@ -64,7 +64,7 @@ Vector-based Clipping
    .. code-block:: python
 
       clipped = ds.clip_raster_with_vector(
-          "boundary.shp",
+          vector_file="boundary.shp",
           crop=True,
           all_touched=True
       )
@@ -100,7 +100,7 @@ Bounding Box Clipping
 
    .. code-block:: python
 
-      clipped = ds.clip_raster_with_bbox((500000, 4100000, 510000, 4110000))
+      clipped = ds.clip_raster_with_bbox(bbox=(500000, 4100000, 510000, 4110000))
 
 -----
 
@@ -261,7 +261,7 @@ Resampling
 
    .. code-block:: python
 
-      ds = load_array(array, transform=transform, crs=4326)
+      ds = load_array(array=array, transform=transform, crs=4326)
 
       # Resampling works transparently
       ds_resampled = ds.resample(scale_factor=2.0)
@@ -286,7 +286,7 @@ All preprocessing operations are chainable and remain in memory until explicitly
 .. code-block:: python
 
    output = (
-       ds.clip_raster_with_vector("boundary.shp")
+       ds.clip_raster_with_vector(vector_file="boundary.shp")
        .reproject_raster(target_crs=4326)
-       .save_raster("processed.tif")
+       .save_raster(path="processed.tif")
    )

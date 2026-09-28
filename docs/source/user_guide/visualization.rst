@@ -90,7 +90,7 @@ Pass ``nrows`` or ``ncols`` to choose the grid yourself:
    scene.plot_raster(ncols=4, figsize=(16, 4))
 
    # the same for several separate datasets
-   plot_raster([ndvi, ndwi, evi, savi], bands=1, nrows=2)
+   plot_raster(ds=[ndvi, ndwi, evi, savi], bands=1, nrows=2)
 
 Giving one of the two derives the other, so ``ncols=2`` with five panels gives
 three rows and leaves the last cell blank. Giving both is honoured as long as

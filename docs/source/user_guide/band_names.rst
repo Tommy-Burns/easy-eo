@@ -11,7 +11,7 @@ accepted:
 
    from eeo import load_raster
 
-   scene = load_raster("sentinel2.tif", band_names=["blue", "green", "red", "nir"])
+   scene = load_raster(path="sentinel2.tif", band_names=["blue", "green", "red", "nir"])
 
    ndvi = scene.ndvi(red="red", nir="nir")
    scene.plot_composite(bands=["red", "green", "blue"])
@@ -38,8 +38,8 @@ Names come from one of three places.
 
 .. code-block:: python
 
-   scene = load_raster("sentinel2.tif", band_names=["blue", "green", "red", "nir"])
-   rgb = load_array(array, crs=4326, transform=t, band_names=["red", "green", "blue"])
+   scene = load_raster(path="sentinel2.tif", band_names=["blue", "green", "red", "nir"])
+   rgb = load_array(array=array, crs=4326, transform=t, band_names=["red", "green", "blue"])
 
 **From the file itself.** If the raster already carries GDAL band descriptions
 — many real products do — they are read automatically, so ``load_raster``
@@ -52,7 +52,7 @@ at once, or rename a single band:
 .. code-block:: python
 
    scene.band_names = ["blue", "green", "red", "nir"]   # replaces all names
-   scene.set_band_name(4, "nir")                        # renames one band
+   scene.set_band_name(band=4, new_name="nir")          # renames one band
    scene.band_names = None                              # clears every name
 
 Assigning a list validates its length against the band count. A name is
@@ -74,9 +74,9 @@ Anywhere a 1-based band index is accepted, a name works too:
 
 .. code-block:: python
 
-   scene.get_band("nir")                          # read one band
+   scene.get_band(idx="nir")                      # read one band
    scene.get_maximum_pixel(band_idx="nir")        # pixel statistics
-   scene.extract_value_at_coordinate((x, y), band_idx="red")
+   scene.extract_value_at_coordinate(coordinates=(x, y), band_idx="red")
 
    scene.ndvi(red="red", nir="nir")               # any index band argument
    scene.evi(red="red", blue="blue", nir="nir")
@@ -137,14 +137,14 @@ rule per category.
 
    scene.band_names = ["blue", "green", "red", "nir"]
 
-   scene.add(1).band_names             # ['blue', 'green', 'red', 'nir']
+   scene.add(other=1).band_names       # ['blue', 'green', 'red', 'nir']
    scene.resample(scale_factor=2).band_names   # ['blue', 'green', 'red', 'nir']
 
    scene.ndvi(red="red", nir="nir").band_names             # [None]
    scene.ndvi(red="red", nir="nir", name="ndvi").band_names  # ['ndvi']
 
-   red.stack([green, blue]).band_names                     # ['red', 'green', 'blue']
-   red.stack([green, blue], names=["r", "g", "b"]).band_names  # ['r', 'g', 'b']
+   red.stack(others=[green, blue]).band_names              # ['red', 'green', 'blue']
+   red.stack(others=[green, blue], names=["r", "g", "b"]).band_names  # ['r', 'g', 'b']
 
 Index results are deliberately **not** auto-named after the operation that
 produced them. If they were, stacking five NDVI rasters from five dates would
@@ -164,9 +164,9 @@ a sidecar file:
 .. code-block:: python
 
    scene.band_names = ["blue", "green", "red", "nir"]
-   scene.save_raster("named.tif")
+   scene.save_raster(path="named.tif")
 
-   reloaded = load_raster("named.tif")
+   reloaded = load_raster(path="named.tif")
    reloaded.band_names        # ['blue', 'green', 'red', 'nir']
 
 Unnamed bands write no description. Output formats that cannot store band

@@ -31,16 +31,16 @@ Load the scene with its quality band, then call one method:
 
    import eeo
 
-   scene = eeo.load_sentinel2("S2A_....SAFE.zip", bands=["red", "nir", "scl"])
+   scene = eeo.load_sentinel2(path="S2A_....SAFE.zip", bands=["red", "nir", "scl"])
    clear = scene.mask_clouds()
 
-   ndvi = clear.ndvi("red", nir="nir")     # cloudy pixels excluded
+   ndvi = clear.ndvi(red="red", nir="nir") # cloudy pixels excluded
 
 The same two lines work on Landsat — only the band names change:
 
 .. code-block:: python
 
-   scene = eeo.load_landsat("LC09_....tar", bands=["red", "nir08", "qa_pixel"])
+   scene = eeo.load_landsat(path="LC09_....tar", bands=["red", "nir08", "qa_pixel"])
    clear = scene.mask_clouds()
 
 That is the whole feature. The rest of this page explains what it decided on
@@ -347,7 +347,7 @@ If your quality layer lives in a separate file, pass it in:
 
 .. code-block:: python
 
-   scl = eeo.load_raster("SCL.tif")
+   scl = eeo.load_raster(path="SCL.tif")
    scl.band_names = ["scl"]
    clear = scene.mask_clouds(mask=scl)
 
@@ -384,7 +384,7 @@ whether a scene is worth using at all:
 
    .. code-block:: python
 
-      inside = scene.clip_raster_with_bbox(my_area)
+      inside = scene.clip_raster_with_bbox(bbox=my_area)
       inside.clear_fraction()                    # 1.0000  -- no empty corners
       inside.mask_clouds().clear_fraction()      # 0.9677  -- 3% cloud
 
