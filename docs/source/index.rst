@@ -55,14 +55,18 @@ Easy-EO
 
             from eeo import load_raster
 
+            # load red and nir bands
             nir = load_raster(path="nir.tif")
             red = load_raster(path="red.tif")
 
+            # clip -> resample -> compute NDVI
             ndvi = (
                 nir.clip_raster_with_bbox(bbox=(0, 0, 1000, 1000))
                 .resample(scale_factor=2)
                 .normalized_difference(other=red)
             )
+
+            # plot the NDVI and its histogram
             ndvi.plot_raster_with_histogram(stretch=True)
 
 Why Easy-EO?
